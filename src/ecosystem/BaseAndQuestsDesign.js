@@ -713,6 +713,115 @@ export class DynamicQuestSystem {
   }
 }
 
+/**
+ * Catalogue complet des Armes Élémentaires Légendaires (Phase 8 RPG Artifacts).
+ * Inclut l'arme de départ (`runic_steel`) et les 4 grandes armes élémentaires à débloquer sur les Autels 3D (`[E]`)
+ * ou via l'Armurerie des Artefacts (`[K]`).
+ */
+export const ELEMENTAL_WEAPONS_CATALOG = Object.values(CONFIG.ELEMENTAL_WEAPONS || {});
+
+/**
+ * Indexation rapide des armes élémentaires par `id`.
+ */
+export const ELEMENTAL_WEAPONS_BY_ID = Object.fromEntries(
+  ELEMENTAL_WEAPONS_CATALOG.map((w) => [w.id, w])
+);
+
+/**
+ * Retourne la spécification complète d'une arme élémentaire par son identifiant.
+ *
+ * @param {string} [weaponId='runic_steel'] - Identifiant de l'arme (`'runic_steel'`, `'fire_greatsword'`, `'ice_greatsword'`, `'lightning_greatsword'`, `'venom_greatsword'`).
+ * @returns {object} Spécification de l'arme élémentaire.
+ */
+export function getElementalWeaponSpec(weaponId = 'runic_steel') {
+  return (
+    ELEMENTAL_WEAPONS_BY_ID[weaponId] ||
+    ELEMENTAL_WEAPONS_BY_ID.runic_steel ||
+    ELEMENTAL_WEAPONS_CATALOG[0]
+  );
+}
+
+/**
+ * Spécification des 3 Fragments de Relique d'Éden et du Dôme-Bouclier Planétaire (`RELIC_FRAGMENTS_SPEC`).
+ */
+export const RELIC_FRAGMENTS_SPEC = {
+  requiredCount: CONFIG.RELIC_FRAGMENTS?.REQUIRED_COUNT ?? 3,
+  shieldDomeRadius: CONFIG.RELIC_FRAGMENTS?.SHIELD_DOME_RADIUS ?? 115,
+  fragmentRewardXp: CONFIG.RELIC_FRAGMENTS?.FRAGMENT_REWARD_XP ?? 50,
+  fragmentRewardCrystal: CONFIG.RELIC_FRAGMENTS?.FRAGMENT_REWARD_CRYSTAL ?? 15,
+  shrines: CONFIG.RELIC_FRAGMENTS?.SHRINES || [
+    {
+      id: 'relic_dawn_north',
+      index: 1,
+      name: 'Fragment d’Aube (Nord)',
+      sectorLabel: 'Hautes Terres du Nord',
+      pos: { x: 4, z: -64 },
+      colorHex: 0x00e5ff,
+      colorCss: '#00e5ff',
+    },
+    {
+      id: 'relic_breakers_southeast',
+      index: 2,
+      name: 'Fragment des Brisants (Sud-Est)',
+      sectorLabel: 'Littoral & Plaines du Sud-Est',
+      pos: { x: 58, z: 42 },
+      colorHex: 0xffd32a,
+      colorCss: '#ffd32a',
+    },
+    {
+      id: 'relic_caldera_southwest',
+      index: 3,
+      name: 'Fragment de Caldeira (Sud-Ouest)',
+      sectorLabel: 'Lisière Volcanique Sud-Ouest',
+      pos: { x: -56, z: 44 },
+      colorHex: 0xff5e57,
+      colorCss: '#ff5e57',
+    },
+  ],
+};
+
+/**
+ * Configuration des paliers de difficulté de campagne multi-îles (`ISLAND_TIERS_CONFIG`).
+ */
+export const ISLAND_TIERS_CONFIG = CONFIG.ISLAND_TIERS || [];
+
+/**
+ * Résout les paramètres de difficulté et d'écosystème pour une île donnée (`1, 2, 3, ...`).
+ * Au-delà de l'Île 4, les multiplicateurs continuent de croître de façon procédurale (`+35%` stats / île, `+4%` mutation / île).
+ *
+ * @param {number} [islandNumber=1] - Numéro de l'île (`1+`).
+ * @returns {{
+ *   islandNumber: number,
+ *   name: string,
+ *   subtitle: string,
+ *   enemyStatMultiplier: number,
+ *   mutationRateBonus: number,
+ *   initialMutantCount: number,
+ *   sharkLandingTimeSec: number,
+ *   moleEruptionTimeSec: number,
+ *   skyTintHex: number
+ * }} Spécification complète du palier d'île.
+ */
+export function getIslandTierSpec(islandNumber = 1) {
+  const safeNum = Math.max(1, Math.floor(Number(islandNumber) || 1));
+  const preset = ISLAND_TIERS_CONFIG.find((t) => t.islandNumber === safeNum);
+  if (preset) {
+    return { ...preset };
+  }
+  const extraTiers = safeNum - 1;
+  return {
+    islandNumber: safeNum,
+    name: `Île ${safeNum} : Archipel Abyssal Primordial #${safeNum}`,
+    subtitle: `Écosystème Hyper-Mutagène (Difficulté ×${(1 + extraTiers * 0.35).toFixed(2)})`,
+    enemyStatMultiplier: Number((1.0 + extraTiers * 0.35).toFixed(2)),
+    mutationRateBonus: Number(Math.min(0.32, extraTiers * 0.04).toFixed(3)),
+    initialMutantCount: Math.min(12, 1 + extraTiers * 2),
+    sharkLandingTimeSec: Math.max(10, 40 - extraTiers * 6),
+    moleEruptionTimeSec: Math.max(14, 65 - extraTiers * 10),
+    skyTintHex: 0xff5252,
+  };
+}
+
 export default {
   BASTION_BUILDINGS_CATALOG,
   BASTION_BUILDINGS_BY_ID,
@@ -721,5 +830,11 @@ export default {
   SCOUT_MISSIONS_CATALOG,
   SCOUT_MISSIONS_BY_ID,
   getScoutMissionSpec,
+  ELEMENTAL_WEAPONS_CATALOG,
+  ELEMENTAL_WEAPONS_BY_ID,
+  getElementalWeaponSpec,
+  RELIC_FRAGMENTS_SPEC,
+  ISLAND_TIERS_CONFIG,
+  getIslandTierSpec,
   DynamicQuestSystem,
 };

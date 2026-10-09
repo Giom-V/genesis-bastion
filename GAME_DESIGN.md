@@ -276,3 +276,31 @@ Définis dans [`src/config.js`](file:///usr/local/google/home/giom/.gemini/jetsk
      - **Frénésie de Famine des Carnivores** : Privés de proies naturelles, tous les carnivores sauvages entrent en famine et convergent vers le Bastion.
      - **Réintroduction au Bio-Laboratoire (`25 🌿 Biomasse`)** : Seul le bouton **`🌿 Réintroduire Gibier (25 Biomasse)`** permet de repeupler `3 Biches + 4 Lapins` pour restaurer l'équilibre trophique.
 
+---
+
+## 13. Artefacts RPG : 4 Armes Élémentaires Légendaires, 3 Fragments de Relique & Dôme-Bouclier d'Île
+
+Définis dans [`src/config.js`](file:///usr/local/google/home/giom/.gemini/jetski/scratch/genesis-bastion/src/config.js) (`ELEMENTAL_WEAPONS`, `RELIC_FRAGMENTS`, `ISLAND_TIERS`) et [`src/ecosystem/BaseAndQuestsDesign.js`](file:///usr/local/google/home/giom/.gemini/jetski/scratch/genesis-bastion/src/ecosystem/BaseAndQuestsDesign.js) (`ELEMENTAL_WEAPONS_CATALOG`, `RELIC_FRAGMENTS_SPEC`, `ISLAND_TIERS_CONFIG`, `getIslandTierSpec`), le système de méta-progression RPG offre un objectif de victoire clair par île tout en personnalisant profondément le style de combat du Héros :
+
+### 13.1. Les 4 Armes Élémentaires Légendaires (`ELEMENTAL_WEAPONS_CATALOG`)
+En explorant les **Autels d'Armes Élémentaires (`[E]`)** disséminés sur l'île ou en ouvrant l'**Armurerie des Artefacts (`[K]`)**, le joueur peut choisir et changer à tout moment d'arme élémentaire (recolorant dynamiquement la lame 3D et l'arc de fente du Héros) :
+
+| Arme (`id`) | Élément & Autel 3D | Effets à l'Impact & Passif | Cibles Privilégiées & Synergie Écologique |
+| :--- | :--- | :--- | :--- |
+| **🔥 Lame Solaire d'Ignis** (`fire_greatsword`) | **Feu** `(34, -28)` | **`+35%` Dégâts de Fente**, inflige **Brûlure Solaire (`14 DPS` / `4s`)** et déclenche une **détonation AoE (`36` dég., `6.5m`)** à la mort de la cible. | **`+45%` dégâts** contre les **Bêtes Sauvages (`wolf`/`lion`)** et les **Taupes Géantes (`giant_mole`)**. |
+| **❄️ Espadon Givré de Borée** (`ice_greatsword`) | **Glace** `(-36, -26)` | **`+25%` Portée de Fente**, inflige **Givre Profond (`-55%` vitesse / `4s`)** et **brise l'armure `osteo_plating`**. | **`+50%` dégâts** contre les **Mutants Pyro (`pyro_gland`)** et les **Requins Marcheurs (`shark`)**. |
+| **⚡ Glaive Foudroyant d'Aether** (`lightning_greatsword`) | **Foudre** `(38, 26)` | **`+25%` Vitesse d'Attaque**, **`+15%` Vitesse de Course**, et chaque coup projette un **Éclair en Chaîne sur 3 ennemis (`22` dég.)**. | **`+40%` dégâts** contre les **Peaux-Vertes (`goblin`/`orc`)** et les créatures amphibies. |
+| **🧪 Faux d'Émeraude Symbiotique** (`venom_greatsword`) | **Venin / Biomasse** `(-34, 30)` | Inflige **Venin Corrosif (`12 DPS`, `-30%` attaque ennemie)**, **`18%` Vol de Vie**, et récolte **`+2 🌿 Biomasse` par kill**. | **🌿 Immunité du Gibier** : **épargne automatiquement les Biches et Lapins (`0` dégât collatéral à l'épée et aux sorts !)**. |
+
+### 13.2. Les 3 Fragments de Relique d'Éden, le Dôme-Bouclier Planétaire (`[V]`) & Progression d'Île en Île
+1. **Collecte des 3 Monolithes de Relique (`🧩 Reliques : 0/3 → 3/3`)** :
+   - Trois monolithes runiques anciens s'élèvent à `~60–75m` du Bastion : **Fragment d'Aube (Nord `(4, -64)`)**, **Fragment des Brisants (Sud-Est `(58, 42)`)** et **Fragment de Caldeira (Sud-Ouest `(-56, 44)`)**.
+   - Les Éclaireurs les repèrent sur la Minimap ; s'en approcher et appuyer sur **`[E]`** récupère le fragment (`+50 XP`, `+15 Cristal`).
+2. **Activation du Dôme-Bouclier d'Éden (`[V]` à `3/3` Reliques)** :
+   - Déploie un **dôme énergétique runique 3D géant (`rayon 115m`)** au-dessus de toute l'île (`spawnIslandShieldDome`), purifiant les monstres hostiles et rendant le Bastion invulnérable (`🛡️ ZONE VALIDÉE`) !
+3. **Transition vers l'Île Suivante (`⛵ CAP SUR L'ÎLE SUIVANTE`)** :
+   - Le Héros conserve son Niveau, ses Sorts 3D, ses Maîtrises Adaptatives et son **Arme Élémentaire Légendaire**, et accoste sur une nouvelle île plus redoutable :
+     - **Île 1 — Archipel d'Émeraude** : Stats `×1.00`, Mutation de base `8%`, Débarquement Requins `40s` / Taupes `65s`.
+     - **Île 2 — Caldeira des Abysses** : Stats `×1.35`, Mutation `12%` (`3` mutants initiaux), Requins `24s` / Taupes `38s`.
+     - **Île 3 — Terres Mutantes d'Obsidienne** : Stats `×1.75`, Mutation `16%` (`5` mutants initiaux), Requins `16s` / Taupes `26s`.
+     - **Île 4+ — Sanctuaire Draconique Primordial** : Stats `×2.20+`, Mutation `20%+` (`7+` mutants initiaux), Requins `12s` / Taupes `18s`.
