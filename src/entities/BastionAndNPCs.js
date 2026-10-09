@@ -1,11 +1,27 @@
 /**
- * @fileoverview Central Bastion Sanctuary, Buildable Structures, Prisoner Cage Rescues,
- * and Allied NPC AI — featuring the **Scout (Éclaireur)** Deep-Wilderness Expedition,
- * Evasion Steering, and Mutant/Hybrid Patient Zero Discovery System.
+ * @fileoverview Central Bastion Sanctuary, 5 Interactive 3D Building Pads (Levels 0 -> 3),
+ * Prisoner Cage Rescues, Assignable Scout Missions (`track_lineage`, `find_cages`,
+ * `scout_volcano`, `perimeter_alert`), and Allied NPC AI for **Genesis Bastion**.
  *
- * Usage:
- *   const bastionAndNpcs = new BastionAndNPCs(scene, terrain, vfx, ecoSim);
- *   bastionAndNpcs.update(dt, elapsedTime, enemyManager, player, onScoutDiscovery);
+ * Key Phase 4 Features:
+ * 1. **5 Upgradable 3D Bastion Buildings on Physical Pads (`[E]` in 3D or `[H]` HUD Modal)**:
+ *    - `sanctuary_hearth` (`(0, 0)`, Lv 1 -> 3): Bastion Max HP, Hero hearth healing (`15 -> 45 HP/s`),
+ *      movement speed aura, and Lv 3 solar burn aura (`12 DPS`).
+ *    - `watchtower` (`(8.5, -7.5)`, Lv 0 -> 3): Auto-firing turret scaling from Archer Tower (Lv 1)
+ *      to Double Cryo-Ballista with 35% Slow (Lv 2) to Pyrophage Anti-Mutant Spire with 2x mutant damage (Lv 3).
+ *    - `scout_guild` (`(-8.5, -7.5)`, Lv 0 -> 3): Boosts Scout vision (`+30%..+95%`) & speed (`+25%..+70%`),
+ *      spawns a bonus Scout on Lv 1, deploys Slowing Beacons on Patient Zeroes at Lv 2, and auto-spots
+ *      newborn mutants at Lv 3.
+ *    - `lumber_forge` (alias `palisade`, `(8.5, 7.5)`, Lv 0 -> 3): Generates passive Wood/Crystal/Biomass
+ *      every `5s` (boosted by Harvesters) and erects spiked perimeter Palisades (`+180..+650 HP`, `10..38` thorns).
+ *    - `biolab` (`(-8.5, 7.5)`, Lv 0 -> 3): Grants `+15%..+50%` Hero damage vs Mutants/Hybrids, slows
+ *      Mutant Baby maturation across the island (`20%..60%`), and boosts Mutant XP/Biomass rewards at Lv 3.
+ * 2. **Assignable Scout Missions (`setScoutMission(missionType, targetMutationId)`)**:
+ *    - `'track_lineage'`: Scouts hunt down every unspotted carrier (Adult & Baby) of the target mutant
+ *      lineage (`Repérés : X / Y`), lighting up their 3D sky beacons.
+ *    - `'find_cages'`: Scouts locate unrescued Prisoner Cages and light golden 3D beacons on them.
+ *    - `'scout_volcano'`: Deep-wilderness patrol across high-mutagenicity caldera zones.
+ *    - `'perimeter_alert'`: Frontier vigilance patrol around the Bastion perimeter.
  */
 
 import * as THREE from 'three';
@@ -15,6 +31,14 @@ import {
   pickScoutExpeditionWaypoint,
   computeScoutEvasionVector,
 } from '../ecosystem/BalanceAndPacing.js';
+import {
+  BASTION_BUILDINGS_CATALOG,
+  BASTION_BUILDINGS_BY_ID,
+  getBuildingUpgradeSpec,
+  canAffordBuildingUpgrade,
+  SCOUT_MISSIONS_CATALOG,
+  getScoutMissionSpec,
+} from '../ecosystem/BaseAndQuestsDesign.js';
 import { dist2D, clamp, getCardinalLabelFR } from '../utils/math.js';
 import { logger } from '../utils/logger.js';
 
@@ -56,13 +80,15 @@ export class BastionAndNPCs {
     /** @type {number} */
     this.radius = CONFIG.BASTION?.RADIUS || 14;
     /** @type {number} */
-    this.maxHp = CONFIG.BASTION?.MAX_HP || 500;
+    this.baseMaxHp = CONFIG.BASTION?.MAX_HP || 500;
+    /** @type {number} */
+    this.maxHp = this.baseMaxHp;
     /** @type {number} */
     this.hp = CONFIG.BASTION?.INITIAL_HP || 500;
     /** @type {number} */
     this.thornsDamage = 0;
 
-    // Modifiers from structures & roguelike upgrades
+    // Modifiers from buildings & roguelike upgrades
     /** @type {number} */
     this.scoutVisionBonus = 0;
     /** @type {number} */
@@ -70,14 +96,53 @@ export class BastionAndNPCs {
     /** @type {number} */
     this.scoutSpeedMultiplier = 1.0;
     /** @type {number} */
+    this.guildVisionMult = 1.0;
+    /** @type {number} */
+    this.guildSpeedMult = 1.0;
+    /** @type {number} */
     this.turretDamageMultiplier = 1.0;
+    /** @type {number} Bonus Hero damage vs mutants/hybrids from Bio-Lab (`0.15` -> `0.30` -> `0.50`) */
+    this.heroMutantDamageBonus = 0;
+    /** @type {number} Multiplier (`<= 1.0`) applied to mutant baby aging rate from Bio-Lab (`0.8` -> `0.6` -> `0.4`) */
+    this.mutantMaturationSlowFactor = 1.0;
+    /** @type {number} Bonus XP & Biomass multiplier on mutant kills from Bio-Lab Lv3 */
+    this.bonusMutantXpMult = 1.0;
+    /** @type {boolean} Whether Scouts deploy slowing beacons on spotted Patient Zeroes (Scout Guild Lv2+) */
+    this.slowBeaconOnPatientZero = false;
+    /** @type {number} Slow factor applied by Scout Guild beacon (`0.65` at Lv2, `0.50` at Lv3) */
+    this.slowBeaconFactor = 0.65;
+    /** @type {boolean} Whether newborn mutants are automatically spotted at birth (Scout Guild Lv3) */
+    this.autoSpotNewbornMutants = false;
+    /** @type {number} Hero HP/s regeneration inside Bastion aura (`15` -> `28` -> `45`) */
+    this.heroHealRate = 15;
+    /** @type {number} Bastion sanctuary aura radius (`14` -> `18` -> `22`) */
+    this.passiveAuraRange = 14;
+    /** @type {number} Solar burn DPS inflicted on enemies inside Bastion aura at Sanctuary Hearth Lv3 */
+    this.auraBurnDps = 0;
+    /** @type {number} Timer for passive Lumber Forge 5-second resource production */
+    this.passiveProductionTimer = 0;
+    /** @type {number} Timer for Sanctuary Hearth Lv3 solar burn aura ticks */
+    this.hearthAuraTickTimer = 0;
 
-    /** @type {{ watchtower: number, palisade: number, biolab: number }} */
+    /** @type {boolean} Whether the 7-Act Guided Onboarding tutorial mode is active */
+    this.tutorialMode = Boolean(options?.tutorialMode);
+
+    /**
+     * Building levels (`0..3`) for all 5 Bastion structures + legacy `palisade` alias.
+     * @type {{ sanctuary_hearth: number, watchtower: number, scout_guild: number, lumber_forge: number, palisade: number, biolab: number }}
+     */
     this.structures = {
-      watchtower: 1,
+      sanctuary_hearth: 1,
+      watchtower: this.tutorialMode ? 0 : 1,
+      scout_guild: 0,
+      lumber_forge: 0,
       palisade: 0,
       biolab: 0,
     };
+
+    /** @type {Map<string, { id: string, x: number, z: number, y: number, group: THREE.Group|null, ringMesh: THREE.Mesh|null, modelGroup: THREE.Group|null }>} */
+    this.buildingPads = new Map();
+
     /** @type {Array<Object>} Active watchtower turrets */
     this.watchtowers = [];
     /** @type {Array<THREE.Object3D>} 3D meshes for watchtowers */
@@ -97,17 +162,23 @@ export class BastionAndNPCs {
     /** @type {number} */
     this.rescuedCount = 0;
 
-    /** @type {boolean} Whether the 7-Act Guided Onboarding tutorial mode is active */
-    this.tutorialMode = Boolean(options?.tutorialMode);
+    /**
+     * Current assignable Scout Mission order (`'track_lineage' | 'find_cages' | 'scout_volcano' | 'perimeter_alert'`).
+     * Defaults to tracking `'pyro_gland'` (Fire Trolls / Glande Pyroclastique).
+     * @type {Object}
+     */
+    this.activeScoutMission = getScoutMissionSpec('track_lineage', 'pyro_gland');
 
     /** @type {Function|null} Optional callback when a Scout discovers a mutant/hybrid */
     this.onScoutDiscovery = null;
-    /** @type {Function|null} Optional callback `(type, level)` when a structure is built */
+    /** @type {Function|null} Optional callback `(type, level, spec)` when a structure is built/upgraded */
     this.onStructureBuilt = null;
     /** @type {Function|null} Optional callback `(role, counts)` when an NPC role is assigned/recruited */
     this.onRoleAssigned = null;
     /** @type {Function|null} Optional callback `(npc, cage)` when a cage is rescued */
     this.onCageRescued = null;
+    /** @type {Function|null} Optional callback `(missionSpec)` when Scout Mission order changes */
+    this.onScoutMissionChanged = null;
 
     /** @type {THREE.Group|null} Root 3D group for the Bastion Sanctuary */
     this.bastionGroup = null;
@@ -115,6 +186,7 @@ export class BastionAndNPCs {
     this.campfireFlame = null;
 
     this._buildBastionSanctuary();
+    this._recomputeBuildingStats();
 
     if (this.tutorialMode) {
       this.setTutorialMode(true);
@@ -131,7 +203,7 @@ export class BastionAndNPCs {
    * Enables or disables the 7-Act Guided Tutorial starting state:
    * - Clears initial NPCs (`0` NPCs at start of Act 1)
    * - Clears initial Prisoner Cages (`0` cages until Act 3 & Act 5)
-   * - Clears the initial Watchtower (`0` watchtowers until the player builds one in Act 4)
+   * - Resets Watchtower to Level 0 (`Chantier Vierge`) until the player builds one in Act 4
    *
    * @param {boolean} [enabled=true]
    */
@@ -141,14 +213,15 @@ export class BastionAndNPCs {
       this.clearAllNpcs();
       this.clearAllCages();
       this.watchtowers = [];
+      this.structures.sanctuary_hearth = 1;
       this.structures.watchtower = 0;
-      if (this.bastionGroup && this.watchtowerMeshes.length > 0) {
-        for (const m of this.watchtowerMeshes) {
-          this.bastionGroup.remove(m);
-        }
-      }
-      this.watchtowerMeshes = [];
+      this.structures.scout_guild = 0;
+      this.structures.lumber_forge = 0;
+      this.structures.palisade = 0;
+      this.structures.biolab = 0;
       this.rescuedCount = 0;
+      this._recomputeBuildingStats();
+      this._refreshAllBuildingPadMeshes();
     }
   }
 
@@ -179,10 +252,13 @@ export class BastionAndNPCs {
   }
 
   /**
-   * Removes all Prisoner Cages and their 3D meshes from the scene.
+   * Removes all Prisoner Cages and their 3D meshes/beacons from the scene.
    */
   clearAllCages() {
     for (const cage of this.cages) {
+      if (this.vfx && typeof this.vfx.setCageBeacon === 'function') {
+        this.vfx.setCageBeacon(cage.id, null, false);
+      }
       if (cage.mesh && this.scene) {
         this.scene.remove(cage.mesh);
       }
@@ -191,12 +267,34 @@ export class BastionAndNPCs {
   }
 
   /**
-   * Builds the central 3D Bastion Sanctuary at `(0, 0)` with stone hearth, animated campfire,
-   * initial wooden watchtower, banner flags, and glowing defensive perimeter ring.
+   * Builds the central 3D Bastion Sanctuary at `(0, 0)` along with the **5 Interactive 3D Building Pads**:
+   * - `sanctuary_hearth` at `(0, 0)`
+   * - `watchtower` at `(8.5, -7.5)`
+   * - `scout_guild` at `(-8.5, -7.5)`
+   * - `lumber_forge` at `(8.5, 7.5)`
+   * - `biolab` at `(-8.5, 7.5)`
    */
   _buildBastionSanctuary() {
     const centerY = this.terrain ? this.terrain.getHeightAt(0, 0) : 2.2;
-    this.watchtowers.push({ x: -8.5, y: centerY, z: -7.5, cooldown: 0 });
+    if (this.structures.watchtower >= 1) {
+      this.watchtowers.push({ x: 8.5, y: centerY, z: -7.5, cooldown: 0 });
+    }
+
+    // Register all 5 building pad coordinates even in headless mode
+    for (const bDef of BASTION_BUILDINGS_CATALOG) {
+      const px = bDef.padPos.x;
+      const pz = bDef.padPos.z;
+      const py = this.terrain ? this.terrain.getHeightAt(px, pz) : centerY;
+      this.buildingPads.set(bDef.id, {
+        id: bDef.id,
+        x: px,
+        z: pz,
+        y: py,
+        group: null,
+        ringMesh: null,
+        modelGroup: null,
+      });
+    }
 
     if (!this.scene) return;
 
@@ -228,7 +326,7 @@ export class BastionAndNPCs {
       roughness: 0.2,
     });
 
-    // 1. Stone Sanctuary Plinth & Hearth Ring
+    // 1. Stone Sanctuary Plinth & Hearth Ring at (0, 0)
     const plinth = new THREE.Mesh(new THREE.CylinderGeometry(4.2, 4.8, 0.45, 16), stoneMat);
     plinth.position.y = 0.22;
     plinth.receiveShadow = true;
@@ -267,10 +365,7 @@ export class BastionAndNPCs {
       this.bastionGroup.add(pole);
     }
 
-    // 4. Initial Watchtower Mesh at (-8.5, -7.5)
-    this._addWatchtowerMesh(-8.5, -7.5);
-
-    // 5. Defensive Sanctuary Perimeter Ring
+    // 4. Defensive Sanctuary Perimeter Ring
     const ringGeo = new THREE.RingGeometry(this.radius - 0.25, this.radius, 48);
     ringGeo.rotateX(-Math.PI / 2);
     const perimeterRing = new THREE.Mesh(
@@ -284,44 +379,642 @@ export class BastionAndNPCs {
     );
     perimeterRing.position.y = 0.12;
     this.bastionGroup.add(perimeterRing);
+
+    // 5. Create 3D Building Pad Groups for all 5 buildings
+    for (const bDef of BASTION_BUILDINGS_CATALOG) {
+      const padEntry = this.buildingPads.get(bDef.id);
+      if (!padEntry) continue;
+
+      const padGroup = new THREE.Group();
+      padGroup.name = `Pad_${bDef.id}`;
+      const relY = padEntry.y - centerY;
+      padGroup.position.set(bDef.padPos.x, relY, bDef.padPos.z);
+
+      // Foundation stone disc for non-center pads
+      if (bDef.id !== 'sanctuary_hearth') {
+        const foundation = new THREE.Mesh(
+          new THREE.CylinderGeometry(2.55, 2.85, 0.28, 12),
+          stoneMat
+        );
+        foundation.position.y = 0.14;
+        foundation.receiveShadow = true;
+        padGroup.add(foundation);
+      }
+
+      // Glowing interactive construction / upgrade ring on the ground
+      const padRingRadius = bDef.id === 'sanctuary_hearth' ? 3.6 : 2.75;
+      const padRingGeo = new THREE.RingGeometry(padRingRadius - 0.22, padRingRadius, 32);
+      padRingGeo.rotateX(-Math.PI / 2);
+      const padRingMat = new THREE.MeshBasicMaterial({
+        color: bDef.colorHex || 0xe6a145,
+        side: THREE.DoubleSide,
+        transparent: true,
+        opacity: 0.58,
+      });
+      const ringMesh = new THREE.Mesh(padRingGeo, padRingMat);
+      ringMesh.position.y = 0.3;
+      padGroup.add(ringMesh);
+
+      const modelGroup = new THREE.Group();
+      padGroup.add(modelGroup);
+
+      this.bastionGroup.add(padGroup);
+      padEntry.group = padGroup;
+      padEntry.ringMesh = ringMesh;
+      padEntry.modelGroup = modelGroup;
+    }
+
+    this._refreshAllBuildingPadMeshes();
   }
 
   /**
-   * Adds a 3D wooden Watchtower with glowing crystal ballista top to the Bastion.
+   * Rebuilds the 3D meshes on all 5 Bastion building pads to match their current level (`0..3`).
    */
-  _addWatchtowerMesh(rx, rz) {
+  _refreshAllBuildingPadMeshes() {
     if (!this.bastionGroup) return;
-    const tower = new THREE.Group();
-    tower.position.set(rx, 0, rz);
+    this.watchtowerMeshes = [];
+    for (const bDef of BASTION_BUILDINGS_CATALOG) {
+      this._rebuildSingleBuildingPadMesh(bDef.id);
+    }
+  }
+
+  /**
+   * Rebuilds the 3D architectural model for a single Bastion building pad at its current level (`0..3`).
+   * @param {string} buildingId
+   */
+  _rebuildSingleBuildingPadMesh(buildingId) {
+    const padEntry = this.buildingPads.get(buildingId);
+    if (!padEntry || !padEntry.modelGroup) return;
+
+    const modelGroup = padEntry.modelGroup;
+    while (modelGroup.children.length > 0) {
+      modelGroup.remove(modelGroup.children[0]);
+    }
+
+    const level = this.getBuildingLevel(buildingId);
+    const bDef = BASTION_BUILDINGS_BY_ID[buildingId];
+    if (padEntry.ringMesh) {
+      padEntry.ringMesh.visible = level < (bDef?.maxLevel || 3);
+    }
 
     const woodMat = new THREE.MeshStandardMaterial({ color: 0x5c3a21, roughness: 0.75 });
-    const roofMat = new THREE.MeshStandardMaterial({ color: 0x2b3d4f, roughness: 0.6 });
-    const crystalMat = new THREE.MeshStandardMaterial({
-      color: 0x48dbfb,
-      emissive: 0x0abde3,
-      emissiveIntensity: 1.5,
+    const stoneMat = new THREE.MeshStandardMaterial({ color: 0x4a5568, roughness: 0.7 });
+    const goldMat = new THREE.MeshStandardMaterial({
+      color: 0xffd166,
+      emissive: 0xe6a145,
+      emissiveIntensity: 0.75,
+      roughness: 0.25,
+      metalness: 0.75,
     });
 
-    const base = new THREE.Mesh(new THREE.BoxGeometry(2.1, 4.2, 2.1), woodMat);
-    base.position.y = 2.1;
-    base.castShadow = true;
-    base.receiveShadow = true;
+    // Level 0: Unbuilt Construction Site Stakes & Glowing Blueprint Beacon
+    if (level === 0) {
+      for (let i = 0; i < 4; i++) {
+        const a = (i / 4) * Math.PI * 2 + Math.PI * 0.25;
+        const stake = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.1, 1.1, 6), woodMat);
+        stake.position.set(Math.cos(a) * 1.7, 0.65, Math.sin(a) * 1.7);
+        modelGroup.add(stake);
+      }
+      const holoOrb = new THREE.Mesh(
+        new THREE.OctahedronGeometry(0.38, 0),
+        new THREE.MeshStandardMaterial({
+          color: bDef?.colorHex || 0xffd166,
+          emissive: bDef?.colorHex || 0xffd166,
+          emissiveIntensity: 1.4,
+          wireframe: true,
+        })
+      );
+      holoOrb.position.y = 1.35;
+      modelGroup.userData.floatingCrystal = holoOrb;
+      modelGroup.add(holoOrb);
+      return;
+    }
 
-    const platform = new THREE.Mesh(new THREE.BoxGeometry(2.7, 0.4, 2.7), woodMat);
-    platform.position.y = 4.3;
-    platform.castShadow = true;
+    if (buildingId === 'sanctuary_hearth') {
+      if (level >= 2) {
+        // Level 2: 4 Amber Runic Obelisks around the central hearth
+        for (let i = 0; i < 4; i++) {
+          const a = (i / 4) * Math.PI * 2 + Math.PI * 0.25;
+          const obelisk = new THREE.Mesh(new THREE.BoxGeometry(0.45, 2.6, 0.45), goldMat);
+          obelisk.position.set(Math.cos(a) * 3.2, 1.3, Math.sin(a) * 3.2);
+          obelisk.castShadow = true;
+          modelGroup.add(obelisk);
+        }
+      }
+      if (level >= 3) {
+        // Level 3: Floating Solar Crown Ring above the hearth
+        const crown = new THREE.Mesh(new THREE.TorusGeometry(2.4, 0.14, 10, 32), goldMat);
+        crown.rotation.x = Math.PI / 2;
+        crown.position.y = 3.6;
+        modelGroup.userData.floatingCrystal = crown;
+        modelGroup.add(crown);
+      }
+      return;
+    }
 
-    const roof = new THREE.Mesh(new THREE.ConeGeometry(2.1, 1.8, 4), roofMat);
-    roof.position.y = 6.1;
-    roof.rotation.y = Math.PI * 0.25;
-    roof.castShadow = true;
+    if (buildingId === 'watchtower') {
+      const roofMat = new THREE.MeshStandardMaterial({
+        color: level >= 3 ? 0x8b1e1e : 0x2b3d4f,
+        roughness: 0.55,
+      });
+      const crystalColor = level >= 3 ? 0xff4500 : level === 2 ? 0x00e5ff : 0x48dbfb;
+      const crystalMat = new THREE.MeshStandardMaterial({
+        color: crystalColor,
+        emissive: crystalColor,
+        emissiveIntensity: 1.7,
+      });
 
-    const beacon = new THREE.Mesh(new THREE.OctahedronGeometry(0.35, 0), crystalMat);
-    beacon.position.y = 4.95;
+      const heightScale = 1 + (level - 1) * 0.22;
+      const base = new THREE.Mesh(
+        new THREE.BoxGeometry(2.1, 4.2 * heightScale, 2.1),
+        level >= 2 ? stoneMat : woodMat
+      );
+      base.position.y = 2.1 * heightScale;
+      base.castShadow = true;
+      base.receiveShadow = true;
 
-    tower.add(base, platform, roof, beacon);
-    this.bastionGroup.add(tower);
-    this.watchtowerMeshes.push(tower);
+      const platform = new THREE.Mesh(new THREE.BoxGeometry(2.8, 0.45, 2.8), woodMat);
+      platform.position.y = 4.3 * heightScale;
+      platform.castShadow = true;
+
+      const roof = new THREE.Mesh(new THREE.ConeGeometry(2.2, 1.9, 4), roofMat);
+      roof.position.y = 4.3 * heightScale + 1.85;
+      roof.rotation.y = Math.PI * 0.25;
+      roof.castShadow = true;
+
+      const beacon = new THREE.Mesh(
+        new THREE.OctahedronGeometry(0.38 + level * 0.08, 0),
+        crystalMat
+      );
+      beacon.position.y = 4.3 * heightScale + 0.65;
+      modelGroup.userData.floatingCrystal = beacon;
+
+      modelGroup.add(base, platform, roof, beacon);
+
+      if (level >= 2) {
+        // Twin Ballista Arms
+        const arm = new THREE.Mesh(new THREE.BoxGeometry(3.4, 0.22, 0.28), goldMat);
+        arm.position.y = 4.3 * heightScale + 0.35;
+        modelGroup.add(arm);
+      }
+      if (level >= 3) {
+        // Pyrophage Halo Ring
+        const halo = new THREE.Mesh(new THREE.TorusGeometry(1.45, 0.1, 8, 24), crystalMat);
+        halo.rotation.x = Math.PI / 2;
+        halo.position.y = 4.3 * heightScale + 0.65;
+        modelGroup.add(halo);
+      }
+      this.watchtowerMeshes.push(modelGroup);
+      return;
+    }
+
+    if (buildingId === 'scout_guild') {
+      const azureMat = new THREE.MeshStandardMaterial({
+        color: 0x1e90ff,
+        emissive: 0x0984e3,
+        emissiveIntensity: 1.3,
+      });
+      // Command Pavilion Pillars & Map Table
+      const table = new THREE.Mesh(new THREE.CylinderGeometry(1.1, 0.9, 1.0, 8), woodMat);
+      table.position.y = 0.6;
+      modelGroup.add(table);
+
+      for (let i = 0; i < 4; i++) {
+        const a = (i / 4) * Math.PI * 2 + Math.PI * 0.25;
+        const pillar = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.16, 3.2, 6), woodMat);
+        pillar.position.set(Math.cos(a) * 1.75, 1.7, Math.sin(a) * 1.75);
+        pillar.castShadow = true;
+        modelGroup.add(pillar);
+      }
+
+      const canopy = new THREE.Mesh(new THREE.ConeGeometry(2.5, 1.4, 4), azureMat);
+      canopy.position.y = 3.8;
+      canopy.rotation.y = Math.PI * 0.25;
+      modelGroup.add(canopy);
+
+      if (level >= 2) {
+        // Observatory Telescope & Signal Beacon
+        const scope = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.26, 1.8, 8), goldMat);
+        scope.position.set(0, 4.6, 0);
+        scope.rotation.z = 0.55;
+        modelGroup.add(scope);
+      }
+      if (level >= 3) {
+        // Omniscient Astrolabe Ring
+        const ring = new THREE.Mesh(new THREE.TorusGeometry(1.35, 0.1, 8, 24), azureMat);
+        ring.position.y = 5.1;
+        modelGroup.userData.floatingCrystal = ring;
+        modelGroup.add(ring);
+      }
+      return;
+    }
+
+    if (buildingId === 'lumber_forge') {
+      const emeraldMat = new THREE.MeshStandardMaterial({
+        color: 0x38c172,
+        emissive: 0x10ac84,
+        emissiveIntensity: 1.2,
+      });
+      // Sawmill & Forge Furnace on Pad
+      const furnace = new THREE.Mesh(new THREE.BoxGeometry(2.0, 2.2 + level * 0.4, 2.0), stoneMat);
+      furnace.position.y = 1.2 + level * 0.2;
+      furnace.castShadow = true;
+      modelGroup.add(furnace);
+
+      const coreCrystal = new THREE.Mesh(new THREE.OctahedronGeometry(0.45, 0), emeraldMat);
+      coreCrystal.position.y = 2.8 + level * 0.4;
+      modelGroup.userData.floatingCrystal = coreCrystal;
+      modelGroup.add(coreCrystal);
+
+      // Perimeter Spiked Palisade stakes around the Bastion ring
+      const stakeCount = 14 + level * 6;
+      for (let i = 0; i < stakeCount; i++) {
+        const a = (i / stakeCount) * Math.PI * 2;
+        const wx = Math.cos(a) * (this.radius - 0.7) - padEntry.x;
+        const wz = Math.sin(a) * (this.radius - 0.7) - padEntry.z;
+        const stake = new THREE.Mesh(
+          new THREE.ConeGeometry(0.28 + level * 0.05, 1.9 + level * 0.35, 5),
+          level >= 2 ? stoneMat : woodMat
+        );
+        stake.position.set(wx, 0.95 + level * 0.15, wz);
+        stake.castShadow = true;
+        modelGroup.add(stake);
+      }
+      return;
+    }
+
+    if (buildingId === 'biolab') {
+      const bioMat = new THREE.MeshStandardMaterial({
+        color: 0x00d2d3,
+        emissive: 0x01a3a4,
+        emissiveIntensity: 1.35,
+        transparent: true,
+        opacity: 0.82,
+      });
+      const base = new THREE.Mesh(new THREE.CylinderGeometry(1.65, 1.9, 1.2, 12), stoneMat);
+      base.position.y = 0.65;
+      const dome = new THREE.Mesh(
+        new THREE.SphereGeometry(1.45 + (level - 1) * 0.2, 14, 12),
+        bioMat
+      );
+      dome.position.y = 1.65;
+      modelGroup.add(base, dome);
+
+      const dnaCrystal = new THREE.Mesh(new THREE.OctahedronGeometry(0.42, 0), goldMat);
+      dnaCrystal.position.y = 3.4 + level * 0.25;
+      modelGroup.userData.floatingCrystal = dnaCrystal;
+      modelGroup.add(dnaCrystal);
+    }
+  }
+
+  /**
+   * Recomputes all Bastion & Hero mechanical bonuses from the current levels (`0..3`) of all 5 buildings.
+   */
+  _recomputeBuildingStats() {
+    // 1. Sanctuary Hearth (Lv 1..3)
+    const hearthSpec = getBuildingUpgradeSpec('sanctuary_hearth', this.structures.sanctuary_hearth || 1);
+    const hearthStats = hearthSpec.statsAtCurrent || {
+      bastionMaxHp: 500,
+      heroHealRate: 15,
+      passiveAuraRange: 14,
+      auraBurnDps: 0,
+    };
+
+    // 2. Lumber Forge / Palisade (Lv 0..3)
+    const forgeLvl = Math.max(this.structures.lumber_forge || 0, this.structures.palisade || 0);
+    this.structures.lumber_forge = forgeLvl;
+    this.structures.palisade = forgeLvl;
+    const forgeSpec = getBuildingUpgradeSpec('lumber_forge', forgeLvl);
+    const forgeStats = forgeSpec.statsAtCurrent || {
+      hpBonus: 0,
+      thornsDamage: 0,
+      woodPer5Sec: 0,
+      crystalPer5Sec: 0,
+      biomassPer5Sec: 0,
+    };
+
+    const prevMaxHp = this.maxHp || 500;
+    this.maxHp = (hearthStats.bastionMaxHp || 500) + (forgeStats.hpBonus || 0);
+    if (this.maxHp > prevMaxHp) {
+      this.hp = Math.min(this.maxHp, this.hp + (this.maxHp - prevMaxHp));
+    }
+    this.thornsDamage = forgeStats.thornsDamage || 0;
+    this.heroHealRate = hearthStats.heroHealRate || 15;
+    this.passiveAuraRange = hearthStats.passiveAuraRange || hearthStats.passiveauraRange || 14;
+    this.auraBurnDps = hearthStats.auraBurnDps || 0;
+
+    // 3. Scout Guild (Lv 0..3)
+    const guildSpec = getBuildingUpgradeSpec('scout_guild', this.structures.scout_guild || 0);
+    const guildStats = guildSpec.statsAtCurrent || {
+      visionMult: 1.0,
+      speedMult: 1.0,
+      slowBeaconOnPatientZero: false,
+      slowBeaconFactor: 0.65,
+      autoSpotNewbornMutants: false,
+    };
+    this.guildVisionMult = guildStats.visionMult || 1.0;
+    this.guildSpeedMult = guildStats.speedMult || 1.0;
+    this.slowBeaconOnPatientZero = Boolean(guildStats.slowBeaconOnPatientZero);
+    this.slowBeaconFactor = guildStats.slowBeaconFactor || 0.65;
+    this.autoSpotNewbornMutants = Boolean(guildStats.autoSpotNewbornMutants);
+
+    // 4. Bio-Lab (Lv 0..3)
+    const biolabSpec = getBuildingUpgradeSpec('biolab', this.structures.biolab || 0);
+    const biolabStats = biolabSpec.statsAtCurrent || {
+      heroMutantDamageBonus: 0,
+      babyMaturationSlowMult: 1.0,
+      scoutVisionBonus: 0,
+      bonusMutantXpMult: 1.0,
+    };
+    this.heroMutantDamageBonus = biolabStats.heroMutantDamageBonus || 0;
+    this.scoutVisionBonus = biolabStats.scoutVisionBonus || 0;
+    const slowMult = biolabStats.babyMaturationSlowMult || 1.0;
+    this.mutantMaturationSlowFactor = Number((1 / Math.max(1.0, slowMult)).toFixed(3));
+    this.bonusMutantXpMult = biolabStats.bonusMutantXpMult || 1.0;
+
+    // 5. Watchtower (Lv 0..3)
+    const towerLvl = this.structures.watchtower || 0;
+    const centerY = this.terrain ? this.terrain.getHeightAt(8.5, -7.5) : 2.2;
+    if (towerLvl > 0 && this.watchtowers.length === 0) {
+      this.watchtowers.push({ x: 8.5, y: centerY, z: -7.5, cooldown: 0 });
+    } else if (towerLvl === 0) {
+      this.watchtowers = [];
+    }
+  }
+
+  /**
+   * Returns the current level (`0..3`) of a Bastion building.
+   * @param {string} buildingId
+   * @returns {number}
+   */
+  getBuildingLevel(buildingId) {
+    const def = BASTION_BUILDINGS_BY_ID[buildingId];
+    const canonicalId = def ? def.id : buildingId;
+    if (canonicalId === 'lumber_forge') {
+      return Math.max(this.structures.lumber_forge || 0, this.structures.palisade || 0);
+    }
+    return this.structures[canonicalId] ?? (def?.initialLevel || 0);
+  }
+
+  /**
+   * Returns the full state of all 5 Bastion buildings for the HUD / Architect Modal (`[H]`).
+   * @param {{ wood?: number, crystal?: number, biomass?: number }} [playerResources={}]
+   * @returns {Array<Object>}
+   */
+  getBuildingsState(playerResources = {}) {
+    return BASTION_BUILDINGS_CATALOG.map((bDef) => {
+      const lvl = this.getBuildingLevel(bDef.id);
+      const spec = getBuildingUpgradeSpec(bDef.id, lvl);
+      const canAfford = canAffordBuildingUpgrade(bDef.id, lvl, playerResources);
+      const pad = this.buildingPads.get(bDef.id);
+      return {
+        ...spec,
+        level: lvl,
+        canAfford,
+        x: pad ? pad.x : bDef.padPos.x,
+        z: pad ? pad.z : bDef.padPos.z,
+        y: pad ? pad.y : 2.2,
+      };
+    });
+  }
+
+  /**
+   * Finds the nearest interactive 3D Bastion Building Pad within `maxDist` of `(px, pz)`.
+   *
+   * @param {number} px - Player X coordinate.
+   * @param {number} pz - Player Z coordinate.
+   * @param {number} [maxDist=4.8] - Interaction radius.
+   * @param {Object|null} [playerResources=null] - Player resources to evaluate `canAfford`.
+   * @returns {Object|null} Closest building pad spec or null.
+   */
+  getNearestBuildingPad(px, pz, maxDist = 4.8, playerResources = null) {
+    let bestPad = null;
+    let bestDist = maxDist;
+
+    for (const bDef of BASTION_BUILDINGS_CATALOG) {
+      const pad = this.buildingPads.get(bDef.id);
+      const bx = pad ? pad.x : bDef.padPos.x;
+      const bz = pad ? pad.z : bDef.padPos.z;
+      const d = dist2D(px, pz, bx, bz);
+      const radius = Math.min(maxDist, bDef.interactRadius || 4.5);
+
+      if (d <= radius && d < bestDist) {
+        const lvl = this.getBuildingLevel(bDef.id);
+        const spec = getBuildingUpgradeSpec(bDef.id, lvl);
+        if (spec.isMaxed) continue;
+        bestDist = d;
+        bestPad = {
+          ...spec,
+          x: bx,
+          z: bz,
+          y: pad ? pad.y : 2.2,
+          dist: d,
+          canAfford: playerResources
+            ? canAffordBuildingUpgrade(bDef.id, lvl, playerResources)
+            : true,
+        };
+      }
+    }
+
+    return bestPad;
+  }
+
+  /**
+   * Constructs (Level 0 -> 1) or upgrades (Level 1 -> 2 -> 3) one of the 5 Bastion buildings
+   * (`'watchtower' | 'scout_guild' | 'lumber_forge' | 'palisade' | 'biolab' | 'sanctuary_hearth'`).
+   *
+   * @param {string} type - Building ID.
+   * @param {Object} [playerResources] - Player resource pool (`{ wood, crystal, biomass }`).
+   * @returns {boolean} True if constructed or upgraded.
+   */
+  buildStructure(type, playerResources) {
+    const def = BASTION_BUILDINGS_BY_ID[type];
+    if (!def) return false;
+
+    const canonicalId = def.id;
+    const currentLevel = this.getBuildingLevel(canonicalId);
+    const spec = getBuildingUpgradeSpec(canonicalId, currentLevel);
+
+    if (spec.isMaxed) {
+      logger.info('BASTION', `[${spec.name}] a déjà atteint le Niveau Maximum (${spec.maxLevel}).`);
+      return false;
+    }
+
+    // In Act 4A tutorial mode, allow building the first watchtower with legacy or current cost
+    const cost = spec.cost || { wood: 20, crystal: 10, biomass: 0 };
+    if (playerResources) {
+      const hasEnough =
+        (playerResources.wood || 0) >= cost.wood &&
+        (playerResources.crystal || 0) >= cost.crystal &&
+        (playerResources.biomass || 0) >= cost.biomass;
+
+      if (!hasEnough && !this.tutorialMode) {
+        logger.warn(
+          'BASTION',
+          `Ressources insuffisantes pour [${spec.actionVerb} : ${spec.name}] (Requis : ${spec.costText}).`,
+          { required: cost, current: { ...playerResources } }
+        );
+        return false;
+      }
+      playerResources.wood = Math.max(0, (playerResources.wood || 0) - cost.wood);
+      playerResources.crystal = Math.max(0, (playerResources.crystal || 0) - cost.crystal);
+      playerResources.biomass = Math.max(0, (playerResources.biomass || 0) - cost.biomass);
+    }
+
+    const newLevel = currentLevel + 1;
+    this.structures[canonicalId] = newLevel;
+    if (canonicalId === 'lumber_forge') {
+      this.structures.palisade = newLevel;
+    }
+
+    this._recomputeBuildingStats();
+    this._rebuildSingleBuildingPadMesh(canonicalId);
+
+    // If Scout Guild Lv1 was just built, recruit 1 bonus Scout automatically!
+    if (canonicalId === 'scout_guild' && newLevel === 1) {
+      this.spawnNpc('scout', -6.5, -5.5);
+    }
+
+    // Play 3D construction / upgrade celebration VFX on the building pad
+    const pad = this.buildingPads.get(canonicalId);
+    const padPos = new THREE.Vector3(
+      pad ? pad.x : def.padPos.x,
+      (pad ? pad.y : 2.2) + 1.0,
+      pad ? pad.z : def.padPos.z
+    );
+    if (this.vfx) {
+      if (newLevel === 1 && typeof this.vfx.spawnBuildEffect === 'function') {
+        this.vfx.spawnBuildEffect(padPos, def.colorHex || 0xe6a145);
+      } else if (typeof this.vfx.spawnUpgradeEffect === 'function') {
+        this.vfx.spawnUpgradeEffect(padPos, def.colorHex || 0xffd700);
+      } else if (typeof this.vfx.spawnBirthEffect === 'function') {
+        this.vfx.spawnBirthEffect(padPos, false, true, def.colorHex || 0xe6a145);
+      }
+    }
+
+    const updatedSpec = getBuildingUpgradeSpec(canonicalId, newLevel);
+    logger.info(
+      'BASTION',
+      `🏰 ${newLevel === 1 ? 'Construction achevée' : 'Amélioration achevée'} : ${def.icon} [${def.name}] -> Niv. ${newLevel}/${def.maxLevel} (${updatedSpec.currentTierName}) !`,
+      {
+        buildingId: canonicalId,
+        level: newLevel,
+        effect: updatedSpec.currentEffectDesc,
+        structures: { ...this.structures },
+      }
+    );
+
+    if (typeof this.onStructureBuilt === 'function') {
+      this.onStructureBuilt(canonicalId, newLevel, updatedSpec);
+    }
+    if (canonicalId === 'lumber_forge' && type === 'palisade' && typeof this.onStructureBuilt === 'function') {
+      this.onStructureBuilt('palisade', newLevel, updatedSpec);
+    }
+
+    return true;
+  }
+
+  /**
+   * Alias for `buildStructure(buildingId, playerResources)` to upgrade a Bastion building (`Niv. 0 -> 1 -> 2 -> 3`).
+   * @param {string} buildingId
+   * @param {Object} [playerResources]
+   * @returns {boolean}
+   */
+  upgradeBuilding(buildingId, playerResources) {
+    return this.buildStructure(buildingId, playerResources);
+  }
+
+  /**
+   * Sets the active Scout Mission order (`'track_lineage' | 'find_cages' | 'scout_volcano' | 'perimeter_alert'`)
+   * and immediately redirects all deployed Éclaireurs toward the new mission objective!
+   *
+   * @param {string} [missionType='track_lineage']
+   * @param {string|null} [targetMutationId='pyro_gland']
+   * @returns {Object} Updated `activeScoutMission` specification.
+   */
+  setScoutMission(missionType = 'track_lineage', targetMutationId = 'pyro_gland') {
+    const resolvedMutId =
+      missionType === 'track_lineage'
+        ? targetMutationId || this.activeScoutMission?.targetMutationId || 'pyro_gland'
+        : null;
+
+    this.activeScoutMission = getScoutMissionSpec(missionType, resolvedMutId);
+
+    // Reset scout waypoint timers so they immediately re-orient on the next frame
+    for (const npc of this.npcs) {
+      if (npc.role === 'scout') {
+        npc.waypointTimer = 0;
+      }
+    }
+
+    logger.alert(`🦅 ${this.activeScoutMission.fullTitle} — Vos Éclaireurs se déploient immédiatement !`, {
+      missionType: this.activeScoutMission.type,
+      targetMutationId: this.activeScoutMission.targetMutationId,
+      scoutsCount: this.getScouts().length,
+    });
+
+    if (typeof this.onScoutMissionChanged === 'function') {
+      this.onScoutMissionChanged(this.activeScoutMission);
+    }
+
+    return this.activeScoutMission;
+  }
+
+  /**
+   * Returns the currently active Scout Mission specification.
+   * @returns {Object}
+   */
+  getScoutMission() {
+    return this.activeScoutMission;
+  }
+
+  /**
+   * Computes live tracking progress (`Repérés : X / Y`, babies vs adults) for a target mutant lineage.
+   *
+   * @param {Array<Object>} [enemies=[]] - Array of live enemies from `enemyManager.getEnemies()`.
+   * @param {string|null} [targetMutationId=null] - Mutation ID (defaults to `activeScoutMission.targetMutationId` or `'pyro_gland'`).
+   * @returns {{
+   *   mutationId: string,
+   *   targetLabel: string,
+   *   totalCarriers: number,
+   *   spottedCarriers: number,
+   *   unspottedCarriers: number,
+   *   babyCarriers: number,
+   *   adultCarriers: number,
+   *   allSpotted: boolean,
+   *   carriers: Array<Object>
+   * }}
+   */
+  getLineageTrackingProgress(enemies = [], targetMutationId = null) {
+    const mutId =
+      targetMutationId || this.activeScoutMission?.targetMutationId || 'pyro_gland';
+    const mutDef = CONFIG.MUTATIONS?.[mutId];
+    const targetLabel = mutDef?.shortLabel || mutDef?.name || mutId;
+
+    const safeEnemies = Array.isArray(enemies) ? enemies : [];
+    const carriers = safeEnemies.filter((e) => {
+      if (!e || e.hp <= 0) return false;
+      const muts = Array.isArray(e.genome?.mutations) ? e.genome.mutations : [];
+      return muts.includes(mutId) || e.genome?.speciesId === mutId;
+    });
+
+    const totalCarriers = carriers.length;
+    const spottedCarriers = carriers.filter((e) => e.spottedByScout).length;
+    const unspottedCarriers = Math.max(0, totalCarriers - spottedCarriers);
+    const babyCarriers = carriers.filter((e) => !e.isAdult || e.lifeStage === 'baby').length;
+    const adultCarriers = Math.max(0, totalCarriers - babyCarriers);
+
+    return {
+      mutationId: mutId,
+      targetLabel,
+      totalCarriers,
+      spottedCarriers,
+      unspottedCarriers,
+      babyCarriers,
+      adultCarriers,
+      allSpotted: totalCarriers > 0 && spottedCarriers >= totalCarriers,
+      carriers,
+    };
   }
 
   /**
@@ -386,6 +1079,7 @@ export class BastionAndNPCs {
       y,
       role,
       rescued: false,
+      spottedByScout: false,
       mesh,
     };
     this.cages.push(cage);
@@ -478,11 +1172,10 @@ export class BastionAndNPCs {
     if (counts.scout === 0) {
       this.spawnNpc('scout', 4.0, -3.0);
     }
-    if (this.watchtowers.length === 0) {
-      const centerY = this.terrain ? this.terrain.getHeightAt(0, 0) : 2.2;
-      this.watchtowers.push({ x: -8.5, y: centerY, z: -7.5, cooldown: 0 });
-      this.structures.watchtower = Math.max(1, this.structures.watchtower);
-      this._addWatchtowerMesh(-8.5, -7.5);
+    if ((this.structures.watchtower || 0) === 0) {
+      this.structures.watchtower = 1;
+      this._recomputeBuildingStats();
+      this._rebuildSingleBuildingPadMesh('watchtower');
     }
     const activeUnrescued = this.cages.filter((c) => !c.rescued).length;
     if (activeUnrescued < 4) {
@@ -508,6 +1201,9 @@ export class BastionAndNPCs {
         cage.rescued = true;
         this.rescuedCount++;
 
+        if (this.vfx && typeof this.vfx.setCageBeacon === 'function') {
+          this.vfx.setCageBeacon(cage.id, null, false);
+        }
         if (cage.mesh && this.scene) {
           this.scene.remove(cage.mesh);
         }
@@ -579,6 +1275,7 @@ export class BastionAndNPCs {
       visionRadius: CONFIG.SCOUT?.VISION_RADIUS || 34,
       fleeRadius: CONFIG.SCOUT?.FLEE_RADIUS || 16,
       state: role === 'scout' ? 'expedition' : 'patrol',
+      missionLabel: role === 'scout' ? this.activeScoutMission?.shortLabel || '🔍 Traquer Lignée' : '',
       targetX: x,
       targetZ: z,
       sectorName: 'Nord-Est',
@@ -603,6 +1300,16 @@ export class BastionAndNPCs {
    * distant biomes where mutant lineages emerge.
    */
   _assignNewWildernessWaypoint(scout, enemies = []) {
+    if (this.activeScoutMission?.type === 'perimeter_alert') {
+      const a = Math.random() * Math.PI * 2;
+      const r = 38 + Math.random() * 18;
+      scout.targetX = Math.cos(a) * r;
+      scout.targetZ = Math.sin(a) * r;
+      scout.sectorName = getCardinalLabelFR(scout.targetX, scout.targetZ);
+      scout.waypointTimer = 8 + Math.random() * 5;
+      return;
+    }
+
     const wp = pickScoutExpeditionWaypoint(
       scout,
       this.pos,
@@ -680,7 +1387,8 @@ export class BastionAndNPCs {
     const woodCost = 15;
     const biomassCost = 8;
     if (playerResources) {
-      const hasEnough = (playerResources.wood || 0) >= woodCost && (playerResources.biomass || 0) >= biomassCost;
+      const hasEnough =
+        (playerResources.wood || 0) >= woodCost && (playerResources.biomass || 0) >= biomassCost;
       if (!hasEnough && !this.tutorialMode) {
         logger.warn(
           'BASTION',
@@ -703,109 +1411,6 @@ export class BastionAndNPCs {
       this.onRoleAssigned(role, this.getRoleCounts());
     }
     return npc;
-  }
-
-  /**
-   * Builds a defensive or scientific Bastion structure (`'watchtower' | 'palisade' | 'biolab'`).
-   *
-   * @param {'watchtower'|'palisade'|'biolab'} type - Structure key.
-   * @param {Object} playerResources - Player resource pool (`{ wood, crystal, biomass }`).
-   * @returns {boolean} True if constructed.
-   */
-  buildStructure(type, playerResources) {
-    const structDef = CONFIG.BASTION?.STRUCTURES?.[type];
-    if (!structDef) return false;
-
-    const woodCost = structDef.woodCost || 20;
-    const crystalCost = structDef.crystalCost || 10;
-
-    if (playerResources) {
-      const hasEnough = (playerResources.wood || 0) >= woodCost && (playerResources.crystal || 0) >= crystalCost;
-      if (!hasEnough && !this.tutorialMode) {
-        logger.warn(
-          'BASTION',
-          `Ressources insuffisantes pour bâtir [${structDef.name}] (Requis: ${woodCost} Bois, ${crystalCost} Cristal).`
-        );
-        return false;
-      }
-      playerResources.wood = Math.max(0, (playerResources.wood || 0) - woodCost);
-      playerResources.crystal = Math.max(0, (playerResources.crystal || 0) - crystalCost);
-    }
-
-    this.structures[type] = (this.structures[type] || 0) + 1;
-    const count = this.structures[type];
-    let rx;
-    let rz;
-    if (type === 'watchtower' && this.watchtowers.length === 0) {
-      rx = -8.5;
-      rz = -7.5;
-    } else {
-      const angle = count * 1.65 + (type === 'watchtower' ? 0.5 : type === 'palisade' ? 2.1 : 3.9);
-      rx = Math.cos(angle) * (this.radius - 2.2);
-      rz = Math.sin(angle) * (this.radius - 2.2);
-    }
-    const centerY = this.terrain ? this.terrain.getHeightAt(rx, rz) : 2.2;
-
-    if (type === 'watchtower') {
-      this.watchtowers.push({ x: rx, y: centerY, z: rz, cooldown: 0 });
-      this._addWatchtowerMesh(rx, rz);
-    } else if (type === 'palisade') {
-      this.maxHp += structDef.hpBonus || 180;
-      this.hp = Math.min(this.maxHp, this.hp + (structDef.hpBonus || 180));
-      this.thornsDamage += structDef.thornsDamage || 8;
-      this._addPalisadeMesh();
-    } else if (type === 'biolab') {
-      this.scoutVisionBonus += structDef.scoutVisionBonus || 12;
-      this._addBiolabMesh(rx, rz);
-    }
-
-    logger.info('BASTION', `Construction achevée : [${structDef.name}] (Niveau ${count}) !`, {
-      type,
-      structures: { ...this.structures },
-    });
-    if (typeof this.onStructureBuilt === 'function') {
-      this.onStructureBuilt(type, count);
-    }
-    return true;
-  }
-
-  /**
-   * Adds wooden spiked Palisade walls around the Bastion perimeter.
-   */
-  _addPalisadeMesh() {
-    if (!this.bastionGroup) return;
-    const woodMat = new THREE.MeshStandardMaterial({ color: 0x543822, roughness: 0.8 });
-    const count = 18;
-    for (let i = 0; i < count; i++) {
-      const a = (i / count) * Math.PI * 2 + this.structures.palisade * 0.15;
-      const stake = new THREE.Mesh(new THREE.ConeGeometry(0.32, 2.2, 5), woodMat);
-      stake.position.set(Math.cos(a) * (this.radius - 0.8), 1.0, Math.sin(a) * (this.radius - 0.8));
-      stake.castShadow = true;
-      this.bastionGroup.add(stake);
-    }
-  }
-
-  /**
-   * Adds a glowing arcane Bio-Laboratory dome to the Bastion.
-   */
-  _addBiolabMesh(rx, rz) {
-    if (!this.bastionGroup) return;
-    const labGroup = new THREE.Group();
-    labGroup.position.set(rx, 0, rz);
-    const stoneMat = new THREE.MeshStandardMaterial({ color: 0x3b4d61, roughness: 0.5 });
-    const glassMat = new THREE.MeshStandardMaterial({
-      color: 0x2ed573,
-      emissive: 0x10ac84,
-      emissiveIntensity: 1.2,
-      transparent: true,
-      opacity: 0.78,
-    });
-    const base = new THREE.Mesh(new THREE.CylinderGeometry(1.5, 1.7, 1.2, 10), stoneMat);
-    base.position.y = 0.6;
-    const dome = new THREE.Mesh(new THREE.SphereGeometry(1.35, 12, 10), glassMat);
-    dome.position.y = 1.5;
-    labGroup.add(base, dome);
-    this.bastionGroup.add(labGroup);
   }
 
   /**
@@ -860,6 +1465,10 @@ export class BastionAndNPCs {
   damageNpc(npcId, amount) {
     const npc = this.npcs.find((n) => n.id === npcId);
     if (!npc) return;
+    // Scout Guild Lv3 grants fleeing immunity
+    if (npc.role === 'scout' && (this.structures.scout_guild || 0) >= 3) {
+      return;
+    }
     npc.hp -= amount;
     if (npc.hp <= 0) {
       npc.hp = npc.maxHp;
@@ -868,13 +1477,17 @@ export class BastionAndNPCs {
       if (npc.role === 'scout') {
         this._assignNewWildernessWaypoint(npc, []);
       }
-      logger.info('BASTION', `${npc.name} (${this._roleLabelFR(npc.role)}) s'est replié au Bastion pour récupérer.`);
+      logger.info(
+        'BASTION',
+        `${npc.name} (${this._roleLabelFR(npc.role)}) s'est replié au Bastion pour récupérer.`
+      );
     }
   }
 
   /**
-   * Updates the Bastion campfire animation, Watchtower auto-turrets, Prisoner Cages,
-   * and all Allied NPCs (Harvesters, Guards, and Deep-Wilderness Scouts).
+   * Updates the Bastion campfire animation, 3D building pad crystals, passive Lumber Forge
+   * resource production, Sanctuary Hearth Lv3 solar aura, Watchtower auto-turrets, Prisoner Cages,
+   * and all Allied NPCs (Harvesters, Guards, and Mission-Driven Deep-Wilderness Scouts).
    *
    * @param {number} dt - Frame delta time in seconds.
    * @param {number} elapsedTime - Total elapsed game time in seconds.
@@ -887,11 +1500,24 @@ export class BastionAndNPCs {
       this.onScoutDiscovery = onScoutDiscovery;
     }
 
-    // 1. Animate Bastion Roaring Campfire & Cage Crystals
+    // 1. Animate Bastion Roaring Campfire, Building Pad Crystals & Cage Crystals
     if (this.campfireFlame) {
-      const flicker = 1 + Math.sin(elapsedTime * 11.5) * 0.12 + Math.cos(elapsedTime * 17.0) * 0.08;
-      this.campfireFlame.scale.set(flicker, 0.92 + flicker * 0.15, flicker);
+      const hearthScale = 1 + ((this.structures.sanctuary_hearth || 1) - 1) * 0.25;
+      const flicker =
+        (1 + Math.sin(elapsedTime * 11.5) * 0.12 + Math.cos(elapsedTime * 17.0) * 0.08) *
+        hearthScale;
+      this.campfireFlame.scale.set(flicker, (0.92 + flicker * 0.15) * hearthScale, flicker);
       this.campfireFlame.rotation.y = elapsedTime * 1.5;
+    }
+
+    for (const pad of this.buildingPads.values()) {
+      const floatObj = pad.modelGroup?.userData?.floatingCrystal;
+      if (floatObj) {
+        floatObj.rotation.y = elapsedTime * 2.0;
+      }
+      if (pad.ringMesh && pad.ringMesh.visible) {
+        pad.ringMesh.material.opacity = 0.42 + 0.22 * Math.sin(elapsedTime * 4.2);
+      }
     }
 
     for (const cage of this.cages) {
@@ -901,39 +1527,99 @@ export class BastionAndNPCs {
       }
     }
 
-    const enemies = enemyManager && typeof enemyManager.getEnemies === 'function' ? enemyManager.getEnemies() : [];
+    const enemies =
+      enemyManager && typeof enemyManager.getEnemies === 'function' ? enemyManager.getEnemies() : [];
     const worldSize = CONFIG.WORLD?.SIZE || 240;
     const worldHalf = worldSize * 0.45;
 
-    // 2. Update Watchtower Auto-Turrets
-    const towerSpec = CONFIG.BASTION?.STRUCTURES?.watchtower || { range: 34, damage: 16, fireInterval: 1.4 };
-    for (const tower of this.watchtowers) {
-      tower.cooldown = Math.max(0, tower.cooldown - dt);
-      if (tower.cooldown <= 0 && enemies.length > 0) {
-        let nearest = null;
-        let minDist = towerSpec.range;
-        for (const e of enemies) {
-          const d = dist2D(tower.x, tower.z, e.x, e.z);
-          if (d < minDist) {
-            minDist = d;
-            nearest = e;
-          }
-        }
-        if (nearest) {
-          tower.cooldown = towerSpec.fireInterval;
-          this._spawnBolt(
-            tower.x,
-            tower.y + 4.8,
-            tower.z,
-            nearest,
-            Math.round(towerSpec.damage * this.turretDamageMultiplier),
-            0x48dbfb
-          );
+    // 2. Passive Resource Production from Lumber Forge (`lumber_forge` Lv 1..3)
+    const forgeLvl = this.getBuildingLevel('lumber_forge');
+    if (forgeLvl > 0 && player && player.resources) {
+      this.passiveProductionTimer += dt;
+      if (this.passiveProductionTimer >= 5.0) {
+        this.passiveProductionTimer -= 5.0;
+        const forgeSpec = getBuildingUpgradeSpec('lumber_forge', forgeLvl);
+        const fStats = forgeSpec.statsAtCurrent || {};
+        const harvesterMult = 1 + this.getRoleCounts().harvester * 0.25;
+        const woodGain = Math.round((fStats.woodPer5Sec || 2) * harvesterMult);
+        const crystalGain = Math.round((fStats.crystalPer5Sec || 1) * harvesterMult);
+        const biomassGain = fStats.biomassPer5Sec || 0;
+
+        player.resources.wood = (player.resources.wood || 0) + woodGain;
+        player.resources.crystal = (player.resources.crystal || 0) + crystalGain;
+        if (biomassGain > 0) {
+          player.resources.biomass = (player.resources.biomass || 0) + biomassGain;
         }
       }
     }
 
-    // 3. Update Allied NPCs by Role
+    // 3. Sanctuary Hearth Lv3 Solar Burn Aura against enemies inside `passiveAuraRange`
+    if (this.auraBurnDps > 0 && enemies.length > 0) {
+      this.hearthAuraTickTimer += dt;
+      if (this.hearthAuraTickTimer >= 1.0) {
+        this.hearthAuraTickTimer -= 1.0;
+        for (const e of enemies) {
+          if (e && e.hp > 0 && dist2D(0, 0, e.x, e.z) <= this.passiveAuraRange) {
+            if (typeof e.applyBurn === 'function') {
+              e.applyBurn(this.auraBurnDps, 2.0);
+            }
+          }
+        }
+      }
+    }
+
+    // 4. Update Watchtower Auto-Turrets (scaling with `watchtower` Lv 1..3)
+    const towerLvl = this.getBuildingLevel('watchtower');
+    if (towerLvl > 0 && this.watchtowers.length > 0) {
+      const towerUpgradeSpec = getBuildingUpgradeSpec('watchtower', towerLvl);
+      const tStats = towerUpgradeSpec.statsAtCurrent || {
+        damage: 18,
+        fireInterval: 1.35,
+        range: 34,
+        boltsCount: 1,
+        mutantDamageMult: 1.0,
+        slowOnHit: 0,
+      };
+
+      for (const tower of this.watchtowers) {
+        tower.cooldown = Math.max(0, tower.cooldown - dt);
+        if (tower.cooldown <= 0 && enemies.length > 0) {
+          const inRange = enemies
+            .filter((e) => e && e.hp > 0 && dist2D(tower.x, tower.z, e.x, e.z) <= tStats.range)
+            .sort(
+              (a, b) =>
+                dist2D(tower.x, tower.z, a.x, a.z) - dist2D(tower.x, tower.z, b.x, b.z)
+            );
+
+          if (inRange.length > 0) {
+            tower.cooldown = tStats.fireInterval;
+            const boltsToFire = Math.min(inRange.length, tStats.boltsCount || 1);
+            for (let bIdx = 0; bIdx < boltsToFire; bIdx++) {
+              const target = inRange[bIdx];
+              const isMutant =
+                Boolean(target.genome?.isHybrid) ||
+                (Array.isArray(target.genome?.mutations) && target.genome.mutations.length > 0);
+              const mutMult = isMutant ? tStats.mutantDamageMult || 1.0 : 1.0;
+              const boltDamage = Math.round(tStats.damage * this.turretDamageMultiplier * mutMult);
+              const boltColor = towerLvl >= 3 ? 0xff4500 : towerLvl === 2 ? 0x00e5ff : 0x48dbfb;
+
+              this._spawnBolt(
+                tower.x,
+                tower.y + 4.8,
+                tower.z,
+                target,
+                boltDamage,
+                boltColor,
+                tStats.slowOnHit || 0,
+                towerLvl >= 3
+              );
+            }
+          }
+        }
+      }
+    }
+
+    // 5. Update Allied NPCs by Role
     for (const npc of this.npcs) {
       npc.actionTimer = Math.max(0, npc.actionTimer - dt);
 
@@ -981,7 +1667,7 @@ export class BastionAndNPCs {
       }
     }
 
-    // 4. Update Guard & Watchtower Bolts
+    // 6. Update Guard & Watchtower Bolts
     this._updateBolts(dt, enemyManager);
   }
 
@@ -1059,34 +1745,78 @@ export class BastionAndNPCs {
   }
 
   /**
-   * Scout (Éclaireur) AI:
-   * 1. Ventures into the Deep Wilderness (`45..105` units from Bastion) to patrol distant biomes.
-   * 2. Immediately switches to `'fleeing'` state when any enemy is within `FLEE_RADIUS` (`16` units),
-   *    steering away from threats with tangential evasion.
-   * 3. Scans all enemies within `VISION_RADIUS` (`34+` units) and triggers a Priority Alert +
-   *    3D Sky Beacon whenever an unspotted Mutant (`mutations.length > 0`) or Hybrid (`isHybrid`) is discovered!
+   * Scout (Éclaireur) AI with Assignable Mission Orders (`activeScoutMission`):
+   * 1. Scans all enemies within `effectiveVision` and triggers a Priority Alert + 3D Sky Beacon
+   *    whenever an unspotted Mutant (`mutations.length > 0`) or Hybrid (`isHybrid`) is discovered!
+   *    Also deploys a **Slowing Beacon** (`slowBeaconOnPatientZero`) when Scout Guild is Level 2+.
+   * 2. Scans unrescued Prisoner Cages within `effectiveVision`, marking `cage.spottedByScout = true`
+   *    and lighting a golden 3D sky beacon via `vfx.setCageBeacon`.
+   * 3. Executes the player's active Scout Mission order:
+   *    - `'track_lineage'`: Hunts down every unspotted carrier of `activeScoutMission.targetMutationId`
+   *      at `1.45x` speed until 100% of carriers are revealed!
+   *    - `'find_cages'`: Heads directly toward unspotted/unrescued Prisoner Cages.
+   *    - `'scout_volcano'`: Deep-wilderness caldera exploration.
+   *    - `'perimeter_alert'`: Frontier vigilance patrol.
    */
   _updateScoutAI(scout, dt, enemies, onScoutDiscovery) {
+    const missionMult = this.activeScoutMission?.speedBonusMult || 1.2;
     const effectiveVision =
-      ((CONFIG.SCOUT?.VISION_RADIUS || 34) + this.scoutVisionBonus) * this.scoutVisionMultiplier;
-    const effectiveSpeed = (CONFIG.SCOUT?.SPEED || 13) * this.scoutSpeedMultiplier;
+      ((CONFIG.SCOUT?.VISION_RADIUS || 34) + this.scoutVisionBonus) *
+      this.scoutVisionMultiplier *
+      this.guildVisionMult;
+    const effectiveSpeed =
+      (CONFIG.SCOUT?.SPEED || 13) * this.scoutSpeedMultiplier * this.guildSpeedMult;
     const fleeRadius = CONFIG.SCOUT?.FLEE_RADIUS || 16;
 
     scout.visionRadius = effectiveVision;
+    scout.missionLabel = this.activeScoutMission?.shortLabel || '🔍 Traquer Lignée';
 
-    // 1. Scan for Mutations & Hybrids within Vision Radius
+    // 1. Scan for Prisoner Cages within Vision Radius
+    for (const cage of this.cages) {
+      if (cage.rescued || cage.spottedByScout) continue;
+      const dCage = dist2D(scout.x, scout.z, cage.x, cage.z);
+      if (dCage <= effectiveVision) {
+        cage.spottedByScout = true;
+        if (this.vfx && typeof this.vfx.setCageBeacon === 'function') {
+          this.vfx.setCageBeacon(
+            cage.id,
+            cage.mesh ? cage.mesh.position : new THREE.Vector3(cage.x, cage.y || 2, cage.z),
+            true,
+            0xffd166
+          );
+        }
+        const cageDir = getCardinalLabelFR(cage.x, cage.z);
+        logger.alert(
+          `⛓️ ÉCLAIREUR (${scout.name}) : Cage de Survivant [${this._roleLabelFR(cage.role)}] localisée au ${cageDir} !`,
+          { scoutId: scout.id, cageId: cage.id, role: cage.role, direction: cageDir }
+        );
+      }
+    }
+
+    // 2. Scan for Mutations & Hybrids within Vision Radius
     const nearbyThreats = [];
     for (const enemy of enemies) {
+      if (!enemy || enemy.hp <= 0) continue;
       const d = dist2D(scout.x, scout.z, enemy.x, enemy.z);
 
       if (d <= fleeRadius) {
         nearbyThreats.push(enemy);
       }
 
-      if (d <= effectiveVision && !enemy.spottedByScout) {
-        const mutations = Array.isArray(enemy.genome?.mutations) ? enemy.genome.mutations : [];
-        const isHybrid = Boolean(enemy.genome?.isHybrid);
+      const mutations = Array.isArray(enemy.genome?.mutations) ? enemy.genome.mutations : [];
+      const isHybrid = Boolean(enemy.genome?.isHybrid);
 
+      // Scout Guild Lv2+ Slowing Beacon on spotted mutants within vision
+      if (
+        this.slowBeaconOnPatientZero &&
+        d <= effectiveVision &&
+        (mutations.length > 0 || isHybrid) &&
+        typeof enemy.applySlow === 'function'
+      ) {
+        enemy.applySlow(this.slowBeaconFactor || 0.65, 2.5);
+      }
+
+      if (d <= effectiveVision && !enemy.spottedByScout) {
         if (mutations.length > 0 || isHybrid) {
           enemy.spottedByScout = true;
 
@@ -1118,12 +1848,20 @@ export class BastionAndNPCs {
             );
           }
 
+          if (this.slowBeaconOnPatientZero && typeof enemy.applySlow === 'function') {
+            enemy.applySlow(this.slowBeaconFactor || 0.65, 5.0);
+          }
+
           const direction = getCardinalLabelFR(enemy.x, enemy.z);
           const mutLabels = mutations
             .map((m) => CONFIG.MUTATIONS?.[m]?.name || m)
             .join(', ');
-          const stageTag = enemy.lifeStage === 'baby' || enemy.isAdult === false ? ' [BÉBÉ JUVÉNILE]' : '';
-          const descLabel = mutations.length > 0 ? `${enemy.genome.speciesName} — ${mutLabels}` : `Hybride ${enemy.genome.speciesName}`;
+          const stageTag =
+            enemy.lifeStage === 'baby' || enemy.isAdult === false ? ' [BÉBÉ JUVÉNILE]' : '';
+          const descLabel =
+            mutations.length > 0
+              ? `${enemy.genome.speciesName} — ${mutLabels}`
+              : `Hybride ${enemy.genome.speciesName}`;
 
           logger.alert(
             `🦅 ALERTE ÉCLAIREUR (${scout.name}) : Nouveau [${descLabel}]${stageTag} repéré au ${direction} ! Éliminez-le avant sa reproduction !`,
@@ -1158,7 +1896,7 @@ export class BastionAndNPCs {
       }
     }
 
-    // 2. Flee Behavior vs Deep-Wilderness Expedition Movement
+    // 3. Flee Behavior vs Mission-Driven Expedition Movement
     if (nearbyThreats.length > 0) {
       scout.state = 'fleeing';
       const evasion = computeScoutEvasionVector(
@@ -1167,42 +1905,113 @@ export class BastionAndNPCs {
         this.pos,
         CONFIG.WORLD?.SIZE || 240
       );
-      scout.vx = evasion.vx * this.scoutSpeedMultiplier;
-      scout.vz = evasion.vz * this.scoutSpeedMultiplier;
-    } else {
-      scout.state = 'expedition';
-      const priorityTutorialTarget = enemies.find(
-        (e) =>
-          !e.spottedByScout &&
-          (e.tutorialTag === 'act6_baby_fire_troll' || (this.tutorialMode && e.isPatientZero))
-      );
+      scout.vx = evasion.vx * this.scoutSpeedMultiplier * this.guildSpeedMult;
+      scout.vz = evasion.vz * this.scoutSpeedMultiplier * this.guildSpeedMult;
+      return;
+    }
 
-      if (priorityTutorialTarget) {
-        scout.targetX = priorityTutorialTarget.x;
-        scout.targetZ = priorityTutorialTarget.z;
-        scout.sectorName = getCardinalLabelFR(priorityTutorialTarget.x, priorityTutorialTarget.z);
-        const angle = Math.atan2(scout.targetZ - scout.z, scout.targetX - scout.x);
-        scout.vx = Math.cos(angle) * effectiveSpeed * 1.45;
-        scout.vz = Math.sin(angle) * effectiveSpeed * 1.45;
-      } else {
-        scout.waypointTimer -= dt;
-        const dWaypoint = dist2D(scout.x, scout.z, scout.targetX, scout.targetZ);
+    scout.state = 'expedition';
 
-        if (dWaypoint < 5.0 || scout.waypointTimer <= 0) {
-          this._assignNewWildernessWaypoint(scout, enemies);
+    // Priority 0: Guided Tutorial Act 6 Baby Fire Troll target
+    const priorityTutorialTarget = enemies.find(
+      (e) =>
+        e &&
+        e.hp > 0 &&
+        !e.spottedByScout &&
+        (e.tutorialTag === 'act6_baby_fire_troll' || (this.tutorialMode && e.isPatientZero))
+    );
+
+    if (priorityTutorialTarget) {
+      scout.targetX = priorityTutorialTarget.x;
+      scout.targetZ = priorityTutorialTarget.z;
+      scout.sectorName = getCardinalLabelFR(priorityTutorialTarget.x, priorityTutorialTarget.z);
+      const angle = Math.atan2(scout.targetZ - scout.z, scout.targetX - scout.x);
+      scout.vx = Math.cos(angle) * effectiveSpeed * 1.45;
+      scout.vz = Math.sin(angle) * effectiveSpeed * 1.45;
+      return;
+    }
+
+    // Mission Mode A: 'track_lineage' -> Seek out every unspotted carrier of `targetMutationId`!
+    if (this.activeScoutMission?.type === 'track_lineage') {
+      const targetMutId = this.activeScoutMission.targetMutationId;
+      let unspottedTarget = null;
+      let minDist = Infinity;
+
+      for (const e of enemies) {
+        if (!e || e.hp <= 0 || e.spottedByScout) continue;
+        const muts = Array.isArray(e.genome?.mutations) ? e.genome.mutations : [];
+        const matchesLineage = targetMutId
+          ? muts.includes(targetMutId) || e.genome?.speciesId === targetMutId
+          : muts.length > 0 || Boolean(e.genome?.isHybrid);
+
+        if (matchesLineage) {
+          const d = dist2D(scout.x, scout.z, e.x, e.z);
+          if (d < minDist) {
+            minDist = d;
+            unspottedTarget = e;
+          }
         }
+      }
 
+      // Fallback: if all carriers of targetMutId are already spotted, seek any other unspotted mutant/hybrid
+      if (!unspottedTarget) {
+        for (const e of enemies) {
+          if (!e || e.hp <= 0 || e.spottedByScout) continue;
+          const muts = Array.isArray(e.genome?.mutations) ? e.genome.mutations : [];
+          if (muts.length > 0 || e.genome?.isHybrid) {
+            const d = dist2D(scout.x, scout.z, e.x, e.z);
+            if (d < minDist) {
+              minDist = d;
+              unspottedTarget = e;
+            }
+          }
+        }
+      }
+
+      if (unspottedTarget) {
+        scout.targetX = unspottedTarget.x;
+        scout.targetZ = unspottedTarget.z;
+        scout.sectorName = getCardinalLabelFR(unspottedTarget.x, unspottedTarget.z);
         const angle = Math.atan2(scout.targetZ - scout.z, scout.targetX - scout.x);
-        scout.vx = Math.cos(angle) * effectiveSpeed;
-        scout.vz = Math.sin(angle) * effectiveSpeed;
+        scout.vx = Math.cos(angle) * effectiveSpeed * missionMult;
+        scout.vz = Math.sin(angle) * effectiveSpeed * missionMult;
+        return;
       }
     }
+
+    // Mission Mode B: 'find_cages' -> Seek out unrescued Prisoner Cages
+    if (this.activeScoutMission?.type === 'find_cages') {
+      const unspottedCage =
+        this.cages.find((c) => !c.rescued && !c.spottedByScout) ||
+        this.cages.find((c) => !c.rescued);
+      if (unspottedCage) {
+        scout.targetX = unspottedCage.x;
+        scout.targetZ = unspottedCage.z;
+        scout.sectorName = getCardinalLabelFR(unspottedCage.x, unspottedCage.z);
+        const angle = Math.atan2(scout.targetZ - scout.z, scout.targetX - scout.x);
+        scout.vx = Math.cos(angle) * effectiveSpeed * missionMult;
+        scout.vz = Math.sin(angle) * effectiveSpeed * missionMult;
+        return;
+      }
+    }
+
+    // Standard / 'scout_volcano' / 'perimeter_alert' waypoint navigation
+    scout.waypointTimer -= dt;
+    const dWaypoint = dist2D(scout.x, scout.z, scout.targetX, scout.targetZ);
+
+    if (dWaypoint < 5.0 || scout.waypointTimer <= 0) {
+      this._assignNewWildernessWaypoint(scout, enemies);
+    }
+
+    const angle = Math.atan2(scout.targetZ - scout.z, scout.targetX - scout.x);
+    scout.vx = Math.cos(angle) * effectiveSpeed;
+    scout.vz = Math.sin(angle) * effectiveSpeed;
   }
 
   /**
    * Spawns a ranged bolt projectile from a Watchtower or Guard toward a target enemy.
    */
-  _spawnBolt(x, y, z, targetEnemy, damage, colorHex = 0x48dbfb) {
+  _spawnBolt(x, y, z, targetEnemy, damage, colorHex = 0x48dbfb, slowOnHit = 0, burnOnHit = false) {
     let mesh = null;
     if (this.scene) {
       mesh = new THREE.Mesh(
@@ -1226,6 +2035,8 @@ export class BastionAndNPCs {
       targetZ: targetEnemy.z,
       speed: 32,
       damage,
+      slowOnHit,
+      burnOnHit,
       ttl: 1.4,
       mesh,
     });
@@ -1257,6 +2068,12 @@ export class BastionAndNPCs {
       if (d < 1.4 || b.ttl <= 0) {
         if (d < 1.4 && target && enemyManager) {
           enemyManager.damageEnemy(target.id, b.damage);
+          if (b.slowOnHit > 0 && typeof target.applySlow === 'function') {
+            target.applySlow(1 - b.slowOnHit, 2.5);
+          }
+          if (b.burnOnHit && typeof target.applyBurn === 'function') {
+            target.applyBurn(12, 3.0);
+          }
         }
         if (b.mesh && this.scene) {
           this.scene.remove(b.mesh);

@@ -518,8 +518,32 @@ export class PlayerController {
   }
 
   /**
+   * Attaches a `DynamicQuestSystem` instance so kills and quest rewards are synchronized automatically.
+   * @param {Object} questSystem
+   */
+  setQuestSystem(questSystem) {
+    if (questSystem) {
+      this.questSystem = questSystem;
+    }
+  }
+
+  /**
+   * Credits the Hero with resources (`wood`, `crystal`, `biomass`) and `xp` from a completed Dynamic Quest.
+   * @param {Object} rewardEntry - `{ rewards: { wood, crystal, biomass, xp }, title }`
+   */
+  applyQuestReward(rewardEntry) {
+    const r = rewardEntry?.rewards || rewardEntry;
+    if (!r) return;
+    if (r.wood) this.resources.wood += r.wood;
+    if (r.crystal) this.resources.crystal += r.crystal;
+    if (r.biomass) this.resources.biomass += r.biomass;
+    if (r.xp) this.gainXp(r.xp);
+  }
+
+  /**
    * Computes total final damage dealt by the Hero against a specific enemy, combining
-   * base weapon/spell multipliers, anti-mutant bonuses, and `AdaptiveMasterySystem` species/mutation ranks.
+   * base weapon/spell multipliers, anti-mutant bonuses (including Bastion Bio-Lab), and
+   * `AdaptiveMasterySystem` species/mutation ranks.
    *
    * @param {number} rawDamage
    * @param {Object} enemy
@@ -532,6 +556,9 @@ export class PlayerController {
       (Array.isArray(enemy?.genome?.mutations) && enemy.genome.mutations.length > 0);
     if (isMutantOrHybrid) {
       dmg *= this.mutantDamageMult;
+      if (this.lastBastionRef?.heroMutantDamageBonus > 0) {
+        dmg *= 1 + this.lastBastionRef.heroMutantDamageBonus;
+      }
     }
     if (this.juvenilePurge && enemy && enemy.isAdult === false) {
       dmg *= 1.35;
@@ -1206,7 +1233,7 @@ export class PlayerController {
 
   /**
    * Records an enemy kill (from melee Cleave, 3D Spell, Orbital Blades, or DoT), awards XP &
-   * Biomass, and advances the Hero's `AdaptiveMasterySystem` (Species Slayer & Mutation Slayer ranks).
+   * Biomass, advances `AdaptiveMasterySystem`, and updates active `DynamicQuestSystem` objectives.
    *
    * @param {Object} enemy - Slain enemy entity.
    * @param {number} [xpGained=20] - XP reward.
@@ -1218,12 +1245,24 @@ export class PlayerController {
       Boolean(enemy.genome?.isHybrid) ||
       (Array.isArray(enemy.genome?.mutations) && enemy.genome.mutations.length > 0);
 
+    const bonusMult =
+      isMutantOrHybrid && this.lastBastionRef?.bonusMutantXpMult > 1
+        ? this.lastBastionRef.bonusMutantXpMult
+        : 1.0;
+
     this.kills++;
     if (isMutantOrHybrid) {
       this.mutantsSlain++;
-      this.resources.biomass += 6;
+      this.resources.biomass += Math.round(6 * bonusMult);
     } else {
       this.resources.biomass += 2;
+    }
+
+    if (this.questSystem && typeof this.questSystem.recordEnemyKilled === 'function') {
+      this.questSystem.recordEnemyKilled(enemy);
+    }
+    if (typeof this.onEnemyKilled === 'function') {
+      this.onEnemyKilled(enemy);
     }
 
     if (this.mastery && typeof this.mastery.recordKill === 'function') {
@@ -1240,8 +1279,9 @@ export class PlayerController {
       }
     }
 
-    if (xpGained > 0) {
-      this.gainXp(xpGained);
+    const finalXp = Math.round(xpGained * bonusMult);
+    if (finalXp > 0) {
+      this.gainXp(finalXp);
     }
   }
 
@@ -1340,7 +1380,8 @@ export class PlayerController {
   }
 
   /**
-   * Interacts with nearby Prisoner Cages, Resource Nodes (Wood/Crystal), or Bastion healing hearth.
+   * Interacts with nearby Prisoner Cages, 3D Bastion Building Pads (`watchtower`, `scout_guild`,
+   * `lumber_forge`, `biolab`, `sanctuary_hearth`), or Resource Nodes (Wood/Crystal).
    * @param {Object} bastionAndNpcs
    */
   interact(bastionAndNpcs) {
@@ -1365,7 +1406,26 @@ export class PlayerController {
       }
     }
 
-    // 2. Harvest nearby Terrain Resource Node (Wood / Crystal)
+    // 2. Construct or Upgrade nearby 3D Bastion Building Pad!
+    if (bastionAndNpcs && typeof bastionAndNpcs.getNearestBuildingPad === 'function') {
+      const pad = bastionAndNpcs.getNearestBuildingPad(this.x, this.z, 4.8, this.resources);
+      if (pad && !pad.isMaxed) {
+        const built = bastionAndNpcs.upgradeBuilding
+          ? bastionAndNpcs.upgradeBuilding(pad.id, this.resources)
+          : bastionAndNpcs.buildStructure(pad.id, this.resources);
+        if (built) {
+          this.gainXp(25);
+          if (typeof this.onBuildingUpgraded === 'function') {
+            this.onBuildingUpgraded(pad.id, bastionAndNpcs.getBuildingLevel?.(pad.id) || pad.nextLevel);
+          }
+          return;
+        }
+        // If standing on a pad without enough resources, don't fall through to random foraging
+        return;
+      }
+    }
+
+    // 3. Harvest nearby Terrain Resource Node (Wood / Crystal)
     if (this.terrain && typeof this.terrain.getNearestResourceNode === 'function') {
       const node = this.terrain.getNearestResourceNode(this.x, this.z, 8.5);
       if (node) {
@@ -1678,7 +1738,28 @@ export class PlayerController {
       };
     }
 
-    // Priority C: Resource Node within 7m
+    // Priority C: 3D Bastion Building Pad within 4.8m
+    if (
+      !this.nearestPrompt &&
+      bastionAndNpcs &&
+      typeof bastionAndNpcs.getNearestBuildingPad === 'function'
+    ) {
+      const pad = bastionAndNpcs.getNearestBuildingPad(this.x, this.z, 4.8, this.resources);
+      if (pad && !pad.isMaxed) {
+        const py = this.terrain ? this.terrain.getHeightAt(pad.x, pad.z) : 2.2;
+        this.nearestPrompt = {
+          type: 'build',
+          keyHint: '[E]',
+          label: pad.worldPromptText,
+          worldPos: new THREE.Vector3(pad.x, py + 2.6, pad.z),
+          entity: pad,
+          dist: pad.dist,
+          canAfford: pad.canAfford,
+        };
+      }
+    }
+
+    // Priority D: Resource Node within 7m
     if (
       !this.nearestPrompt &&
       this.terrain &&
@@ -1714,6 +1795,9 @@ export class PlayerController {
   update(dt, elapsedTime, enemyManager, bastionAndNpcs, cameraYaw = 0) {
     this.lastBastionRef = bastionAndNpcs || this.lastBastionRef;
     this.lastEnemyManagerRef = enemyManager || this.lastEnemyManagerRef;
+    if (enemyManager) {
+      enemyManager.playerRef = this;
+    }
 
     this.cleaveCooldown = Math.max(0, this.cleaveCooldown - dt);
     this.dashCooldown = Math.max(0, this.dashCooldown - dt);
@@ -1769,6 +1853,13 @@ export class PlayerController {
       this.performDash();
     }
 
+    const distToBastionNow = Math.hypot(this.x, this.z);
+    const auraRange = bastionAndNpcs?.passiveAuraRange || CONFIG.BASTION?.RADIUS || 14;
+    const hearthSpeedBoost =
+      distToBastionNow <= auraRange && (bastionAndNpcs?.structures?.sanctuary_hearth || 1) >= 2
+        ? 1.15
+        : 1.0;
+
     let currentSpeed = 0;
     if (this.dashTimer > 0) {
       this.dashTimer -= dt;
@@ -1776,7 +1867,7 @@ export class PlayerController {
       this.vx = this.dashDirX * currentSpeed;
       this.vz = this.dashDirZ * currentSpeed;
     } else if (isMoving) {
-      currentSpeed = this.baseSpeed * this.speedMult;
+      currentSpeed = this.baseSpeed * this.speedMult * hearthSpeedBoost;
       this.vx = moveX * currentSpeed;
       this.vz = moveZ * currentSpeed;
     } else {
@@ -1840,8 +1931,9 @@ export class PlayerController {
 
     // 5. Passive HP Regeneration & Bastion Sanctuary Hearth Healing
     const distToBastion = Math.hypot(this.x, this.z);
-    const inBastion = distToBastion <= (CONFIG.BASTION?.RADIUS || 14);
-    const healRate = this.regenPerSec + (inBastion ? CONFIG.BASTION?.HEAL_RATE || 12 : 0);
+    const inBastion = distToBastion <= auraRange;
+    const bastionHealRate = bastionAndNpcs?.heroHealRate || CONFIG.BASTION?.HEAL_RATE || 15;
+    const healRate = this.regenPerSec + (inBastion ? bastionHealRate : 0);
     if (this.hp < this.maxHp) {
       this.hp = Math.min(this.maxHp, this.hp + healRate * dt);
     }

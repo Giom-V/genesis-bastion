@@ -218,15 +218,25 @@ export class EnemyManager {
 
         const genome = this._createSafeGenome(pack.speciesId);
         let isPatientZero = false;
+        let spawnLifeStage = 'adult';
+        let spawnIsAdult = true;
 
-        if (pack.seedMutant && !patientZeroSeeded && i === 0) {
+        if (pack.seedMutant && i === 0 && !patientZeroSeeded) {
           this._applyMutationToGenome(genome, pack.seedMutant);
           isPatientZero = true;
           patientZeroSeeded = true;
           genome.isPatientZero = true;
+        } else if (pack.seedMutant && i === 1) {
+          this._applyMutationToGenome(genome, pack.seedMutant);
+          spawnLifeStage = 'baby';
+          spawnIsAdult = false;
         }
 
-        const enemy = this.spawnEnemy(x, z, genome, [], { isPatientZero });
+        const enemy = this.spawnEnemy(x, z, genome, [], {
+          isPatientZero,
+          lifeStage: spawnLifeStage,
+          isAdult: spawnIsAdult,
+        });
         if (isPatientZero) {
           logger.evolution(
             `Patient Zéro initial détecté dans l'écosystème : ${genome.speciesName} porteur de [${CONFIG.MUTATIONS[pack.seedMutant]?.name || pack.seedMutant}]`,
@@ -673,6 +683,97 @@ export class EnemyManager {
   }
 
   /**
+   * Spawns a dedicated pack of mutant carriers (`carrierCount` creatures: 1 Adult Patient Zero +
+   * `carrierCount - 1` Juvenile Babies/Adults) in the wilderness (`58..86` units from center,
+   * initially `spottedByScout: false`) for Dynamic Lineage Eradication Quests!
+   *
+   * @param {string} [mutationId='pyro_gland']
+   * @param {string} [speciesId='troll']
+   * @param {number} [carrierCount=3]
+   * @returns {Array<Object>} Array of spawned mutant carrier entities.
+   */
+  spawnQuestLineagePack(mutationId = 'pyro_gland', speciesId = 'troll', carrierCount = 3) {
+    const baseAngle = Math.random() * Math.PI * 2;
+    const baseDist = 62 + Math.random() * 20;
+    const cx = Math.cos(baseAngle) * baseDist;
+    const cz = Math.sin(baseAngle) * baseDist;
+    const spawned = [];
+
+    for (let i = 0; i < Math.max(1, carrierCount); i++) {
+      const a = (i / Math.max(1, carrierCount)) * Math.PI * 2 + Math.random() * 0.4;
+      const r = i === 0 ? 0 : 5 + Math.random() * 7;
+      const x = cx + Math.cos(a) * r;
+      const z = cz + Math.sin(a) * r;
+
+      const genome = this._createSafeGenome(speciesId);
+      this._applyMutationToGenome(genome, mutationId);
+      const isPZ = i === 0;
+      if (isPZ) {
+        genome.isPatientZero = true;
+      }
+
+      const isBaby = i > 0;
+      const carrier = this.spawnEnemy(x, z, genome, [], {
+        isPatientZero: isPZ,
+        spottedByScout: Boolean(this.bastionRef?.autoSpotNewbornMutants),
+        lifeStage: isBaby ? 'baby' : 'adult',
+        isAdult: !isBaby,
+      });
+      spawned.push(carrier);
+    }
+
+    const mutName = CONFIG.MUTATIONS?.[mutationId]?.name || mutationId;
+    logger.evolution(
+      `Nouvelle meute mutante détectée pour Quête d'Éradication : ${spawned.length}x ${CONFIG.SPECIES?.[speciesId]?.name || speciesId} [${mutName}] !`,
+      { mutationId, speciesId, count: spawned.length }
+    );
+    return spawned;
+  }
+
+  /**
+   * Computes live tracking progress for a target mutant lineage across all living enemies.
+   *
+   * @param {string|null} [targetMutationId='pyro_gland']
+   * @returns {{
+   *   mutationId: string|null,
+   *   totalCarriers: number,
+   *   spottedCarriers: number,
+   *   unspottedCarriers: number,
+   *   babyCarriers: number,
+   *   adultCarriers: number,
+   *   allSpotted: boolean,
+   *   carriers: Array<Object>
+   * }}
+   */
+  getLineageTrackingProgress(targetMutationId = 'pyro_gland') {
+    const carriers = this.enemies.filter((e) => {
+      if (!e || e.hp <= 0) return false;
+      const muts = Array.isArray(e.genome?.mutations) ? e.genome.mutations : [];
+      if (!targetMutationId) {
+        return muts.length > 0 || Boolean(e.genome?.isHybrid);
+      }
+      return muts.includes(targetMutationId) || e.genome?.speciesId === targetMutationId;
+    });
+
+    const totalCarriers = carriers.length;
+    const spottedCarriers = carriers.filter((e) => e.spottedByScout).length;
+    const unspottedCarriers = Math.max(0, totalCarriers - spottedCarriers);
+    const babyCarriers = carriers.filter((e) => !e.isAdult || e.lifeStage === 'baby').length;
+    const adultCarriers = Math.max(0, totalCarriers - babyCarriers);
+
+    return {
+      mutationId: targetMutationId,
+      totalCarriers,
+      spottedCarriers,
+      unspottedCarriers,
+      babyCarriers,
+      adultCarriers,
+      allSpotted: totalCarriers > 0 && spottedCarriers >= totalCarriers,
+      carriers,
+    };
+  }
+
+  /**
    * Executes one Conway's Game of Life + Darwinian genetic reproduction cycle across the island.
    * All newborn offspring start as Juvenile Babies (`lifeStage: 'baby'`, `isAdult: false`, `age: 0`)
    * and cannot reproduce until they mature into Adults!
@@ -731,10 +832,13 @@ export class EnemyManager {
       const childGenome = birth.genome || this._createSafeGenome(birth.speciesId || 'goblin');
       const parentIds = birth.parentIds || ['parent_a', 'parent_b'];
 
-      // Inherit Scout-spotted status if a parent was already tracked by Scouts
-      const parentSpotted = this.enemies.some(
-        (e) => parentIds.includes(e.id) && e.spottedByScout
-      );
+      const hasMut = Array.isArray(childGenome.mutations) && childGenome.mutations.length > 0;
+      const isHyb = Boolean(childGenome.isHybrid);
+
+      // Inherit Scout-spotted status if a parent was already tracked OR if Scout Guild Lv3 auto-spots newborn mutants
+      const parentSpotted =
+        Boolean(this.bastionRef?.autoSpotNewbornMutants && (hasMut || isHyb)) ||
+        this.enemies.some((e) => parentIds.includes(e.id) && e.spottedByScout);
 
       const child = this.spawnEnemy(bx, bz, childGenome, parentIds, {
         isPatientZero: Boolean(birth.isPatientZero),
@@ -745,8 +849,6 @@ export class EnemyManager {
       });
       spawnedOffspring.push(child);
 
-      const hasMut = Array.isArray(childGenome.mutations) && childGenome.mutations.length > 0;
-      const isHyb = Boolean(childGenome.isHybrid);
       const mutHex = hasMut
         ? CONFIG.MUTATIONS?.[childGenome.mutations[0]]?.colorHex || 0xff4500
         : isHyb
@@ -802,6 +904,9 @@ export class EnemyManager {
     if (player) {
       this.playerRef = player;
     }
+    if (bastionAndNpcs) {
+      this.bastionRef = bastionAndNpcs;
+    }
 
     // 1. Automatic Genetic Eco-Tick Timer (paused during Acts 1–6 of the guided tutorial)
     if (!this.ecoPaused) {
@@ -824,8 +929,16 @@ export class EnemyManager {
       enemy.attackCooldown = Math.max(0, enemy.attackCooldown - dt);
       enemy.hitFlash = Math.max(0, enemy.hitFlash - dt * 4);
 
-      // Advance age & check Baby -> Adult maturation
-      enemy.age = (enemy.age || 0) + dt;
+      // Advance age & check Baby -> Adult maturation (slowed by Bastion Bio-Lab for mutant babies!)
+      const isMutantBaby =
+        !enemy.isAdult &&
+        Array.isArray(enemy.genome?.mutations) &&
+        enemy.genome.mutations.length > 0;
+      const matSlowFactor =
+        isMutantBaby && bastionAndNpcs?.mutantMaturationSlowFactor
+          ? bastionAndNpcs.mutantMaturationSlowFactor
+          : 1.0;
+      enemy.age = (enemy.age || 0) + dt * matSlowFactor;
       const matTime = enemy.maturationTime || 20;
       if (!enemy.isAdult && enemy.freezeMaturationAt80) {
         const dPlayerToBaby = player ? dist2D(enemy.x, enemy.z, player.x, player.z) : Infinity;
