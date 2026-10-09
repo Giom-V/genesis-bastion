@@ -400,7 +400,9 @@ export class EcosystemSimulator {
       cell.densityState = 'empty';
     }
 
-    // 2. Assign enemies to cells, sync genomes, and consume cell biomass
+    // 2. Assign enemies to cells, sync genomes, advance gestation timers, and consume cell biomass
+    const tickIntervalSec = CONFIG?.ECO?.TICK_INTERVAL ?? 12;
+
     for (const enemy of liveEnemies) {
       if (!(enemy.genome instanceof Genome)) {
         enemy.genome = new Genome(enemy.genome || { speciesId: enemy.speciesId || 'goblin' });
@@ -418,14 +420,60 @@ export class EcosystemSimulator {
         enemy.isAdult = true;
       }
 
+      const isBaby = enemy.isAdult === false || enemy.lifeStage === 'baby';
+
+      // Sync individual gestationTime, aggressiveness, and aggroStance from Genome
+      const geneGestation =
+        enemy.genome.genes?.gestationTime ??
+        enemy.genome.baseGenes?.gestationTime ??
+        CONFIG?.SPECIES?.[enemy.genome.speciesId]?.baseGestationTime ??
+        18;
+      enemy.gestationTime = Number(geneGestation);
+
+      if (!enemy.enraged) {
+        enemy.aggressiveness =
+          enemy.genome.genes?.aggressiveness ??
+          enemy.genome.baseGenes?.aggressiveness ??
+          CONFIG?.SPECIES?.[enemy.genome.speciesId]?.baseAggressiveness ??
+          0.65;
+      }
+      if (!enemy.aggroStance) {
+        enemy.aggroStance =
+          enemy.genome.aggroStance ||
+          CONFIG?.SPECIES?.[enemy.genome.speciesId]?.aggroStance ||
+          (enemy.genome.speciesId === 'dragon' ? 'pacifist_apex' : 'hostile');
+      }
+
+      // Initialize or advance reproTimer for adults
+      if (isBaby) {
+        enemy.reproTimer = 0;
+        enemy._reproTimerAtLastEcoTick = 0;
+      } else {
+        if (typeof enemy.reproTimer !== 'number' || Number.isNaN(enemy.reproTimer)) {
+          // Stagger initial wild adults so fast breeders (Goblin ~9s) are ready immediately
+          enemy.reproTimer = Number((enemy.gestationTime * (0.45 + this._rand() * 0.65)).toFixed(2));
+        }
+        // If real-time frame loop didn't increment reproTimer since last tick (e.g. dry-run or manual [T] tick),
+        // advance reproTimer by tickIntervalSec
+        if (
+          enemy._reproTimerAtLastEcoTick === undefined ||
+          Math.abs(enemy.reproTimer - enemy._reproTimerAtLastEcoTick) < 0.05
+        ) {
+          enemy.reproTimer = Number((enemy.reproTimer + tickIntervalSec).toFixed(2));
+        }
+        enemy._reproTimerAtLastEcoTick = enemy.reproTimer;
+      }
+
       this._ensureLineageTracked(enemy, false);
 
       const ex = enemy.x ?? enemy.mesh?.position?.x ?? 0;
       const ez = enemy.z ?? enemy.mesh?.position?.z ?? 0;
       const cell = this.getCellAt(ex, ez);
 
+      // Update fitness with local biome bonus
+      enemy.genome.computeFitness(cell.biome);
+
       cell.enemyCount += 1;
-      const isBaby = enemy.isAdult === false || enemy.lifeStage === 'baby';
       if (isBaby) {
         cell.babyCount += 1;
       } else {
@@ -503,9 +551,11 @@ export class EcosystemSimulator {
         e.starving = false;
         if (e.id) optimalIds.push(e.id);
 
-        // Only ADULTS can reproduce! Babies must mature first.
+        // Only ADULTS that have completed their individual gestation cycle (`reproTimer >= gestationTime`) can reproduce!
         const isAdult = e.isAdult !== false && e.lifeStage !== 'baby';
-        if (isAdult) {
+        const reqGestation = Math.max(3.5, (e.gestationTime || 18) * 0.92);
+        const gestationReady = (e.reproTimer ?? reqGestation) >= reqGestation;
+        if (isAdult && gestationReady) {
           optimalAdults.push(e);
         }
       }
@@ -529,7 +579,7 @@ export class EcosystemSimulator {
       cell.biomass = Number(cell.biomass.toFixed(1));
     }
 
-    // 4. Darwinian Fitness-Weighted Mate Selection & Reproduction (Optimal Adults Only)
+    // 4. Darwinian Fitness-Weighted Mate Selection & Reproduction (Optimal & Gestation-Ready Adults Only)
     // Sort eligible adults by fitnessScore descending so adapted mutants & hybrids have priority access to mates
     optimalAdults.sort((a, b) => (b.genome?.fitnessScore || 1) - (a.genome?.fitnessScore || 1));
 
@@ -626,16 +676,20 @@ export class EcosystemSimulator {
       const meanFertility = (fertA + fertB) * 0.5;
       const meanFitness = (fitA + fitB) * 0.5;
       const reproChance = clamp(
-        0.46 * meanFertility * Math.pow(meanFitness, 0.65) * (hasMutantParent ? 1.22 : 1.0),
-        0.22,
-        0.92
+        0.52 * meanFertility * Math.pow(meanFitness, 0.65) * (hasMutantParent ? 1.25 : 1.0),
+        0.25,
+        0.95
       );
 
       if (this._rand() > reproChance) continue;
 
-      // Mark both parents as having reproduced this tick
+      // Mark both parents as having reproduced this tick and reset their individual gestation timers!
       matedThisTick.add(parentA);
       matedThisTick.add(chosenPartner);
+      parentA.reproTimer = 0;
+      parentA._reproTimerAtLastEcoTick = 0;
+      chosenPartner.reproTimer = 0;
+      chosenPartner._reproTimerAtLastEcoTick = 0;
 
       // Consume cell biomass for gestation/birth
       cellA.biomass = Number(Math.max(11, cellA.biomass - birthBiomassCost).toFixed(1));
@@ -689,6 +743,11 @@ export class EcosystemSimulator {
         newMutationId,
         mutations: [...childGenome.mutations],
         isPatientZero,
+        // Individual gestation & aggressiveness genes (Phase 5)
+        gestationTime: childGenome.genes?.gestationTime ?? 18,
+        reproTimer: 0,
+        aggressiveness: childGenome.genes?.aggressiveness ?? 0.65,
+        aggroStance: childGenome.aggroStance || 'hostile',
         // Juvenile / Baby lifecycle attributes (Directive #8 & BalanceAndPacing)
         lifeStage: matProfile.lifeStage,
         isAdult: matProfile.isAdult,
@@ -713,7 +772,7 @@ export class EcosystemSimulator {
       births.push(birthRecord);
     }
 
-    // 5. Compile Ecosystem & Evolutionary Telemetry Stats
+    // 5. Compile Ecosystem, Species Population, Gestation & Aggressiveness Telemetry Stats
     const totalPop = liveEnemies.length + births.length;
     const adultCount = liveEnemies.filter(
       (e) => e.isAdult !== false && e.lifeStage !== 'baby'
@@ -730,14 +789,39 @@ export class EcosystemSimulator {
       liveEnemies.filter((e) => Boolean(e.genome?.isHybrid)).length +
       births.filter((b) => Boolean(b.genome?.isHybrid)).length;
 
+    const speciesCounts = {
+      goblin: 0,
+      orc: 0,
+      troll: 0,
+      wolf: 0,
+      lion: 0,
+      vulture: 0,
+      dragon: 0,
+    };
+
     let fitnessSum = 0;
+    let gestationSum = 0;
+    let aggressivenessSum = 0;
+
     for (const e of liveEnemies) {
+      const spId = e.genome?.speciesId || 'goblin';
+      speciesCounts[spId] = (speciesCounts[spId] || 0) + 1;
       fitnessSum += e.genome?.fitnessScore || 1.0;
+      gestationSum += e.genome?.genes?.gestationTime ?? e.gestationTime ?? 18;
+      aggressivenessSum += e.genome?.genes?.aggressiveness ?? e.aggressiveness ?? 0.65;
     }
     for (const b of births) {
+      const spId = b.genome?.speciesId || 'goblin';
+      speciesCounts[spId] = (speciesCounts[spId] || 0) + 1;
       fitnessSum += b.genome?.fitnessScore || 1.0;
+      gestationSum += b.genome?.genes?.gestationTime ?? b.gestationTime ?? 18;
+      aggressivenessSum += b.genome?.genes?.aggressiveness ?? b.aggressiveness ?? 0.65;
     }
+
     const averageFitness = totalPop > 0 ? Number((fitnessSum / totalPop).toFixed(3)) : 1.0;
+    const averageGestationTime = totalPop > 0 ? Number((gestationSum / totalPop).toFixed(2)) : 18.0;
+    const averageAggressiveness =
+      totalPop > 0 ? Number((aggressivenessSum / totalPop).toFixed(3)) : 0.65;
 
     let totalBiomass = 0;
     for (const cell of this.cells) {
@@ -749,6 +833,7 @@ export class EcosystemSimulator {
       totalPopulation: totalPop,
       adultCount,
       babyCount,
+      gestationReadyCount: optimalAdults.length,
       birthsCount: births.length,
       hybridsBorn: hybridsBornThisTick,
       newMutationsCount: newMutationsThisTick,
@@ -758,6 +843,9 @@ export class EcosystemSimulator {
       activeMutants,
       activeHybrids,
       averageFitness,
+      averageGestationTime,
+      averageAggressiveness,
+      speciesCounts,
       totalBiomass: Math.round(totalBiomass),
     };
 
@@ -824,6 +912,9 @@ export class EcosystemSimulator {
    *   adultCount: number,
    *   babyCount: number,
    *   generationMax: number,
+   *   avgGestationTime: number,
+   *   avgAggressiveness: number,
+   *   scopeStats: object,
    *   discoveredByScout: boolean,
    *   patientZeroId: string|null,
    *   patientZeroPos: { x: number, z: number }|null,
@@ -862,6 +953,15 @@ export class EcosystemSimulator {
       let activeCarrier = null;
       const speciesSet = new Set();
 
+      let sumGestation = 0;
+      let sumAggro = 0;
+      let minSpeed = Infinity;
+      let maxSpeed = 0;
+      let minHp = Infinity;
+      let maxHp = 0;
+      let minStrength = Infinity;
+      let maxStrength = 0;
+
       for (const c of carriers) {
         const isBaby = c.isAdult === false || c.lifeStage === 'baby';
         if (isBaby) {
@@ -878,6 +978,22 @@ export class EcosystemSimulator {
         }
         if (c.id === meta.patientZeroId || c.isPatientZero) {
           activeCarrier = c;
+        }
+
+        const g = c.genome?.genes || {};
+        sumGestation += g.gestationTime ?? c.gestationTime ?? 18;
+        sumAggro += g.aggressiveness ?? c.aggressiveness ?? 0.65;
+        if (typeof g.speed === 'number') {
+          minSpeed = Math.min(minSpeed, g.speed);
+          maxSpeed = Math.max(maxSpeed, g.speed);
+        }
+        if (typeof g.maxHp === 'number') {
+          minHp = Math.min(minHp, g.maxHp);
+          maxHp = Math.max(maxHp, g.maxHp);
+        }
+        if (typeof g.strength === 'number') {
+          minStrength = Math.min(minStrength, g.strength);
+          maxStrength = Math.max(maxStrength, g.strength);
         }
       }
 
@@ -910,6 +1026,11 @@ export class EcosystemSimulator {
       const speciesList =
         speciesSet.size > 0 ? Array.from(speciesSet) : [meta.speciesName || 'Inconnu'];
 
+      const avgGestationTime =
+        count > 0 ? Number((sumGestation / count).toFixed(1)) : 18.0;
+      const avgAggressiveness =
+        count > 0 ? Number((sumAggro / count).toFixed(2)) : 0.65;
+
       report.push({
         id: key,
         name: meta.name,
@@ -922,6 +1043,16 @@ export class EcosystemSimulator {
         adultCount,
         babyCount,
         generationMax,
+        avgGestationTime,
+        avgAggressiveness,
+        scopeStats: {
+          minSpeed: Number.isFinite(minSpeed) ? Number(minSpeed.toFixed(1)) : 0,
+          maxSpeed: Number(maxSpeed.toFixed(1)),
+          minHp: Number.isFinite(minHp) ? Math.round(minHp) : 0,
+          maxHp: Math.round(maxHp),
+          minStrength: Number.isFinite(minStrength) ? Number(minStrength.toFixed(1)) : 0,
+          maxStrength: Number(maxStrength.toFixed(1)),
+        },
         discoveredByScout: this.discoveredMutations.has(key),
         patientZeroId: meta.patientZeroId,
         patientZeroPos: meta.patientZeroPos ? { ...meta.patientZeroPos } : { x: 0, z: 0 },

@@ -60,40 +60,61 @@ const FALLBACK_SPECIES = Object.freeze({
     clade: 'greenskin',
     baseHp: 48,
     baseSpeed: 8.8,
-    baseDamage: 7,
+    baseDamage: 8,
     baseSize: 0.78,
+    baseGestationTime: 9,
+    baseMaturationTime: 12,
+    baseAggressiveness: 0.75,
+    aggroStance: 'hostile',
+    repopulationCooldown: 8,
+    repopulationHabitatLabel: 'terriers forestiers',
     color: '#5a8f3d',
     accentColor: '#9ccf63',
     preferredBiome: 'forest',
-    metabolism: 0.85,
+    metabolism: 3.2,
+    fertility: 1.25,
     aggroRadius: 18,
   },
   orc: {
     id: 'orc',
     name: 'Orc',
     clade: 'greenskin',
-    baseHp: 85,
+    baseHp: 95,
     baseSpeed: 6.8,
-    baseDamage: 13,
+    baseDamage: 15,
     baseSize: 1.08,
+    baseGestationTime: 18,
+    baseMaturationTime: 22,
+    baseAggressiveness: 0.88,
+    aggroStance: 'hostile',
+    repopulationCooldown: 16,
+    repopulationHabitatLabel: 'campements des plaines',
     color: '#3f6a34',
     accentColor: '#c87d32',
     preferredBiome: 'plains',
-    metabolism: 1.05,
+    metabolism: 4.8,
+    fertility: 1.05,
     aggroRadius: 22,
   },
   troll: {
     id: 'troll',
     name: 'Troll',
     clade: 'greenskin',
-    baseHp: 155,
-    baseSpeed: 4.9,
-    baseDamage: 22,
+    baseHp: 175,
+    baseSpeed: 5.1,
+    baseDamage: 24,
     baseSize: 1.52,
+    baseGestationTime: 30,
+    baseMaturationTime: 34,
+    baseAggressiveness: 0.48,
+    aggroStance: 'territorial',
+    repopulationCooldown: 18,
+    repopulationHabitatLabel: 'cavernes des hautes terres',
     color: '#4e635e',
     accentColor: '#8ba89c',
     preferredBiome: 'highlands',
-    metabolism: 1.35,
+    metabolism: 7.2,
+    fertility: 0.85,
     aggroRadius: 24,
   },
   wolf: {
@@ -102,26 +123,40 @@ const FALLBACK_SPECIES = Object.freeze({
     clade: 'beast',
     baseHp: 58,
     baseSpeed: 9.6,
-    baseDamage: 10,
+    baseDamage: 11,
     baseSize: 0.88,
+    baseGestationTime: 13,
+    baseMaturationTime: 15,
+    baseAggressiveness: 0.82,
+    aggroStance: 'hostile',
+    repopulationCooldown: 12,
+    repopulationHabitatLabel: 'tanières sylvestres',
     color: '#6e7785',
     accentColor: '#b8c4d4',
     preferredBiome: 'forest',
-    metabolism: 0.95,
+    metabolism: 3.8,
+    fertility: 1.2,
     aggroRadius: 25,
   },
   lion: {
     id: 'lion',
     name: 'Lion',
     clade: 'beast',
-    baseHp: 98,
-    baseSpeed: 8.4,
-    baseDamage: 16,
+    baseHp: 110,
+    baseSpeed: 8.2,
+    baseDamage: 18,
     baseSize: 1.15,
+    baseGestationTime: 24,
+    baseMaturationTime: 26,
+    baseAggressiveness: 0.70,
+    aggroStance: 'hostile',
+    repopulationCooldown: 16,
+    repopulationHabitatLabel: 'hautes herbes dorées',
     color: '#c8963e',
     accentColor: '#7a491b',
     preferredBiome: 'plains',
-    metabolism: 1.15,
+    metabolism: 5.4,
+    fertility: 1.0,
     aggroRadius: 26,
   },
   vulture: {
@@ -130,27 +165,42 @@ const FALLBACK_SPECIES = Object.freeze({
     clade: 'beast',
     baseHp: 64,
     baseSpeed: 10.2,
-    baseDamage: 11,
+    baseDamage: 13,
     baseSize: 0.92,
+    baseGestationTime: 15,
+    baseMaturationTime: 17,
+    baseAggressiveness: 0.38,
+    aggroStance: 'territorial',
+    repopulationCooldown: 12,
+    repopulationHabitatLabel: 'falaises rocheuses',
     color: '#5c4938',
     accentColor: '#d96b43',
     preferredBiome: 'highlands',
-    metabolism: 0.9,
+    metabolism: 3.5,
+    fertility: 1.1,
     aggroRadius: 28,
   },
   dragon: {
     id: 'dragon',
     name: 'Dragon',
     clade: 'apex',
-    baseHp: 240,
-    baseSpeed: 7.4,
-    baseDamage: 32,
-    baseSize: 1.85,
+    baseHp: 680,
+    baseSpeed: 8.2,
+    baseDamage: 58,
+    baseSize: 2.05,
+    baseGestationTime: 65,
+    baseMaturationTime: 50,
+    baseAggressiveness: 0.08,
+    aggroStance: 'pacifist_apex',
+    repopulationCooldown: 28,
+    repopulationHabitatLabel: 'sommets de la caldeira volcanique',
     color: '#8f2424',
     accentColor: '#ff7b29',
     preferredBiome: 'volcanic',
-    metabolism: 1.65,
+    metabolism: 10.5,
+    fertility: 0.65,
     aggroRadius: 34,
+    xpReward: 180,
   },
 });
 
@@ -489,6 +539,33 @@ export function createHybridSpec(speciesA, speciesB) {
   const baseSpeed = Number((((specA.baseSpeed + specB.baseSpeed) * 0.5) * 1.03).toFixed(2));
   const baseDamage = Math.round(((specA.baseDamage + specB.baseDamage) * 0.5) * 1.06);
   const baseSize = Number((((specA.baseSize + specB.baseSize) * 0.5) * 1.04).toFixed(2));
+  const baseGestationTime = Number(
+    (
+      ((specA.baseGestationTime ?? FALLBACK_SPECIES[sortedA]?.baseGestationTime ?? 18) +
+        (specB.baseGestationTime ?? FALLBACK_SPECIES[sortedB]?.baseGestationTime ?? 18)) *
+      0.5
+    ).toFixed(1)
+  );
+  const baseMaturationTime = Number(
+    (
+      ((specA.baseMaturationTime ?? FALLBACK_SPECIES[sortedA]?.baseMaturationTime ?? 20) +
+        (specB.baseMaturationTime ?? FALLBACK_SPECIES[sortedB]?.baseMaturationTime ?? 20)) *
+      0.5
+    ).toFixed(1)
+  );
+  const baseAggressiveness = Number(
+    (
+      ((specA.baseAggressiveness ?? FALLBACK_SPECIES[sortedA]?.baseAggressiveness ?? 0.65) +
+        (specB.baseAggressiveness ?? FALLBACK_SPECIES[sortedB]?.baseAggressiveness ?? 0.65)) *
+      0.5
+    ).toFixed(2)
+  );
+  const aggroStance =
+    specA.aggroStance === 'hostile' || specB.aggroStance === 'hostile'
+      ? 'hostile'
+      : specA.aggroStance === 'territorial' || specB.aggroStance === 'territorial'
+        ? 'territorial'
+        : specA.aggroStance || 'hostile';
   const metabolism = Number(
     ((((specA.metabolism ?? 4.0) + (specB.metabolism ?? 4.0)) * 0.5) * 1.05).toFixed(2)
   );
@@ -516,6 +593,10 @@ export function createHybridSpec(speciesA, speciesB) {
     baseSpeed,
     baseDamage,
     baseSize,
+    baseGestationTime,
+    baseMaturationTime,
+    baseAggressiveness,
+    aggroStance,
     metabolism,
     fertility,
     aggroRadius,
@@ -587,6 +668,12 @@ export function getPhylogenyGraphData() {
     baseSpeed: sp.baseSpeed,
     baseDamage: sp.baseDamage,
     baseSize: sp.baseSize,
+    baseGestationTime: sp.baseGestationTime,
+    baseMaturationTime: sp.baseMaturationTime,
+    baseAggressiveness: sp.baseAggressiveness,
+    aggroStance: sp.aggroStance,
+    repopulationCooldown: sp.repopulationCooldown,
+    repopulationHabitatLabel: sp.repopulationHabitatLabel,
     preferredBiome: sp.preferredBiome,
     orderIndex: index,
   }));

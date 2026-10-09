@@ -75,9 +75,80 @@ function sampleGaussianDrift(rng, stdDev = 0.03, maxAbs = 0.06) {
  * @param {string[]} [hybridParents=[]] - Optional pair of parent species IDs if hybrid.
  * @returns {object} Species baseline traits.
  */
+/**
+ * Default Phase 5 gestation, maturation, aggressiveness, and stance profiles per foundational species.
+ * @type {Readonly<Record<string, object>>}
+ */
+const SPECIES_CYCLE_DEFAULTS = Object.freeze({
+  goblin: {
+    baseGestationTime: 9,
+    baseMaturationTime: 12,
+    baseAggressiveness: 0.75,
+    aggroStance: 'hostile',
+  },
+  wolf: {
+    baseGestationTime: 13,
+    baseMaturationTime: 15,
+    baseAggressiveness: 0.82,
+    aggroStance: 'hostile',
+  },
+  vulture: {
+    baseGestationTime: 15,
+    baseMaturationTime: 17,
+    baseAggressiveness: 0.38,
+    aggroStance: 'territorial',
+  },
+  orc: {
+    baseGestationTime: 18,
+    baseMaturationTime: 22,
+    baseAggressiveness: 0.88,
+    aggroStance: 'hostile',
+  },
+  lion: {
+    baseGestationTime: 24,
+    baseMaturationTime: 26,
+    baseAggressiveness: 0.70,
+    aggroStance: 'hostile',
+  },
+  troll: {
+    baseGestationTime: 30,
+    baseMaturationTime: 34,
+    baseAggressiveness: 0.48,
+    aggroStance: 'territorial',
+  },
+  dragon: {
+    baseHp: 680,
+    baseDamage: 58,
+    baseSpeed: 8.2,
+    baseSize: 2.05,
+    baseGestationTime: 65,
+    baseMaturationTime: 50,
+    baseAggressiveness: 0.08,
+    aggroStance: 'pacifist_apex',
+  },
+});
+
+/**
+ * Resolves the baseline species specification for a base or hybrid species identifier.
+ *
+ * @param {string} speciesId - Species ID (`'goblin'`, `'troll'`, or `'goblin_orc'`).
+ * @param {string[]} [hybridParents=[]] - Optional pair of parent species IDs if hybrid.
+ * @returns {object} Species baseline traits.
+ */
 function resolveSpeciesBaseline(speciesId, hybridParents = []) {
+  const cycleDef = SPECIES_CYCLE_DEFAULTS[speciesId] || {};
   if (CONFIG?.SPECIES?.[speciesId]) {
-    return CONFIG.SPECIES[speciesId];
+    return {
+      ...cycleDef,
+      ...CONFIG.SPECIES[speciesId],
+      baseGestationTime:
+        CONFIG.SPECIES[speciesId].baseGestationTime ?? cycleDef.baseGestationTime ?? 18,
+      baseMaturationTime:
+        CONFIG.SPECIES[speciesId].baseMaturationTime ?? cycleDef.baseMaturationTime ?? 20,
+      baseAggressiveness:
+        CONFIG.SPECIES[speciesId].baseAggressiveness ?? cycleDef.baseAggressiveness ?? 0.65,
+      aggroStance: CONFIG.SPECIES[speciesId].aggroStance || cycleDef.aggroStance || 'hostile',
+    };
   }
   if (Array.isArray(hybridParents) && hybridParents.length >= 2) {
     return createHybridSpec(hybridParents[0], hybridParents[1]);
@@ -85,22 +156,25 @@ function resolveSpeciesBaseline(speciesId, hybridParents = []) {
   if (typeof speciesId === 'string' && speciesId.includes('_')) {
     return createHybridSpec(speciesId);
   }
-  return (
-    CONFIG?.SPECIES?.goblin || {
-      id: 'goblin',
-      name: 'Gobelin',
-      clade: 'greenskin',
-      baseHp: 48,
-      baseSpeed: 8.8,
-      baseDamage: 8,
-      baseSize: 0.78,
-      metabolism: 3.2,
-      fertility: 1.25,
-      aggroRadius: 16,
-      color: '#5b9e3e',
-      accentColor: '#9be061',
-    }
-  );
+  return {
+    id: 'goblin',
+    name: 'Gobelin',
+    clade: 'greenskin',
+    baseHp: 48,
+    baseSpeed: 8.8,
+    baseDamage: 8,
+    baseSize: 0.78,
+    baseGestationTime: 9,
+    baseMaturationTime: 12,
+    baseAggressiveness: 0.75,
+    aggroStance: 'hostile',
+    metabolism: 3.2,
+    fertility: 1.25,
+    aggroRadius: 16,
+    color: '#5b9e3e',
+    accentColor: '#9be061',
+    ...(CONFIG?.SPECIES?.goblin || {}),
+  };
 }
 
 /**
@@ -118,7 +192,8 @@ export class Genome {
    * @param {string[]} [init.hybridParents=[]] - Parent species IDs if hybrid.
    * @param {number} [init.generation=1] - Evolutionary generation number (`1` for initial population).
    * @param {string} [init.lineageId] - Unique identifier for tracking genetic lineages.
-   * @param {object} [init.genes] - Polygenic traits (`size`, `speed`, `strength`, `maxHp`, `fertility`, `metabolism`, `aggroRadius`).
+   * @param {string} [init.aggroStance] - Behavioral stance (`'hostile'`, `'territorial'`, `'pacifist_apex'`).
+   * @param {object} [init.genes] - Polygenic traits (`size`, `speed`, `strength`, `maxHp`, `gestationTime`, `aggressiveness`, `fertility`, `metabolism`, `aggroRadius`).
    * @param {object} [init.baseGenes] - Unmutated polygenic baseline prior to mutation multipliers.
    * @param {string[]} [init.mutations=[]] - Array of active mutation IDs from `CONFIG.MUTATIONS`.
    * @param {number} [init.fitnessScore] - Computed Darwinian fitness score.
@@ -151,6 +226,12 @@ export class Genome {
     /** @type {string} */
     this.speciesName = init.speciesName || baseline.name || this.speciesId;
 
+    /** @type {'hostile'|'territorial'|'pacifist_apex'} */
+    this.aggroStance =
+      init.aggroStance ||
+      baseline.aggroStance ||
+      (this.speciesId === 'dragon' ? 'pacifist_apex' : 'hostile');
+
     /** @type {number} */
     this.generation = Math.max(1, Math.floor(init.generation ?? 1));
 
@@ -163,6 +244,8 @@ export class Genome {
       speed: baseline.baseSpeed ?? 7.5,
       strength: baseline.baseDamage ?? 12,
       maxHp: baseline.baseHp ?? 80,
+      gestationTime: baseline.baseGestationTime ?? 18,
+      aggressiveness: baseline.baseAggressiveness ?? 0.65,
       fertility: baseline.fertility ?? 1.0,
       metabolism: baseline.metabolism ?? 4.0,
       aggroRadius: baseline.aggroRadius ?? 20,
@@ -173,13 +256,27 @@ export class Genome {
     /**
      * Underlying polygenic traits before mutation multipliers are applied, preventing exponential
      * runaway across multi-generation dominant inheritance while preserving polygenic selection.
-     * @type {{ size: number, speed: number, strength: number, maxHp: number, fertility: number, metabolism: number, aggroRadius: number }}
+     * @type {{
+     *   size: number,
+     *   speed: number,
+     *   strength: number,
+     *   maxHp: number,
+     *   gestationTime: number,
+     *   aggressiveness: number,
+     *   fertility: number,
+     *   metabolism: number,
+     *   aggroRadius: number
+     * }}
      */
     this.baseGenes = {
       size: Number((rawBaseGenes.size ?? defaultGenes.size).toFixed(3)),
       speed: Number((rawBaseGenes.speed ?? defaultGenes.speed).toFixed(3)),
       strength: Number((rawBaseGenes.strength ?? defaultGenes.strength).toFixed(2)),
       maxHp: Math.max(10, Math.round(rawBaseGenes.maxHp ?? defaultGenes.maxHp)),
+      gestationTime: Number((rawBaseGenes.gestationTime ?? defaultGenes.gestationTime).toFixed(2)),
+      aggressiveness: Number(
+        clamp(rawBaseGenes.aggressiveness ?? defaultGenes.aggressiveness, 0.02, 1.0).toFixed(3)
+      ),
       fertility: Number((rawBaseGenes.fertility ?? defaultGenes.fertility).toFixed(3)),
       metabolism: Number((rawBaseGenes.metabolism ?? defaultGenes.metabolism).toFixed(3)),
       aggroRadius: Number((rawBaseGenes.aggroRadius ?? defaultGenes.aggroRadius).toFixed(2)),
@@ -187,7 +284,17 @@ export class Genome {
 
     /**
      * Expressed phenotypic genes used by EnemyManager, CreatureMeshBuilder, and EcosystemSimulator.
-     * @type {{ size: number, speed: number, strength: number, maxHp: number, fertility: number, metabolism: number, aggroRadius: number }}
+     * @type {{
+     *   size: number,
+     *   speed: number,
+     *   strength: number,
+     *   maxHp: number,
+     *   gestationTime: number,
+     *   aggressiveness: number,
+     *   fertility: number,
+     *   metabolism: number,
+     *   aggroRadius: number
+     * }}
      */
     this.genes = { ...this.baseGenes };
 
@@ -221,6 +328,7 @@ export class Genome {
   /**
    * Synchronizes `this.genes` and `this.fitnessScore` whenever `this.mutations` changes
    * (supporting both `genome.addMutation(id)` and direct array pushes `genome.mutations.push(id)`).
+   * Uses wide clamp bounds (`0.35x` to `4.5x` baseline) so traits can expand across generations.
    *
    * @returns {this} This Genome instance.
    */
@@ -259,18 +367,44 @@ export class Genome {
       multMetabolism *= mut.metabolismCost ?? 1.0;
     }
 
+    const baseline = resolveSpeciesBaseline(this.speciesId, this.hybridParents);
+    const minHp = Math.max(12, Math.round((baseline.baseHp || 48) * 0.35));
+    const maxHpCap = Math.max(950, Math.round((baseline.baseHp || 680) * 4.5));
+    const minStr = Math.max(2.0, (baseline.baseDamage || 8) * 0.35);
+    const maxStrCap = Math.max(140.0, (baseline.baseDamage || 58) * 4.5);
+    const minSpd = Math.max(1.8, (baseline.baseSpeed || 5.0) * 0.35);
+    const maxSpdCap = Math.max(22.0, (baseline.baseSpeed || 10.2) * 3.5);
+    const minSize = Math.max(0.3, (baseline.baseSize || 0.78) * 0.35);
+    const maxSizeCap = Math.max(4.5, (baseline.baseSize || 2.05) * 3.2);
+    const minGest = Math.max(3.5, (baseline.baseGestationTime || 9) * 0.35);
+    const maxGestCap = Math.max(120.0, (baseline.baseGestationTime || 65) * 2.5);
+
+    // Aggressive mutations slightly increase expressed aggressiveness (except unprovoked pacifist_apex)
+    const mutAggroAdd =
+      this.aggroStance === 'pacifist_apex' ? 0 : Math.min(0.18, this.mutations.length * 0.06);
+
     this.genes = {
-      size: Number(clamp(this.baseGenes.size * multSize, 0.45, 3.4).toFixed(3)),
-      speed: Number(clamp(this.baseGenes.speed * multSpeed, 2.5, 18.0).toFixed(2)),
-      strength: Number(clamp(this.baseGenes.strength * multStrength, 3.0, 120.0).toFixed(2)),
-      maxHp: Math.max(15, Math.round(clamp(this.baseGenes.maxHp * multMaxHp, 20, 950))),
-      fertility: Number(clamp(this.baseGenes.fertility, 0.35, 2.2).toFixed(3)),
-      metabolism: Number(clamp(this.baseGenes.metabolism * multMetabolism, 1.2, 22.0).toFixed(2)),
+      size: Number(clamp(this.baseGenes.size * multSize, minSize, maxSizeCap).toFixed(3)),
+      speed: Number(clamp(this.baseGenes.speed * multSpeed, minSpd, maxSpdCap).toFixed(2)),
+      strength: Number(clamp(this.baseGenes.strength * multStrength, minStr, maxStrCap).toFixed(2)),
+      maxHp: Math.max(15, Math.round(clamp(this.baseGenes.maxHp * multMaxHp, minHp, maxHpCap))),
+      gestationTime: Number(
+        clamp(this.baseGenes.gestationTime ?? baseline.baseGestationTime ?? 18, minGest, maxGestCap).toFixed(2)
+      ),
+      aggressiveness: Number(
+        clamp(
+          (this.baseGenes.aggressiveness ?? baseline.baseAggressiveness ?? 0.65) + mutAggroAdd,
+          0.02,
+          1.0
+        ).toFixed(3)
+      ),
+      fertility: Number(clamp(this.baseGenes.fertility, 0.25, 3.8).toFixed(3)),
+      metabolism: Number(clamp(this.baseGenes.metabolism * multMetabolism, 0.8, 36.0).toFixed(2)),
       aggroRadius: Number(
         clamp(
           this.baseGenes.aggroRadius * (this.mutations.length > 0 ? 1.12 : 1.0),
-          10,
-          48
+          6.0,
+          68.0
         ).toFixed(2)
       ),
     };
@@ -344,6 +478,7 @@ export class Genome {
       speciesName: this.speciesName,
       isHybrid: this.isHybrid,
       hybridParents: [...this.hybridParents],
+      aggroStance: this.aggroStance,
       generation: this.generation,
       lineageId: this.lineageId,
       baseGenes: { ...this.baseGenes },
@@ -353,8 +488,8 @@ export class Genome {
   }
 
   /**
-   * Creates a Gen-1 genome for a foundational species with natural variance ($\pm 10\%$)
-   * around the species base stats defined in `CONFIG.SPECIES`.
+   * Creates a Gen-1 genome for a foundational species with natural variance ($\pm 10\%$,
+   * i.e. $\times \text{uniform}(0.90, 1.10)$) around the species base stats defined in `CONFIG.SPECIES`.
    *
    * @param {string} speciesId - Species identifier (e.g. `'goblin'`, `'orc'`, `'troll'`, `'wolf'`, `'lion'`, `'vulture'`, `'dragon'`).
    * @param {Function|object} [rng=Math.random] - Random number generator function or `SeededRNG` instance.
@@ -373,6 +508,10 @@ export class Genome {
       speed: Number(vary(baseline.baseSpeed ?? 7.5, 0.1).toFixed(2)),
       strength: Number(vary(baseline.baseDamage ?? 12, 0.1).toFixed(2)),
       maxHp: Math.max(15, Math.round(vary(baseline.baseHp ?? 80, 0.1))),
+      gestationTime: Number(clamp(vary(baseline.baseGestationTime ?? 18, 0.1), 3.5, 160.0).toFixed(2)),
+      aggressiveness: Number(
+        clamp(vary(baseline.baseAggressiveness ?? 0.65, 0.1), 0.02, 1.0).toFixed(3)
+      ),
       fertility: Number(vary(baseline.fertility ?? 1.0, 0.1).toFixed(3)),
       metabolism: Number(vary(baseline.metabolism ?? 4.0, 0.1).toFixed(2)),
       aggroRadius: Number(vary(baseline.aggroRadius ?? 20, 0.1).toFixed(2)),
@@ -388,6 +527,7 @@ export class Genome {
       speciesName: baseline.name || speciesId,
       isHybrid,
       hybridParents,
+      aggroStance: baseline.aggroStance || (speciesId === 'dragon' ? 'pacifist_apex' : 'hostile'),
       generation: 1,
       baseGenes,
       mutations: initialMutations,
@@ -402,8 +542,13 @@ export class Genome {
 
   /**
    * Performs sexual genetic crossover between `parentAGenome` and `parentBGenome`:
-   * - Blends polygenic traits (`size`, `speed`, `strength`, `maxHp`, `fertility`, `metabolism`, `aggroRadius`)
-   *   via uniform/interpolated crossover + Gaussian micro-mutation drift ($\pm 6\%$).
+   * - Implements the exact **`[min(Dad, Mom), max(Dad, Mom)] * uniform(0.90, 1.10)`** scope-expanding
+   *   crossover formula for all quantitative traits (`maxHp`, `strength`, `speed`, `size`,
+   *   `gestationTime`, `aggressiveness`, `fertility`, `metabolism`, `aggroRadius`):
+   *   1. Samples a uniform random value strictly between Dad ($g_A$) and Mom ($g_B$).
+   *   2. Multiplies by a random drift factor in $[-10\%, +10\%]$ ($\times \text{uniform}(0.90, 1.10)$).
+   *   3. Keeps clamp bounds wide (`0.35x` to `4.5x` species baseline) so phenotypic traits can evolve
+   *      well beyond Gen-1 ranges across multiple generations.
    * - Checks inter-species hybridization (`parentA.speciesId !== parentB.speciesId` and `canHybridize`)
    *   and synthesizes a hybrid offspring via `createHybridSpec` when compatible.
    * - Applies **Mendelian Dominant Mutation Inheritance**:
@@ -458,51 +603,100 @@ export class Genome {
       }
     }
 
-    // 2. Polygenic Uniform/Blended Inheritance + Gaussian Micro-Mutation Drift (+/- 6%)
+    const childBaseline =
+      hybridSpec || resolveSpeciesBaseline(childSpeciesId, childHybridParents);
+
+    // 2. Scope-Expanding Crossover: uniform([min(Dad, Mom), max(Dad, Mom)]) * uniform(0.90, 1.10)
     const genesA = parentA.baseGenes || parentA.genes;
     const genesB = parentB.baseGenes || parentB.genes;
 
-    // Bias blending slightly toward the fitter parent (Darwinian advantage)
-    const totalFit = (parentA.fitnessScore || 1) + (parentB.fitnessScore || 1);
-    const fitBiasA = totalFit > 0 ? (parentA.fitnessScore || 1) / totalFit : 0.5;
-
-    const blendGene = (valA, valB, hybridBaseVal = null) => {
-      // Mix uniform locus choice and continuous interpolation
-      const alpha = clamp(lerp(sampleUniform(rng), fitBiasA, 0.35), 0.15, 0.85);
-      let blended = lerp(valB, valA, alpha);
-      if (typeof hybridBaseVal === 'number' && Number.isFinite(hybridBaseVal)) {
-        // Incorporate hybrid vigor baseline
-        blended = lerp(blended, hybridBaseVal, 0.35);
-      }
-      const drift = sampleGaussianDrift(rng, 0.03, 0.06);
-      return blended * (1 + drift);
+    const crossoverTrait = (valA, valB, fallbackVal) => {
+      const a = typeof valA === 'number' && Number.isFinite(valA) ? valA : fallbackVal;
+      const b = typeof valB === 'number' && Number.isFinite(valB) ? valB : fallbackVal;
+      const minVal = Math.min(a, b);
+      const maxVal = Math.max(a, b);
+      const u1 = sampleUniform(rng);
+      const vBetween = minVal + u1 * (maxVal - minVal);
+      const u2 = sampleUniform(rng);
+      const driftFactor = 0.90 + u2 * 0.20; // [-10%, +10%]
+      return vBetween * driftFactor;
     };
+
+    const refSize = childBaseline.baseSize || 1.0;
+    const refSpeed = childBaseline.baseSpeed || 7.5;
+    const refStr = childBaseline.baseDamage || 12;
+    const refHp = childBaseline.baseHp || 80;
+    const refGest = childBaseline.baseGestationTime || 18;
+    const refAggro = childBaseline.baseAggressiveness ?? 0.65;
+    const refFert = childBaseline.fertility || 1.0;
+    const refMetab = childBaseline.metabolism || 4.0;
+    const refRadius = childBaseline.aggroRadius || 20;
 
     const childBaseGenes = {
       size: Number(
-        clamp(blendGene(genesA.size, genesB.size, hybridSpec?.baseSize), 0.45, 2.8).toFixed(3)
+        clamp(
+          crossoverTrait(genesA.size, genesB.size, refSize),
+          refSize * 0.35,
+          refSize * 4.5
+        ).toFixed(3)
       ),
       speed: Number(
-        clamp(blendGene(genesA.speed, genesB.speed, hybridSpec?.baseSpeed), 2.8, 15.5).toFixed(2)
+        clamp(
+          crossoverTrait(genesA.speed, genesB.speed, refSpeed),
+          refSpeed * 0.35,
+          refSpeed * 4.5
+        ).toFixed(2)
       ),
       strength: Number(
-        clamp(blendGene(genesA.strength, genesB.strength, hybridSpec?.baseDamage), 4.0, 85.0).toFixed(2)
+        clamp(
+          crossoverTrait(genesA.strength, genesB.strength, refStr),
+          refStr * 0.35,
+          refStr * 4.5
+        ).toFixed(2)
       ),
       maxHp: Math.max(
-        20,
-        Math.round(clamp(blendGene(genesA.maxHp, genesB.maxHp, hybridSpec?.baseHp), 25, 650))
+        15,
+        Math.round(
+          clamp(
+            crossoverTrait(genesA.maxHp, genesB.maxHp, refHp),
+            refHp * 0.35,
+            refHp * 4.5
+          )
+        )
+      ),
+      gestationTime: Number(
+        clamp(
+          crossoverTrait(genesA.gestationTime, genesB.gestationTime, refGest),
+          Math.max(3.5, refGest * 0.35),
+          refGest * 3.0
+        ).toFixed(2)
+      ),
+      aggressiveness: Number(
+        clamp(
+          crossoverTrait(genesA.aggressiveness, genesB.aggressiveness, refAggro),
+          0.02,
+          1.0
+        ).toFixed(3)
       ),
       fertility: Number(
-        clamp(blendGene(genesA.fertility, genesB.fertility, null), 0.4, 2.0).toFixed(3)
+        clamp(
+          crossoverTrait(genesA.fertility, genesB.fertility, refFert),
+          refFert * 0.35,
+          refFert * 4.0
+        ).toFixed(3)
       ),
       metabolism: Number(
-        clamp(blendGene(genesA.metabolism, genesB.metabolism, hybridSpec?.metabolism), 1.5, 18.0).toFixed(2)
+        clamp(
+          crossoverTrait(genesA.metabolism, genesB.metabolism, refMetab),
+          refMetab * 0.35,
+          refMetab * 4.0
+        ).toFixed(2)
       ),
       aggroRadius: Number(
         clamp(
-          blendGene(genesA.aggroRadius, genesB.aggroRadius, hybridSpec?.aggroRadius),
-          12,
-          42
+          crossoverTrait(genesA.aggroRadius, genesB.aggroRadius, refRadius),
+          refRadius * 0.4,
+          refRadius * 3.5
         ).toFixed(2)
       ),
     };
@@ -556,6 +750,9 @@ export class Genome {
       speciesName: childSpeciesName,
       isHybrid: childIsHybrid,
       hybridParents: childHybridParents,
+      aggroStance:
+        childBaseline.aggroStance ||
+        (childSpeciesId === 'dragon' ? 'pacifist_apex' : parentA.aggroStance || 'hostile'),
       generation,
       lineageId,
       baseGenes: childBaseGenes,
