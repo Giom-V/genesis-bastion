@@ -87,31 +87,33 @@ const SKY_FRAGMENT_SHADER = /* glsl */ `
     float horizonFactor = pow(1.0 - zenithAngle, 3.2);
     float cosTheta = dot(dir, sunDir);
 
-    // Day Rayleigh palette (Tidewater-style crisp ocean sky)
-    vec3 dayZenith = vec3(0.11, 0.32, 0.64);
-    vec3 dayHorizon = vec3(0.56, 0.79, 0.94);
+    // Stylized Fantasy Sky Palette (deep azure zenith #2b6cb0 -> warm peach-gold horizon #fbd38d / #cfe8f3)
+    vec3 dayZenith = vec3(0.169, 0.424, 0.690);   // #2b6cb0 deep azure zenith
+    vec3 dayHorizon = vec3(0.812, 0.910, 0.953);  // #cfe8f3 warm sunlit horizon
+    vec3 peachGoldHorizon = vec3(0.984, 0.827, 0.553); // #fbd38d warm peach-gold horizon rim
 
     // Twilight / Golden Hour palette
-    vec3 duskZenith = vec3(0.14, 0.19, 0.42);
-    vec3 duskHorizon = vec3(0.95, 0.46, 0.24);
-    vec3 duskGlow = vec3(1.00, 0.72, 0.34);
+    vec3 duskZenith = vec3(0.16, 0.24, 0.48);
+    vec3 duskHorizon = vec3(0.98, 0.62, 0.36);
+    vec3 duskGlow = vec3(0.99, 0.82, 0.54);
 
     // Nocturnal palette
-    vec3 nightZenith = vec3(0.025, 0.045, 0.095);
-    vec3 nightHorizon = vec3(0.065, 0.115, 0.205);
+    vec3 nightZenith = vec3(0.03, 0.055, 0.115);
+    vec3 nightHorizon = vec3(0.08, 0.14, 0.24);
 
     // Blend zenith & horizon across Day -> Twilight -> Night
     vec3 zenithCol = mix(dayZenith, duskZenith, uTwilightFactor);
     zenithCol = mix(zenithCol, nightZenith, uNightFactor);
 
-    vec3 horizonCol = mix(dayHorizon, duskHorizon, uTwilightFactor);
+    vec3 baseDayHorizon = mix(dayHorizon, peachGoldHorizon, pow(horizonFactor, 1.6) * 0.55);
+    vec3 horizonCol = mix(baseDayHorizon, duskHorizon, uTwilightFactor);
     horizonCol = mix(horizonCol, nightHorizon, uNightFactor);
 
     vec3 skyColor = mix(zenithCol, horizonCol, horizonFactor);
 
-    // Azimuthal warm horizon blush toward the sun during golden hour
-    float sunAzimuthGlow = pow(max(0.0, cosTheta), 2.5) * pow(1.0 - zenithAngle, 1.8);
-    skyColor += duskGlow * sunAzimuthGlow * (0.45 * uTwilightFactor + 0.18 * (1.0 - uNightFactor));
+    // Azimuthal warm peach-gold horizon blush toward the sun
+    float sunAzimuthGlow = pow(max(0.0, cosTheta), 2.2) * pow(1.0 - zenithAngle, 1.6);
+    skyColor += peachGoldHorizon * sunAzimuthGlow * (0.48 * uTwilightFactor + 0.28 * (1.0 - uNightFactor));
 
     // Mie forward scattering halo around sun
     float miePhase = henyeyGreenstein(cosTheta, 0.78);
@@ -182,8 +184,8 @@ export class SceneManager {
 
     /** @type {THREE.Scene} */
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0x3a6ea5);
-    this.scene.fog = new THREE.FogExp2(0x7fb2d9, 0.0036);
+    this.scene.background = new THREE.Color(0x2b6cb0);
+    this.scene.fog = new THREE.FogExp2(0xcfe8f3, 0.0020);
 
     /** @type {THREE.WebGLRenderer} */
     this.renderer = new THREE.WebGLRenderer({
@@ -193,7 +195,7 @@ export class SceneManager {
     this.renderer.setSize(width, height);
     this.renderer.setPixelRatio(1);
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.06;
+    this.renderer.toneMappingExposure = 1.12;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFShadowMap;
@@ -288,13 +290,13 @@ export class SceneManager {
     this._groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
     this._projVec = new THREE.Vector3();
     this._moonDirVec = new THREE.Vector3();
-    this._daySunCol = new THREE.Color(0xfff5e0);
+    this._daySunCol = new THREE.Color(0xfff3d6);
     this._duskSunCol = new THREE.Color(0xff8442);
     this._nightMoonCol = new THREE.Color(0x5a82b8);
-    this._daySkyHemi = new THREE.Color(0x8ec8ff);
+    this._daySkyHemi = new THREE.Color(0x8ecae6);
     this._duskSkyHemi = new THREE.Color(0xd9865b);
     this._nightSkyHemi = new THREE.Color(0x1b2c47);
-    this._dayFog = new THREE.Color(0x82b5dc);
+    this._dayFog = new THREE.Color(0xcfe8f3);
     this._duskFog = new THREE.Color(0xc46d4e);
     this._nightFog = new THREE.Color(0x0b1526);
 
@@ -304,7 +306,7 @@ export class SceneManager {
     this._updateCameraTransform(1.0);
     this._updateAtmosphere(0.016, 0);
 
-    logger.info('WORLD', 'SceneManager initialized (60FPS Direct Render + PCFShadowMap 1024 + Hillaire Sky)', {
+    logger.info('WORLD', 'SceneManager initialized (60FPS Direct Render + PCFShadowMap 1024 + Stylized Golden-Hour Sky)', {
       viewport: `${width}x${height}`,
       pixelRatio: this.renderer.getPixelRatio(),
       useBloom: this.useBloom,
@@ -357,8 +359,8 @@ export class SceneManager {
    * @private
    */
   _initLighting() {
-    // Primary directional sun/moon light with fast 1024x1024 shadow map
-    this.sunLight = new THREE.DirectionalLight(0xfff4dc, 2.5);
+    // Primary directional sun/moon light with fast 1024x1024 shadow map (Golden-Hour Stylized Sun)
+    this.sunLight = new THREE.DirectionalLight(0xfff3d6, 2.35);
     this.sunLight.castShadow = true;
     this.sunLight.shadow.mapSize.set(1024, 1024);
     this.sunLight.shadow.camera.near = 5;
@@ -375,12 +377,12 @@ export class SceneManager {
     this.scene.add(this.sunLight);
     this.scene.add(this.sunLight.target);
 
-    // Hemisphere bounce light (sky cyan-blue top, mossy forest-earth bottom)
-    this.hemiLight = new THREE.HemisphereLight(0x8ec8ff, 0x3b4d36, 0.78);
+    // Rich HemisphereLight (#8ecae6 zenith sky, #4d7c5a warm foliage bounce light, intensity 0.95)
+    this.hemiLight = new THREE.HemisphereLight(0x8ecae6, 0x4d7c5a, 0.95);
     this.scene.add(this.hemiLight);
 
-    // Subtle ambient fill so deep shadows remain readable at night
-    this.ambientLight = new THREE.AmbientLight(0x243246, 0.36);
+    // Subtle warm-tinted ambient fill so shadows never go pitch black
+    this.ambientLight = new THREE.AmbientLight(0x2a3b4c, 0.40);
     this.scene.add(this.ambientLight);
 
     // Warm Bastion campfire & lantern point lights at central plateau
@@ -662,14 +664,14 @@ export class SceneManager {
       .copy(this._daySunCol)
       .lerp(this._duskSunCol, twilightFactor)
       .lerp(this._nightMoonCol, nightFactor);
-    this.sunLight.intensity = lerp(lerp(2.6, 1.85, twilightFactor), 0.72, nightFactor);
+    this.sunLight.intensity = lerp(lerp(2.35, 1.85, twilightFactor), 0.72, nightFactor);
 
     // Hemisphere & fog atmospheric harmony (zero allocation)
     this.hemiLight.color
       .copy(this._daySkyHemi)
       .lerp(this._duskSkyHemi, twilightFactor)
       .lerp(this._nightSkyHemi, nightFactor);
-    this.hemiLight.intensity = lerp(0.82, 0.42, nightFactor);
+    this.hemiLight.intensity = lerp(0.95, 0.45, nightFactor);
 
     this.scene.fog.color
       .copy(this._dayFog)

@@ -354,6 +354,12 @@ export class HUDManager {
     this.isGameOverModalOpen = false;
     /** @type {boolean} */
     this.isSettingsModalOpen = false;
+    /** @type {boolean} Mode HUD épuré minimaliste actif par défaut (masque les panneaux latéraux denses) */
+    this.cleanHudMode = true;
+    /** @type {boolean} */
+    this.showAdvancedTelemetry = false;
+    /** @type {boolean} Indique si l'utilisateur a fermé manuellement le toast d'onboarding via [×] */
+    this.onboardingDismissedByUser = false;
     /** @type {boolean} */
     this.isBlenderMode = true;
     /** @type {boolean} */
@@ -394,6 +400,7 @@ export class HUDManager {
 
     // Nettoyage initial du conteneur
     this.root.replaceChildren();
+    this.root.classList.add('is-clean-hud');
 
     this._buildWorldOverlayLayer();
     this._buildTopBar();
@@ -411,6 +418,8 @@ export class HUDManager {
     this._buildGameOverModal();
     this._buildSettingsModal();
 
+    this.setCleanHudMode(true);
+
     if (typeof translateDOMTree === 'function') {
       translateDOMTree(this.root);
     }
@@ -424,6 +433,54 @@ export class HUDManager {
       this.refreshLogFeed();
     });
     this.refreshLogFeed();
+  }
+
+  /**
+   * Active ou désactive le mode HUD épuré minimaliste (`cleanHudMode = true` par défaut).
+   * Quand `cleanHudMode` est actif (`showAdvancedTelemetry = false`), les panneaux latéraux denses
+   * (Lignées, Génétique Diploïde, Conway, Maîtrises, Missions Éclaireurs, Bâtiments) sont masqués
+   * de l'écran principal et consultables via `[Tab]` ou l'option `📊 Advanced Telemetry Panels` dans `[O]`.
+   * @param {boolean} clean
+   * @returns {boolean}
+   */
+  setCleanHudMode(clean = true) {
+    this.cleanHudMode = Boolean(clean);
+    this.showAdvancedTelemetry = !this.cleanHudMode;
+    if (this.root) {
+      this.root.classList.toggle('is-clean-hud', this.cleanHudMode);
+      this.root.classList.toggle('is-advanced-telemetry', this.showAdvancedTelemetry);
+    }
+    if (this.replayVoiceBtn) {
+      this.replayVoiceBtn.textContent = this.cleanHudMode
+        ? '🔈'
+        : tr('🔈 Replay Voice', '🔈 Réécouter Voix');
+    }
+    if (this.skipTutorialBtn) {
+      this.skipTutorialBtn.textContent = this.cleanHudMode
+        ? tr('[N] Skip', '[N] Passer')
+        : tr('Skip Tutorial [P]', 'Passer le tutoriel [P]');
+    }
+    if (this.settingsBtn) {
+      this.settingsBtn.textContent = this.cleanHudMode
+        ? '⚙️ [O]'
+        : tr('⚙️ Settings [O]', '⚙️ Options [O]');
+    }
+    if (this.isSettingsModalOpen) {
+      this.renderSettingsModalContent();
+    }
+    return this.cleanHudMode;
+  }
+
+  /**
+   * Bascule l'affichage des panneaux de télémétrie avancée (`showAdvancedTelemetry`).
+   * @param {boolean} [forceState]
+   * @returns {boolean} `true` si les panneaux avancés sont affichés.
+   */
+  toggleAdvancedTelemetry(forceState) {
+    const nextShow =
+      typeof forceState === 'boolean' ? forceState : !this.showAdvancedTelemetry;
+    this.setCleanHudMode(!nextShow);
+    return this.showAdvancedTelemetry;
   }
 
   /**
@@ -616,7 +673,118 @@ export class HUDManager {
   _buildTopBar() {
     this.topBar = el('header', 'hud-top-bar hud-interactive');
 
-    // Marque + Horloge Jour/Nuit + Bouton Switch Mode [C] + Bande-Son Lyria Live
+    // =========================================================================
+    // 1A. CLUSTER FLOTTANT HAUT-GAUCHE (PV, XP/Niveau, PV Bastion & Ressources Compactes)
+    // =========================================================================
+    this.topLeftCluster = el('div', 'hud-top-left-cluster hud-interactive');
+
+    // Barres PV, XP & Mini-Pilule Bastion
+    const vitalsGroup = el('div', 'hud-player-vitals');
+
+    // PV Gardien
+    const hpBox = el('div', 'hud-vital-box hud-vital-hp');
+    const hpRow = el('div', 'hud-vital-row');
+    hpRow.append(
+      el('span', 'hud-vital-icon-lbl', '❤️ HP'),
+      (this.playerHpText = el('span', 'hud-vital-num', '160 / 160'))
+    );
+    const hpTrack = el('div', 'hud-progress-track');
+    this.playerHpFill = el('div', 'hud-progress-fill hp-fill');
+    this.playerHpFill.style.width = '100%';
+    hpTrack.appendChild(this.playerHpFill);
+    hpBox.append(hpRow, hpTrack);
+
+    // XP & Niveau
+    const xpBox = el('div', 'hud-vital-box hud-vital-xp');
+    const xpRow = el('div', 'hud-vital-row');
+    this.playerLevelText = el('span', 'hud-level-pill', '⭐ Lv. 1');
+    this.playerXpText = el('span', 'hud-vital-num hud-telemetry-only', '0 / 100 XP');
+    xpRow.append(this.playerLevelText, this.playerXpText);
+    const xpTrack = el('div', 'hud-progress-track');
+    this.playerXpFill = el('div', 'hud-progress-fill xp-fill');
+    this.playerXpFill.style.width = '0%';
+    xpTrack.appendChild(this.playerXpFill);
+    xpBox.append(xpRow, xpTrack);
+
+    // Mini-Pilule PV du Bastion
+    this.topBastionPill = el('div', 'hud-bastion-mini-pill', '🏰 500/500');
+    this.topBastionPill.title = tr(
+      'Bastion Sanctuary Integrity [H to Upgrade]',
+      'Intégrité du Sanctuaire du Bastion [H pour Améliorer]'
+    );
+    this.topBastionPill.addEventListener('click', () => {
+      this.toggleBastionArchitectModal();
+    });
+
+    vitalsGroup.append(hpBox, xpBox, this.topBastionPill);
+
+    // Ressources compactes : 🪵 Bois, 🪨 Pierre, 💎 Cristal, 🏺 Reliques (affiché seulement si > 0 en mode Clean HUD)
+    this.resGroup = el('div', 'hud-resources-group');
+    this.woodBadge = el('div', 'hud-resource-badge res-wood', '🪵 40');
+    this.stoneBadge = el('div', 'hud-resource-badge res-stone', '🪨 25');
+    this.crystalBadge = el('div', 'hud-resource-badge res-crystal', '💎 20');
+
+    this.relicBadge = el(
+      'div',
+      'hud-resource-badge res-relic is-zero-relics',
+      '🏺 0/3'
+    );
+    this.relicBadge.title = tr(
+      'Eden Relic Fragments (3/3 required to raise the Planetary Shield Dome [V])',
+      'Fragments de Relique d’Éden assemblés (3/3 requis pour ériger le Dôme-Bouclier Planétaire [V])'
+    );
+    this.relicBadge.addEventListener('click', () => {
+      if (this.callbacks.onActivateIslandShield) {
+        this.callbacks.onActivateIslandShield();
+      }
+    });
+
+    // Badges supplémentaires (visibles uniquement si Télémétrie Avancée = ON)
+    this.islandBadge = el(
+      'div',
+      'hud-resource-badge res-island hud-telemetry-only',
+      '🏝️ Island #1'
+    );
+    this.biomassBadge = el('div', 'hud-resource-badge res-biomass hud-telemetry-only', '🌿 15');
+    this.foodBadge = el(
+      'div',
+      'hud-resource-badge res-food is-well-fed hud-telemetry-only',
+      '🍖 60/150'
+    );
+    this.preyHealthBadge = el(
+      'div',
+      'hud-resource-badge res-prey is-healthy hud-telemetry-only',
+      '🦌 Prey: 11'
+    );
+    this.weaponBadgeBtn = el(
+      'button',
+      'hud-weapon-badge-btn weapon-runic_steel hud-telemetry-only',
+      '⚔️ Weapon [K]'
+    );
+    this.weaponBadgeBtn.type = 'button';
+    this.weaponBadgeBtn.addEventListener('click', () => {
+      this.toggleWeaponModal();
+    });
+
+    this.resGroup.append(
+      this.woodBadge,
+      this.stoneBadge,
+      this.crystalBadge,
+      this.relicBadge,
+      this.islandBadge,
+      this.biomassBadge,
+      this.foodBadge,
+      this.preyHealthBadge,
+      this.weaponBadgeBtn
+    );
+
+    this.topLeftCluster.append(vitalsGroup, this.resGroup);
+
+    // =========================================================================
+    // 1B. TÉLÉMÉTRIE AVANCÉE CENTRALE (Masquée par défaut en mode Clean HUD)
+    // =========================================================================
+    this.topTelemetryCenter = el('div', 'hud-top-telemetry-center hud-telemetry-only');
+
     const brandGroup = el('div', 'hud-brand-group');
     const brandTitle = el('h1', 'hud-brand-title', 'Genesis Bastion');
     this.clockBadge = el(
@@ -628,38 +796,25 @@ export class HUDManager {
     this.combatModeSwitchBtn = el(
       'button',
       'hud-mode-switch-btn is-vs-mode',
-      tr('⚡ Mode: Auto (Vampire Survivors) [C]', '⚡ Mode : Auto (Vampire Survivors) [C]')
+      tr('⚡ Mode: Auto [C]', '⚡ Mode : Auto [C]')
     );
     this.combatModeSwitchBtn.type = 'button';
-    this.combatModeSwitchBtn.title = tr(
-      'Switch between Auto-Cast mode (Vampire Survivors) and Active Spells [1-4] mode (Diablo) [Shortcut: C]',
-      'Basculer entre le mode Auto-Cast (Vampire Survivors) et le mode Sorts Actifs [1-4] (Diablo) [Raccourci : C]'
-    );
     this.combatModeSwitchBtn.addEventListener('click', () => {
       this.toggleCombatMode();
     });
 
-    // Pilule Télémétrie Musicale Adaptative Lyria & Bouton Mute/Unmute
     this.audioStatusGroup = el('div', 'hud-audio-status-group');
     this.lyriaStatusPill = el('div', 'hud-lyria-pill state-tutorial');
-    this.lyriaStatusPill.title = tr(
-      'Adaptive Lyria Realtime + Multi-Stem soundtrack (reacts to HP, Combat/Peace/Dialogue state, enemy species, and Fire/Ice/Venom/Lightning elements)',
-      'Bande-son adaptative Lyria Realtime + Multi-Stem (réagit aux PV, à l’état Combat/Paix/Dialogue, à l’espèce ennemie et aux éléments Feu/Glace/Venin/Foudre)'
-    );
     this.lyriaStateDot = el('span', 'hud-lyria-state-dot');
     this.lyriaStatusLabel = el(
       'span',
       'hud-lyria-label',
-      tr('🎵 Lyria: Tutorial Dialogue (85 BPM)', '🎵 Lyria : Dialogue Tutoriel (85 BPM)')
+      tr('🎵 Lyria: Tutorial (85 BPM)', '🎵 Lyria : Tutoriel (85 BPM)')
     );
     this.lyriaStatusPill.append(this.lyriaStateDot, this.lyriaStatusLabel);
 
     this.muteToggleBtn = el('button', 'hud-mute-btn', '🔊 Audio');
     this.muteToggleBtn.type = 'button';
-    this.muteToggleBtn.title = tr(
-      'Mute / Unmute adaptive Lyria music, TTS voiceovers, and sound effects [M]',
-      'Couper / Réactiver la musique adaptative Lyria, les voix TTS et les effets sonores [M]'
-    );
     this.muteToggleBtn.addEventListener('click', () => {
       if (typeof this.callbacks.onToggleAudioMute === 'function') {
         const isMuted = this.callbacks.onToggleAudioMute();
@@ -667,33 +822,12 @@ export class HUDManager {
       }
     });
 
-    // Bouton Settings / Options & Langue (EN/FR) [O]
-    this.settingsBtn = el(
-      'button',
-      'hud-settings-btn',
-      tr('⚙️ Settings [O]', '⚙️ Options [O]')
-    );
-    this.settingsBtn.type = 'button';
-    this.settingsBtn.title = tr(
-      'Open Settings: Language (EN/FR), Voices, Audio Mixer & 3D Graphics [Shortcut: O]',
-      'Ouvrir les Options : Langue (EN/FR), Voix, Mixeur Audio & Graphismes 3D [Raccourci : O]'
-    );
-    this.settingsBtn.addEventListener('click', () => {
-      this.toggleSettingsModal();
-    });
-    this.els.settingsBtn = this.settingsBtn;
-
-    // Bouton de bascule Modèles 3D Blender 5.0 (.glb) vs Procéduraux Classiques [J] & Lien Version Classique (Port 5174)
     this.topBlenderSwitchBtn = el(
       'button',
       'hud-blender-switch-btn is-blender-mode',
       tr('🎨 3D Models: Blender (.glb) [J]', '🎨 Modèles 3D : Blender (.glb) [J]')
     );
     this.topBlenderSwitchBtn.type = 'button';
-    this.topBlenderSwitchBtn.title = tr(
-      'Switch in real time between the 14 Blender 5.0 (.glb) 3D models and Classic Procedural models [Shortcut: J]',
-      'Basculer en temps réel entre les 14 Modèles 3D Blender 5.0 (.glb) et les Modèles Procéduraux Classiques [Raccourci : J]'
-    );
     this.topBlenderSwitchBtn.addEventListener('click', () => {
       this._triggerBlenderModelsToggle();
     });
@@ -701,149 +835,90 @@ export class HUDManager {
     this.classicVersionLink = el(
       'a',
       'hud-classic-version-link',
-      tr('⏪ Classic Version (Port 5174)', '⏪ Ouvrir Version Classique (Port 5174)')
+      tr('⏪ Classic (5174)', '⏪ Classique (5174)')
     );
     this.classicVersionLink.href = 'http://giom-us.c.googlers.com:5174/';
     this.classicVersionLink.target = '_blank';
     this.classicVersionLink.rel = 'noopener noreferrer';
-    this.classicVersionLink.title = tr(
-      'Open the frozen Classic Procedural version (v0.9.0) running in parallel on http://giom-us.c.googlers.com:5174/',
-      'Ouvrir la version précédente figée (v0.9.0 Modèles Procéduraux Classiques) qui tourne en parallèle sur http://giom-us.c.googlers.com:5174/'
-    );
 
     this.audioStatusGroup.append(
       this.lyriaStatusPill,
       this.muteToggleBtn,
-      this.settingsBtn,
       this.topBlenderSwitchBtn,
       this.classicVersionLink
     );
     brandGroup.append(brandTitle, this.clockBadge, this.combatModeSwitchBtn, this.audioStatusGroup);
 
-    // Barre de progression Eco-Tick
     this.ecoGroup = el('div', 'hud-ecotick-group');
     const ecoHeader = el('div', 'hud-ecotick-header');
-    const ecoLabel = el('span', 'hud-ecotick-label', '🧬 Prochain Cycle Génétique');
+    const ecoLabel = el('span', 'hud-ecotick-label', '🧬 Eco-Tick');
     this.ecoTimerText = el('span', 'hud-ecotick-timer', '12.0s');
     ecoHeader.append(ecoLabel, this.ecoTimerText);
-
     const ecoTrack = el('div', 'hud-progress-track');
     this.ecoProgressFill = el('div', 'hud-progress-fill eco-fill');
     ecoTrack.appendChild(this.ecoProgressFill);
     this.ecoGroup.append(ecoHeader, ecoTrack);
 
-    // Compteurs Population (Adultes / Bébés) & Mutations actives
     this.statsCluster = el('div', 'hud-stats-cluster');
-
     const popPill = el('div', 'hud-stat-pill');
     popPill.append(
-      el('span', 'hud-stat-pill-label', 'Population (Ad. / Bébés)'),
-      (this.popValueEl = el('span', 'hud-stat-pill-value', '42 (42 / 0 🐣)'))
+      el('span', 'hud-stat-pill-label', 'Population'),
+      (this.popValueEl = el('span', 'hud-stat-pill-value', '42'))
     );
-
     this.mutPill = el('div', 'hud-stat-pill');
     this.mutPill.append(
-      el('span', 'hud-stat-pill-label', 'Lignées Mutantes'),
-      (this.mutCountValueEl = el('span', 'hud-stat-pill-value', '1 Active'))
+      el('span', 'hud-stat-pill-label', 'Mutants'),
+      (this.mutCountValueEl = el('span', 'hud-stat-pill-value', '1'))
     );
-
     this.statsCluster.append(popPill, this.mutPill);
 
-    // Barres PV & XP du Joueur
-    const vitalsGroup = el('div', 'hud-player-vitals');
+    this.topTelemetryCenter.append(brandGroup, this.ecoGroup, this.statsCluster);
 
-    // PV
-    const hpBox = el('div', 'hud-vital-box');
-    const hpRow = el('div', 'hud-vital-row');
-    hpRow.append(
-      el('span', '', '❤️ PV Gardien'),
-      (this.playerHpText = el('span', '', '160 / 160'))
+    // =========================================================================
+    // 1C. CLUSTER FLOTTANT HAUT-DROITE (3 Boutons Icônes Minimaux : 🏰 [H], 📖 [Tab], ⚙️ [O])
+    // =========================================================================
+    this.topRightCluster = el('div', 'hud-top-right-cluster hud-interactive');
+    this.topQuickActions = el('div', 'hud-top-quick-actions');
+
+    this.topBastionQuickBtn = el('button', 'hud-minimal-icon-btn', '🏰 [H]');
+    this.topBastionQuickBtn.type = 'button';
+    this.topBastionQuickBtn.title = tr(
+      'Bastion Architect & Elemental Forge [H / K]',
+      'Architecte du Bastion & Forge Élémentaire [H / K]'
     );
-    const hpTrack = el('div', 'hud-progress-track');
-    this.playerHpFill = el('div', 'hud-progress-fill hp-fill');
-    this.playerHpFill.style.width = '100%';
-    hpTrack.appendChild(this.playerHpFill);
-    hpBox.append(hpRow, hpTrack);
-
-    // XP & Niveau
-    const xpBox = el('div', 'hud-vital-box');
-    const xpRow = el('div', 'hud-vital-row');
-    this.playerLevelText = el('span', '', '⭐ Niv. 1');
-    this.playerXpText = el('span', '', '0 / 100 XP');
-    xpRow.append(this.playerLevelText, this.playerXpText);
-    const xpTrack = el('div', 'hud-progress-track');
-    this.playerXpFill = el('div', 'hud-progress-fill xp-fill');
-    this.playerXpFill.style.width = '0%';
-    xpTrack.appendChild(this.playerXpFill);
-    xpBox.append(xpRow, xpTrack);
-
-    vitalsGroup.append(hpBox, xpBox);
-
-    // Ressources (Bois, Cristal, Biomasse, Rations 🍖, Gibier 🦌, Arme Élémentaire ⚔️ [K], Reliques 🧩 & Île 🏝️)
-    this.resGroup = el('div', 'hud-resources-group');
-    this.islandBadge = el(
-      'div',
-      'hud-resource-badge res-island',
-      '🏝️ Île #1'
-    );
-    this.islandBadge.title = 'Île actuelle et multiplicateur de difficulté de la campagne';
-
-    this.woodBadge = el('div', 'hud-resource-badge res-wood', '🪵 Bois: 40');
-    this.crystalBadge = el('div', 'hud-resource-badge res-crystal', '💎 Cristal: 20');
-    this.biomassBadge = el('div', 'hud-resource-badge res-biomass', '🌿 Biomasse: 15');
-    this.foodBadge = el(
-      'div',
-      'hud-resource-badge res-food is-well-fed',
-      '🍖 Rations: 60/150'
-    );
-    this.foodBadge.title =
-      'Rations du Bastion (>25 : Rassasié +3 PV/s & +10% vitesse | 0 : Famine ! Chassez 1 Biche/Lapin sans exterminer le troupeau)';
-
-    this.preyHealthBadge = el(
-      'div',
-      'hud-resource-badge res-prey is-healthy',
-      '🦌 Gibier: 11 (Biches/Lapins)'
-    );
-    this.preyHealthBadge.title =
-      'Santé écologique du Gibier Herbivore (Biches Sylvestres & Lapins des Plaines). Attention : vos sorts de zone peuvent les décimer (<2 = Extinction !)';
-
-    this.weaponBadgeBtn = el(
-      'button',
-      'hud-weapon-badge-btn weapon-runic_steel',
-      '⚔️ Arme: Espadon Runique [K]'
-    );
-    this.weaponBadgeBtn.type = 'button';
-    this.weaponBadgeBtn.title =
-      'Ouvrir la Forge des Armes Élémentaires Légendaires (Feu / Glace / Foudre / Venin Symbiotique) [Raccourci : K]';
-    this.weaponBadgeBtn.addEventListener('click', () => {
-      this.toggleWeaponModal();
+    this.topBastionQuickBtn.addEventListener('click', () => {
+      this.toggleBastionArchitectModal();
     });
 
-    this.relicBadge = el(
-      'div',
-      'hud-resource-badge res-relic',
-      '🧩 Reliques: 0/3'
+    this.topCodexQuickBtn = el('button', 'hud-minimal-icon-btn', '📖 [Tab]');
+    this.topCodexQuickBtn.type = 'button';
+    this.topCodexQuickBtn.title = tr(
+      'Genetic Codex & Ecosystem Telemetry [Tab]',
+      'Codex Génétique & Télémétrie Écosystème [Tab]'
     );
-    this.relicBadge.title =
-      'Fragments de Relique d’Éden assemblés (3/3 requis pour ériger le Dôme-Bouclier Planétaire de l’Île et passer à l’Île suivante [V])';
-    this.relicBadge.addEventListener('click', () => {
-      if (this.callbacks.onActivateIslandShield) {
-        this.callbacks.onActivateIslandShield();
-      }
+    this.topCodexQuickBtn.addEventListener('click', () => {
+      this.toggleCodexModal();
     });
 
-    this.resGroup.append(
-      this.islandBadge,
-      this.woodBadge,
-      this.crystalBadge,
-      this.biomassBadge,
-      this.foodBadge,
-      this.preyHealthBadge,
-      this.weaponBadgeBtn,
-      this.relicBadge
+    this.settingsBtn = el('button', 'hud-minimal-icon-btn hud-settings-btn', '⚙️ [O]');
+    this.settingsBtn.type = 'button';
+    this.settingsBtn.title = tr(
+      'Settings: Language (EN/FR), Audio, 3D Graphics & Telemetry Toggle [O]',
+      'Options : Langue (EN/FR), Audio, Graphismes 3D & Télémétrie [O]'
     );
+    this.settingsBtn.addEventListener('click', () => {
+      this.toggleSettingsModal();
+    });
+    this.els.settingsBtn = this.settingsBtn;
 
-    this.topBar.append(brandGroup, this.ecoGroup, this.statsCluster, vitalsGroup, this.resGroup);
+    this.topQuickActions.append(
+      this.topBastionQuickBtn,
+      this.topCodexQuickBtn,
+      this.settingsBtn
+    );
+    this.topRightCluster.appendChild(this.topQuickActions);
+
+    this.topBar.append(this.topLeftCluster, this.topTelemetryCenter, this.topRightCluster);
     this.root.appendChild(this.topBar);
   }
 
@@ -1260,7 +1335,58 @@ export class HUDManager {
     // Colonne principale droite : En-tête d'acte, Citation parlée + bouton "🔈 Réécouter Voix", Instructions, Touches et Objectif
     this.onboardingMainCol = el('div', 'hud-onboarding-main-col');
 
-    const topRow = el('div', 'hud-onboarding-top');
+    // Ligne compacte 1-ligne (Clean HUD Toast) : "Act 1/7: Move with WASD & harvest 3 resources with [E] (0/3)" + 🔈 + [N] Skip + [×]
+    this.onboardingCompactRow = el('div', 'hud-onboarding-compact-row');
+    this.onboardingCompactTextEl = el(
+      'div',
+      'hud-onboarding-compact-line',
+      tr('Act 1/7: Explore the Sanctuary & adjust camera with [R]/[F]', 'Acte 1/7 : Explorez le Sanctuaire & orientez la caméra avec [R]/[F]')
+    );
+
+    this.replayVoiceBtn = el('button', 'hud-replay-voice-btn', '🔈');
+    this.replayVoiceBtn.type = 'button';
+    this.replayVoiceBtn.title = tr(
+      'Replay Gemini TTS voiceover for this act',
+      'Réécouter le doublage vocal Gemini TTS de cet acte'
+    );
+    this.replayVoiceBtn.addEventListener('click', () => {
+      if (typeof this.callbacks.onReplayTutorialVoice === 'function') {
+        this.callbacks.onReplayTutorialVoice(this._currentOnboardingActNum || 1);
+      }
+    });
+
+    this.skipTutorialBtn = el(
+      'button',
+      'hud-onboarding-skip-btn',
+      tr('[N] Skip', '[N] Passer')
+    );
+    this.skipTutorialBtn.type = 'button';
+    this.skipTutorialBtn.title = tr(
+      'Skip tutorial and unlock full ecosystem immediately [P]',
+      'Déverrouiller immédiatement tous les systèmes et lancer l’écosystème complet [P]'
+    );
+    this.skipTutorialBtn.addEventListener('click', () => {
+      if (this.callbacks.onSkipTutorial) {
+        this.callbacks.onSkipTutorial();
+      }
+    });
+
+    this.dismissOnboardingBtn = el('button', 'hud-onboarding-dismiss-btn', '×');
+    this.dismissOnboardingBtn.type = 'button';
+    this.dismissOnboardingBtn.title = tr(
+      'Dismiss tutorial banner',
+      'Fermer la bannière de tutoriel'
+    );
+    this.dismissOnboardingBtn.addEventListener('click', () => {
+      this.onboardingDismissedByUser = true;
+      this.hideOnboardingBanner();
+    });
+
+    const compactActions = el('div', 'hud-onboarding-compact-actions');
+    compactActions.append(this.replayVoiceBtn, this.skipTutorialBtn, this.dismissOnboardingBtn);
+    this.onboardingCompactRow.append(this.onboardingCompactTextEl, compactActions);
+
+    const topRow = el('div', 'hud-onboarding-top hud-telemetry-only');
     const stepWrap = el('div', 'hud-onboarding-step-wrap');
     this.onboardingStepBadge = el('span', 'hud-onboarding-step-badge', 'ACTE 1 / 7');
     const progTrack = el('div', 'hud-onboarding-progress-track');
@@ -1268,42 +1394,26 @@ export class HUDManager {
     this.onboardingProgressFill.style.width = '14%';
     progTrack.appendChild(this.onboardingProgressFill);
     stepWrap.append(this.onboardingStepBadge, progTrack);
+    topRow.append(stepWrap);
 
-    this.skipTutorialBtn = el('button', 'hud-onboarding-skip-btn', 'Passer le tutoriel [P]');
-    this.skipTutorialBtn.type = 'button';
-    this.skipTutorialBtn.title = 'Déverrouiller immédiatement tous les systèmes et lancer l’écosystème complet';
-    this.skipTutorialBtn.addEventListener('click', () => {
-      if (this.callbacks.onSkipTutorial) {
-        this.callbacks.onSkipTutorial();
-      }
-    });
-    topRow.append(stepWrap, this.skipTutorialBtn);
+    this.onboardingTitleEl = el('div', 'hud-onboarding-title hud-telemetry-only', '');
 
-    this.onboardingTitleEl = el('div', 'hud-onboarding-title', '');
-
-    this.onboardingQuoteRow = el('div', 'hud-onboarding-quote-row');
+    this.onboardingQuoteRow = el('div', 'hud-onboarding-quote-row hud-telemetry-only');
     this.onboardingQuoteEl = el('div', 'hud-onboarding-quote', '');
-    this.replayVoiceBtn = el('button', 'hud-replay-voice-btn', '🔈 Réécouter Voix');
-    this.replayVoiceBtn.type = 'button';
-    this.replayVoiceBtn.title = 'Réécouter le doublage vocal Gemini TTS de cet acte';
-    this.replayVoiceBtn.addEventListener('click', () => {
-      if (typeof this.callbacks.onReplayTutorialVoice === 'function') {
-        this.callbacks.onReplayTutorialVoice(this._currentOnboardingActNum || 1);
-      }
-    });
-    this.onboardingQuoteRow.append(this.onboardingQuoteEl, this.replayVoiceBtn);
+    this.onboardingQuoteRow.append(this.onboardingQuoteEl);
 
-    this.onboardingDescEl = el('div', 'hud-onboarding-desc', '');
-    this.onboardingWhyEl = el('div', 'hud-onboarding-why', '');
-    this.onboardingKeysRow = el('div', 'hud-onboarding-keys-row');
+    this.onboardingDescEl = el('div', 'hud-onboarding-desc hud-telemetry-only', '');
+    this.onboardingWhyEl = el('div', 'hud-onboarding-why hud-telemetry-only', '');
+    this.onboardingKeysRow = el('div', 'hud-onboarding-keys-row hud-telemetry-only');
 
-    const objBox = el('div', 'hud-onboarding-objective-box');
+    const objBox = el('div', 'hud-onboarding-objective-box hud-telemetry-only');
     this.onboardingObjIcon = el('span', 'hud-onboarding-obj-icon', '🎯');
     this.onboardingObjText = el('span', 'hud-onboarding-obj-text', '');
     this.onboardingObjProgress = el('span', 'hud-onboarding-obj-progress', '');
     objBox.append(this.onboardingObjIcon, this.onboardingObjText, this.onboardingObjProgress);
 
     this.onboardingMainCol.append(
+      this.onboardingCompactRow,
       topRow,
       this.onboardingTitleEl,
       this.onboardingQuoteRow,
@@ -1431,7 +1541,7 @@ export class HUDManager {
    */
   updateOnboardingBanner(state = {}) {
     if (!this.onboardingCard) return;
-    if (state.visible === false) {
+    if (state.visible === false || this.onboardingDismissedByUser) {
       this.onboardingCard.classList.add('is-hidden');
       return;
     }
@@ -1497,11 +1607,20 @@ export class HUDManager {
       }
     }
 
-    this.onboardingTitleEl.textContent = state.title || '';
-    this.onboardingDescEl.textContent = state.instructionText || '';
+    const rawTitle = translateString(state.title || '');
+    const rawObj = translateString(state.objectiveText || rawTitle || '');
+    const rawProg = state.progressText ? ` (${state.progressText})` : '';
+    const actPrefix = tr(`Act ${actNum}/${total}:`, `Acte ${actNum}/${total} :`);
+    if (this.onboardingCompactTextEl) {
+      this.onboardingCompactTextEl.textContent = `${state.isCompleted ? '✅ ' : ''}${actPrefix} ${rawObj}${rawProg}`;
+      this.onboardingCompactTextEl.title = translateString(state.instructionText || rawObj);
+    }
+
+    this.onboardingTitleEl.textContent = rawTitle;
+    this.onboardingDescEl.textContent = translateString(state.instructionText || '');
 
     if (state.whyItMatters) {
-      this.onboardingWhyEl.textContent = `💡 ${state.whyItMatters}`;
+      this.onboardingWhyEl.textContent = `💡 ${translateString(state.whyItMatters)}`;
       this.onboardingWhyEl.style.display = 'block';
     } else {
       this.onboardingWhyEl.style.display = 'none';
@@ -1523,7 +1642,7 @@ export class HUDManager {
     }
 
     this.onboardingObjIcon.textContent = state.isCompleted ? '✅' : '🎯';
-    this.onboardingObjText.textContent = state.objectiveText || '';
+    this.onboardingObjText.textContent = rawObj;
     this.onboardingObjProgress.textContent = state.progressText || '';
     this.onboardingObjProgress.classList.toggle('is-completed', Boolean(state.isCompleted));
   }
@@ -5185,7 +5304,43 @@ export class HUDManager {
     });
     conwayCard.appendChild(conwayToggleBtn);
 
-    togglesGrid.append(combatCard, blenderCard, bloomCard, conwayCard);
+    // 3E. Panneaux de Télémétrie Avancée (Défaut : OFF — Clean HUD Minimaliste)
+    const telemetryCard = el('div', 'settings-toggle-card');
+    telemetryCard.append(
+      el(
+        'div',
+        'settings-toggle-title',
+        tr('📊 Advanced Telemetry Panels (Default: OFF)', '📊 Panneaux Télémétrie Avancée (Défaut : OFF)')
+      ),
+      el(
+        'div',
+        'settings-toggle-desc',
+        this.showAdvancedTelemetry
+          ? tr(
+              'Showing dense sidebars (Lineages, Conway Forecast, Mastery %, Scout Missions & Logs) on main screen.',
+              'Affiche les panneaux latéraux détaillés (Lignées, Conway, Maîtrises, Missions & Logs) sur l’écran.'
+            )
+          : tr(
+              'Clean Minimalist Action-RPG HUD active (90%+ unobstructed 3D viewport). Detailed telemetry stays in [Tab].',
+              'HUD Action-RPG minimaliste actif (vue 3D dégagée à 90%+). La télémétrie reste dans le Codex [Tab].'
+            )
+      )
+    );
+    const telemetryToggleBtn = el(
+      'button',
+      `hud-btn ${this.showAdvancedTelemetry ? 'hud-btn-amber' : 'hud-btn-biomass'}`,
+      this.showAdvancedTelemetry
+        ? tr('📊 Telemetry Sidebars: ON', '📊 Panneaux Télémétrie : ACTIVÉS')
+        : tr('✨ Clean Minimalist HUD (Telemetry OFF)', '✨ HUD Minimaliste Épuré (Télémétrie OFF)')
+    );
+    telemetryToggleBtn.type = 'button';
+    telemetryToggleBtn.addEventListener('click', () => {
+      this.toggleAdvancedTelemetry();
+      this.renderSettingsModalContent();
+    });
+    telemetryCard.appendChild(telemetryToggleBtn);
+
+    togglesGrid.append(telemetryCard, combatCard, blenderCard, bloomCard, conwayCard);
     gfxSection.appendChild(togglesGrid);
     this.settingsModalBody.appendChild(gfxSection);
 
@@ -5215,8 +5370,11 @@ export class HUDManager {
     this._refreshCombatModeSwitchLabel();
     this.setBlenderModeUI(this.isBlenderMode);
     this.setAudioMuteUI(this.isAudioMuted);
+    this.setCleanHudMode(this.cleanHudMode);
     if (this.settingsBtn) {
-      this.settingsBtn.textContent = tr('⚙️ Settings [O]', '⚙️ Paramètres [O]');
+      this.settingsBtn.textContent = this.cleanHudMode
+        ? '⚙️ [O]'
+        : tr('⚙️ Settings [O]', '⚙️ Paramètres [O]');
       this.settingsBtn.title = tr(
         'Open Settings: Language (EN/FR), Voices, Audio Mixer & 3D Graphics [O]',
         'Ouvrir les Paramètres : Langue (EN/FR), Voix, Mixeur Audio & Graphismes 3D [O]'
@@ -5250,8 +5408,8 @@ export class HUDManager {
 
     // 5. Rafraîchir le bandeau d'onboarding si visible
     if (
-      this.onboardingBannerEl &&
-      !this.onboardingBannerEl.classList.contains('is-hidden') &&
+      this.onboardingCard &&
+      !this.onboardingCard.classList.contains('is-hidden') &&
       this._lastOnboardingState
     ) {
       this.updateOnboardingBanner(this._lastOnboardingState);
@@ -5662,7 +5820,7 @@ export class HUDManager {
     if (player) {
       const hp = Math.max(0, Math.round(player.hp ?? 160));
       const maxHp = Math.max(1, Math.round(player.maxHp ?? 160));
-      this.playerHpText.textContent = `${hp} / ${maxHp}`;
+      this.playerHpText.textContent = `${hp}/${maxHp}`;
       this.playerHpFill.style.width = `${Math.min(100, Math.round((hp / maxHp) * 100))}%`;
 
       const lvl = player.level || 1;
@@ -5683,17 +5841,25 @@ export class HUDManager {
       }
 
       const res = player.resources || {};
-      this.woodBadge.textContent = tr(
-        `🪵 Wood: ${Math.floor(res.wood ?? 0)}`,
-        `🪵 Bois: ${Math.floor(res.wood ?? 0)}`
-      );
-      this.crystalBadge.textContent = tr(
-        `💎 Crystal: ${Math.floor(res.crystal ?? 0)}`,
-        `💎 Cristal: ${Math.floor(res.crystal ?? 0)}`
-      );
+      const woodVal = Math.floor(res.wood ?? 0);
+      const stoneVal = Math.floor(res.stone ?? res.biomass ?? 15);
+      const crystalVal = Math.floor(res.crystal ?? 0);
+      const bioVal = Math.floor(res.biomass ?? 0);
+
+      this.woodBadge.textContent = this.cleanHudMode
+        ? `🪵 ${woodVal}`
+        : tr(`🪵 Wood: ${woodVal}`, `🪵 Bois: ${woodVal}`);
+      if (this.stoneBadge) {
+        this.stoneBadge.textContent = this.cleanHudMode
+          ? `🪨 ${stoneVal}`
+          : tr(`🪨 Stone: ${stoneVal}`, `🪨 Pierre: ${stoneVal}`);
+      }
+      this.crystalBadge.textContent = this.cleanHudMode
+        ? `💎 ${crystalVal}`
+        : tr(`💎 Crystal: ${crystalVal}`, `💎 Cristal: ${crystalVal}`);
       this.biomassBadge.textContent = tr(
-        `🌿 Biomass: ${Math.floor(res.biomass ?? 0)}`,
-        `🌿 Biomasse: ${Math.floor(res.biomass ?? 0)}`
+        `🌿 Biomass: ${bioVal}`,
+        `🌿 Biomasse: ${bioVal}`
       );
 
       if (this.foodBadge) {
@@ -5719,7 +5885,7 @@ export class HUDManager {
 
       if (this.weaponBadgeBtn) {
         const wSpec = getElementalWeaponSpec(player.equippedWeaponId || 'runic_steel');
-        this.weaponBadgeBtn.className = `hud-weapon-badge-btn elem-${wSpec.element || 'steel'}`;
+        this.weaponBadgeBtn.className = `hud-weapon-badge-btn hud-telemetry-only elem-${wSpec.element || 'steel'}`;
         this.weaponBadgeBtn.textContent = tr(
           `${wSpec.icon} Weapon: ${translateString(wSpec.shortName)} [K]`,
           `${wSpec.icon} Arme: ${wSpec.shortName} [K]`
@@ -5742,6 +5908,9 @@ export class HUDManager {
       );
       this.bastionHpText.textContent = `${bHp} / ${bMaxHp}`;
       this.bastionHpFill.style.width = `${Math.min(100, Math.round((bHp / bMaxHp) * 100))}%`;
+      if (this.topBastionPill) {
+        this.topBastionPill.textContent = `🏰 ${bHp}/${bMaxHp}`;
+      }
 
       if (shouldRunSlowHud) {
         const relicCount =
@@ -5753,15 +5922,18 @@ export class HUDManager {
 
         if (this.relicBadge) {
           this.relicBadge.classList.toggle('is-complete', shieldReady);
-          this.relicBadge.textContent = bastionAndNpcs.islandShieldActive
-            ? tr(
-                `🛡️ Relics: ${relicCount}/${maxRelics} (DOME ACTIVE [V])`,
-                `🛡️ Reliques: ${relicCount}/${maxRelics} (DÔME ACTIF [V])`
-              )
-            : tr(
-                `🧩 Relics: ${relicCount}/${maxRelics}${shieldReady ? ' (READY [V]!)' : ''}`,
-                `🧩 Reliques: ${relicCount}/${maxRelics}${shieldReady ? ' (PRÊT [V] !)' : ''}`
-              );
+          this.relicBadge.classList.toggle('is-zero-relics', relicCount <= 0 && !bastionAndNpcs.islandShieldActive);
+          this.relicBadge.textContent = this.cleanHudMode
+            ? `🏺 ${relicCount}/${maxRelics}`
+            : bastionAndNpcs.islandShieldActive
+              ? tr(
+                  `🛡️ Relics: ${relicCount}/${maxRelics} (DOME ACTIVE [V])`,
+                  `🛡️ Reliques: ${relicCount}/${maxRelics} (DÔME ACTIF [V])`
+                )
+              : tr(
+                  `🧩 Relics: ${relicCount}/${maxRelics}${shieldReady ? ' (READY [V]!)' : ''}`,
+                  `🧩 Reliques: ${relicCount}/${maxRelics}${shieldReady ? ' (PRÊT [V] !)' : ''}`
+                );
         }
         if (this.activateIslandShieldBtn) {
           this.activateIslandShieldBtn.classList.toggle('is-ready-glow', shieldReady);

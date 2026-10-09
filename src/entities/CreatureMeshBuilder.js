@@ -1929,12 +1929,14 @@ export function animateCreatureMesh(group, animState = {}, elapsedTime = 0, dt =
     if (limbs.rightArm && !animState.isAttacking) limbs.rightArm.rotation.x *= 1 - damp;
   }
 
-  // 2. Attack Swing Animation
+  // 2. Attack Swing Animation (forward +Z cleave sweep — never pitches backward to -Z)
   if (limbs.rightArm && (animState.isAttacking || animState.attackProgress > 0)) {
     const p = animState.attackProgress !== undefined ? animState.attackProgress : (Math.sin(elapsedTime * 16) + 1) * 0.5;
-    limbs.rightArm.rotation.x = -Math.PI * 0.75 + Math.sin(p * Math.PI) * 1.85;
-    limbs.rightArm.rotation.z = -Math.sin(p * Math.PI) * 0.35;
+    limbs.rightArm.rotation.x = -0.22 + Math.sin(p * Math.PI) * 0.95;
+    limbs.rightArm.rotation.y = -Math.cos(p * Math.PI) * 0.55;
+    limbs.rightArm.rotation.z = -Math.sin(p * Math.PI) * 0.32;
   } else if (limbs.rightArm) {
+    limbs.rightArm.rotation.y *= 0.82;
     limbs.rightArm.rotation.z *= 0.85;
   }
 

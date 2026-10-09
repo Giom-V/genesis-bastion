@@ -3796,3 +3796,342 @@ body {
   color: var(--text-secondary);
   line-height: 1.35;
 }
+
+/* ==========================================================================
+   19. PHASE 15 : MINIMALIST "CLEAN HUD" BY DEFAULT (90%+ UNOBSTRUCTED 3D VIEWPORT)
+   ========================================================================== */
+
+/* Shared cluster & icon button styles */
+.hud-top-left-cluster,
+.hud-top-right-cluster {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.hud-top-quick-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.hud-minimal-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--text-parchment);
+  background: rgba(15, 23, 33, 0.85);
+  border: 1px solid rgba(230, 161, 69, 0.45);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: transform 0.14s ease, border-color 0.16s ease, background 0.16s ease;
+}
+
+.hud-minimal-icon-btn:hover {
+  transform: translateY(-1px);
+  border-color: #ffd166;
+  background: rgba(34, 48, 64, 0.94);
+  color: #fff6d6;
+}
+
+.hud-bastion-mini-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  font-weight: 700;
+  color: #8ce99a;
+  background: rgba(20, 42, 32, 0.82);
+  border: 1px solid rgba(56, 193, 114, 0.48);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.hud-resource-badge.res-stone {
+  border-left: 3px solid #95a5a6;
+}
+
+.hud-onboarding-compact-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+}
+
+.hud-onboarding-compact-line {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-parchment);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.hud-onboarding-compact-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+}
+
+.hud-onboarding-dismiss-btn {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 1px solid rgba(240, 234, 214, 0.25);
+  background: rgba(25, 34, 46, 0.88);
+  color: var(--text-secondary);
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.14s ease;
+}
+
+.hud-onboarding-dismiss-btn:hover {
+  background: rgba(255, 71, 87, 0.28);
+  border-color: #ff6b81;
+  color: #ffffff;
+}
+
+/* When Advanced Telemetry is ON, hide the redundant 1-line summary row inside the expanded card */
+#hud-root.is-advanced-telemetry .hud-onboarding-compact-line {
+  display: none;
+}
+
+/* ==========================================================================
+   CLEAN HUD MODE RULES (#hud-root.is-clean-hud — ACTIVE BY DEFAULT)
+   ========================================================================== */
+
+/* 1. Hide Left & Right Telemetry Sidebars, Bottom-Left Log/Mastery Feed & Noisy Debug Badges */
+#hud-root.is-clean-hud .hud-left-panel,
+#hud-root.is-clean-hud .hud-right-panel,
+#hud-root.is-clean-hud .hud-bottom-left,
+#hud-root.is-clean-hud .hud-telemetry-only,
+#hud-root.is-clean-hud .hud-resource-badge.res-relic.is-zero-relics {
+  display: none !important;
+}
+
+/* 2. Top Bar: 2 tiny floating corner clusters (no full-width opaque bar) */
+#hud-root.is-clean-hud .hud-top-bar {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  padding: 0 !important;
+  pointer-events: none;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
+#hud-root.is-clean-hud .hud-top-left-cluster {
+  pointer-events: auto;
+  background: rgba(11, 17, 24, 0.78);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(230, 161, 69, 0.38);
+  border-radius: 999px;
+  padding: 5px 12px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
+  gap: 10px;
+}
+
+#hud-root.is-clean-hud .hud-player-vitals {
+  gap: 8px;
+}
+
+#hud-root.is-clean-hud .hud-vital-box.hud-vital-hp {
+  min-width: 96px;
+}
+
+#hud-root.is-clean-hud .hud-vital-box.hud-vital-xp {
+  min-width: 62px;
+}
+
+#hud-root.is-clean-hud .hud-vital-row {
+  font-size: 10.5px;
+  gap: 5px;
+}
+
+#hud-root.is-clean-hud .hud-progress-track {
+  height: 5px;
+}
+
+#hud-root.is-clean-hud .hud-resources-group {
+  gap: 5px;
+}
+
+#hud-root.is-clean-hud .hud-resource-badge {
+  padding: 3px 8px;
+  font-size: 11.5px;
+  border-radius: 999px;
+  background: rgba(20, 30, 42, 0.85);
+}
+
+#hud-root.is-clean-hud .hud-top-right-cluster {
+  pointer-events: auto;
+  background: rgba(11, 17, 24, 0.78);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(230, 161, 69, 0.38);
+  border-radius: 999px;
+  padding: 4px 8px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
+}
+
+/* Dock the compact 130x130px circular Minimap right under the Top-Right Floating Cluster */
+#hud-root.is-clean-hud .hud-bottom-right {
+  position: fixed;
+  top: 52px;
+  right: 14px;
+  width: 138px;
+  height: 138px;
+  padding: 3px;
+  border-radius: 50%;
+  background: rgba(10, 16, 24, 0.82);
+  border: 1.5px solid rgba(230, 161, 69, 0.58);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.58);
+  display: flex !important;
+  align-items: center;
+  justify-content: center;
+  z-index: 18;
+}
+
+#hud-root.is-clean-hud .hud-bottom-right .minimap-header,
+#hud-root.is-clean-hud .hud-bottom-right .minimap-legend,
+#hud-root.is-clean-hud .hud-bottom-right .hud-panel-subtitle {
+  display: none !important;
+}
+
+#hud-root.is-clean-hud .hud-bottom-right .minimap-canvas-wrap,
+#hud-root.is-clean-hud .hud-bottom-right .minimap-canvas {
+  width: 130px !important;
+  height: 130px !important;
+  border-radius: 50%;
+}
+
+/* 3. Sleek 1-Line Compact Onboarding Toast (max-width: 520px, padding: 8px 14px) */
+#hud-root.is-clean-hud .hud-center-column {
+  grid-column: 1 / -1;
+  padding-top: 2px;
+}
+
+#hud-root.is-clean-hud .hud-onboarding-card {
+  max-width: 520px;
+  width: auto;
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: rgba(12, 19, 28, 0.84);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(230, 161, 69, 0.55);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.55);
+}
+
+#hud-root.is-clean-hud .hud-onboarding-layout {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+#hud-root.is-clean-hud .hud-portrait-medallion-col {
+  min-width: 36px;
+  width: 36px;
+  padding: 0;
+}
+
+#hud-root.is-clean-hud .hud-portrait-frame {
+  width: 36px !important;
+  height: 36px !important;
+  min-width: 36px !important;
+  min-height: 36px !important;
+  border-width: 1.5px !important;
+}
+
+#hud-root.is-clean-hud .hud-speaker-name,
+#hud-root.is-clean-hud .hud-emotion-badge,
+#hud-root.is-clean-hud .hud-portrait-specimen-pip {
+  display: none !important;
+}
+
+#hud-root.is-clean-hud .hud-onboarding-main-col {
+  flex: 1;
+  min-width: 0;
+  gap: 0;
+}
+
+#hud-root.is-clean-hud .hud-onboarding-compact-line {
+  max-width: 310px;
+}
+
+#hud-root.is-clean-hud .hud-replay-voice-btn,
+#hud-root.is-clean-hud .hud-onboarding-skip-btn {
+  padding: 3px 8px;
+  font-size: 11px;
+  border-radius: 999px;
+}
+
+/* 4. Streamline the Bottom Bar: 4 compact 46x46px Spell Icons & no 14-item hotkey strip */
+#hud-root.is-clean-hud .hud-bottom-center {
+  display: none !important;
+}
+
+#hud-root.is-clean-hud .hud-bottom-stack {
+  grid-column: 1 / -1;
+}
+
+#hud-root.is-clean-hud .hud-skill-bar-wrap {
+  padding: 5px 8px;
+  gap: 7px;
+  border-radius: 12px;
+  background: rgba(11, 17, 24, 0.82);
+  border: 1px solid rgba(230, 161, 69, 0.48);
+}
+
+#hud-root.is-clean-hud .hud-skill-slot {
+  width: 46px !important;
+  height: 46px !important;
+  min-height: 46px !important;
+  padding: 3px !important;
+  border-radius: 8px;
+  align-items: center;
+  justify-content: center;
+}
+
+#hud-root.is-clean-hud .hud-skill-name {
+  display: none !important;
+}
+
+#hud-root.is-clean-hud .hud-skill-icon {
+  font-size: 19px;
+  line-height: 1;
+}
+
+#hud-root.is-clean-hud .hud-skill-key {
+  position: absolute;
+  top: 2px;
+  left: 3px;
+  font-size: 8.5px;
+  padding: 0 3px;
+}
+
+#hud-root.is-clean-hud .hud-skill-level {
+  position: absolute;
+  bottom: 2px;
+  right: 3px;
+  font-size: 8.5px;
+  font-family: var(--font-mono);
+  color: #ffd166;
+}
+
