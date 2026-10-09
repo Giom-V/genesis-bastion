@@ -1,5 +1,12 @@
-node_modules/
-dist/
+# Godot 4+ specific ignores
+.godot/
+build/
+
+# Android build directory
+android/
+
+# OS / Editor artifacts
 .DS_Store
-*.log
-.vite/
+*.tmp
+*.swp
+__pycache__/

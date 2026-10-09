@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3 uid="uid://c8g5bastion4main"]
+
+[ext_resource type="Script" path="res://scripts/core/MainGame.gd" id="1_maingame"]
+
+[node name="MainGame" type="Node3D"]
+script = ExtResource("1_maingame")
