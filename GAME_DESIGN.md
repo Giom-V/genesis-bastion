@@ -145,6 +145,9 @@ Au lancement de la partie (et à tout instant via le bouton du HUD ou la touche 
 2. **⚔️ Mode `diablo_action` (Action-RPG Viscéral)** :
    - Le joueur déclenche manuellement ses frappes de fente (**`Clic Gauche`** / **`Espace`**), son esquive (**`Clic Droit`** / **`Shift`**) et **ses 4 sorts actifs équipés avec les touches `[1]`, `[2]`, `[3]`, `[4]`** (les raccourcis de construction du Bastion basculent sur `F1`/`F2`/`F3`).
    - Compétence de départ offerte : **🔥 Nova Pyroclastique (Niv. 1)**.
+3. **🎥 Séparation Stricte Interaction `[E]` vs Caméra `[R] / [F]`** :
+   - La touche **`[E]`** est exclusivement dédiée à l'interaction contextuelle (**Récolter Arbre/Cristal**, **Libérer un Survivant en cage**, **Construire/Améliorer un socle 3D**, **Activer un Autel d'Arme ou de Relique**).
+   - La rotation orbitale de la caméra 3D au clavier est assignée à **`[R]` / `[F]`** (ainsi que `PageUp` / `PageDown` ou **`Clic Droit + Glisser`** à la souris), éliminant tout conflit avec le déplacement (`ZQSD`/`WASD`) ou la récolte (`[E]`).
 
 ---
 
