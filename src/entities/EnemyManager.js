@@ -1463,6 +1463,62 @@ export class EnemyManager {
   }
 
   /**
+   * Phase 9 — Completely resets the island ecosystem back to Island #1 (`islandDifficultyMult = 1.0`),
+   * clears all enemies, resets emergence/wrath timers, and spawns the initial Island #1 population
+   * for a fresh Roguelike Run ("Repartir à Zéro — Nouvelle Run Roguelike").
+   *
+   * @param {number} [count=CONFIG.ECO.INITIAL_POPULATION]
+   * @returns {Object} Summary of reset EnemyManager state.
+   */
+  resetForNewRoguelikeRun(count = CONFIG.ECO?.INITIAL_POPULATION || 42) {
+    this.islandNumber = 1;
+    this.islandDifficultyMult = 1.0;
+    this.islandShieldActive = false;
+    this.tutorialMode = false;
+    this.ecoPaused = false;
+    this.ecoTickTimer = 0;
+    this.timeUntilNextTick = this.ecoTickInterval;
+    this.ecoTickProgress = 0;
+
+    this.speciesWrath?.clear?.();
+    this.provokedSpecies?.clear?.();
+    this.sharksLanded = false;
+    this.sharkLandingTriggered = false;
+    this.molesErupted = false;
+    this.moleEruptionTriggered = false;
+    this.survivalElapsedTime = 0;
+    this.survivalElapsedSec = 0;
+    this.sharkReinforceTimer = 0;
+    this.moleReinforceTimer = 0;
+    if (this.repopulationTimers && typeof this.repopulationTimers === 'object') {
+      for (const k of Object.keys(this.repopulationTimers)) {
+        this.repopulationTimers[k] = 0;
+      }
+    }
+
+    this.clearAllEnemies();
+    this.seenMutations.clear();
+
+    if (this.ecoSim && typeof this.ecoSim.resetForNewRoguelikeRun === 'function') {
+      this.ecoSim.resetForNewRoguelikeRun();
+    }
+
+    this.spawnInitialPopulation(count);
+
+    logger.info(
+      'ECO',
+      `🔄 Écosystème réinitialisé sur l'Île #1 (Difficulté x1.00, ${this.enemies.length} créatures sauvages).`,
+      { islandNumber: this.islandNumber, enemiesSpawned: this.enemies.length }
+    );
+
+    return {
+      islandNumber: this.islandNumber,
+      islandDifficultyMult: this.islandDifficultyMult,
+      enemiesSpawned: this.enemies.length,
+    };
+  }
+
+  /**
    * Transitions a juvenile ('baby') creature into a reproductive 'adult'.
    * Restores full adult maxHp, damage, and 1.0x 3D scale.
    * @param {Object} enemy

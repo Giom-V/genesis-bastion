@@ -86,6 +86,16 @@ export class PlayerController {
     this.maxHp = CONFIG.PLAYER?.MAX_HP || 160;
     /** @type {number} */
     this.hp = this.maxHp;
+    /** @type {boolean} True when the Hero has fallen in combat (0 HP) and Game Over screen is active */
+    this.isDead = false;
+    /** @type {number} Total number of times the Hero has died */
+    this.deathCount = 0;
+    /** @type {number} Total number of times the player chose 'Continue (Sanctuary Grace)' after dying */
+    this.continueCount = 0;
+    /** @type {string|null} Reason of the most recent death ('hero_slain' | 'bastion_fallen' | null) */
+    this.lastDeathReason = null;
+    /** @type {string|null} Name of the creature/event that caused the most recent death */
+    this.lastKillerName = null;
     /** @type {number} */
     this.level = 1;
     /** @type {number} */
@@ -94,14 +104,19 @@ export class PlayerController {
     this.nextLevelXp = 100;
     /** @type {number} */
     this.kills = 0;
+    /** @type {number} Alias for total enemies killed in the current run */
+    this.enemiesKilledCount = 0;
     /** @type {number} */
     this.mutantsSlain = 0;
-    /** @type {{ wood: number, crystal: number, biomass: number, food: number }} */
+    /** @type {number} Alias for total mutants/hybrids killed in the current run */
+    this.mutantsKilledCount = 0;
+    /** @type {{ wood: number, crystal: number, biomass: number, food: number, maxFood?: number }} */
     this.resources = {
       wood: 40,
       crystal: 20,
       biomass: 15,
       food: 60,
+      maxFood: 150,
     };
     /** @type {number} Maximum Food / Rations storage cap */
     this.maxFood = 150;
@@ -181,6 +196,8 @@ export class PlayerController {
     this.onWeaponEquipped = options.onWeaponEquipped || null;
     /** @type {Function|null} `(relic, collectedCount, maxCount)` invoked when a Relic Fragment is collected */
     this.onRelicCollected = options.onRelicCollected || null;
+    /** @type {Function|null} `(deathInfo)` invoked when the Hero falls in combat (`this.hp <= 0`) */
+    this.onPlayerDeath = options.onPlayerDeath || null;
 
     /** @type {{ type: string, label: string, keyHint: string, worldPos: THREE.Vector3, entity: Object }|null} */
     this.nearestPrompt = null;
@@ -1576,8 +1593,10 @@ export class PlayerController {
     const weaponBonusBiomass = !isPrey && wSpec?.biomassOnKill ? Number(wSpec.biomassOnKill) : 0;
 
     this.kills++;
+    this.enemiesKilledCount = this.kills;
     if (isMutantOrHybrid) {
       this.mutantsSlain++;
+      this.mutantsKilledCount = this.mutantsSlain;
       this.resources.biomass += Math.round(6 * bonusMult) + weaponBonusBiomass;
     } else {
       this.resources.biomass += (isPrey ? 1 : 2) + weaponBonusBiomass;
@@ -1905,7 +1924,7 @@ export class PlayerController {
    * @param {string|null} [damageType=null] - Explicit damage category (`'fire' | 'poison' | 'ice' | 'physical'`).
    */
   takeDamage(amount, isElemental = false, attackerEnemy = null, damageType = null) {
-    if (this.dashTimer > 0) return;
+    if (this.isDead || this.dashTimer > 0) return;
 
     let adaptiveReduction = 0;
     if (this.mastery && typeof this.mastery.recordDamageTaken === 'function') {
@@ -1937,13 +1956,174 @@ export class PlayerController {
     }
 
     if (this.hp <= 0) {
-      this.hp = Math.round(this.maxHp * 0.65);
-      this.x = 0;
-      this.z = 5.5;
-      logger.warn('PLAYER', 'Repli d’urgence au Sanctuaire du Bastion ! Vitalité restaurée.', {
-        hp: this.hp,
+      this.hp = 0;
+      this.isDead = true;
+      this.deathCount = (this.deathCount || 0) + 1;
+      const killerName = attackerEnemy
+        ? attackerEnemy.genome?.speciesName ||
+          attackerEnemy.speciesName ||
+          CONFIG.SPECIES?.[attackerEnemy.genome?.speciesId]?.name ||
+          'Créature Sauvage'
+        : 'Créature Sauvage';
+      this.lastDeathReason = 'hero_slain';
+      this.lastKillerName = killerName;
+
+      logger.alert(`💀 GAME OVER : Le Gardien est tombé face à [${killerName}] !`, {
+        killerName,
+        level: this.level,
+        deathCount: this.deathCount,
       });
+
+      if (typeof this.onPlayerDeath === 'function') {
+        this.onPlayerDeath({
+          reason: 'hero_slain',
+          killerName,
+          attackerEnemy,
+          player: this,
+        });
+      }
     }
+  }
+
+  /**
+   * Phase 9 — Revives the Hero at the Bastion Sanctuary with 100% HP, brief invulnerability,
+   * and +60 Food Rations when the player chooses "Continuer quand même (Grâce Temporaire du Sanctuaire)".
+   *
+   * @returns {Object} Summary of revived Hero state.
+   */
+  reviveWithSanctuaryGrace() {
+    this.isDead = false;
+    this.continueCount = (this.continueCount || 0) + 1;
+    this.hp = this.maxHp;
+    this.x = 0;
+    this.z = 5.5;
+    this.vx = 0;
+    this.vz = 0;
+    this.y = this.terrain ? this.terrain.getHeightAt(this.x, this.z) : 0;
+    this.dashTimer = 0.8;
+    const maxFoodCap = this.resources.maxFood || this.maxFood || 150;
+    this.resources.food = Math.min(maxFoodCap, Math.max(85, (this.resources.food || 0) + 60));
+    this.isWellFed = true;
+    this.isStarvingFamine = false;
+
+    if (this.mesh) {
+      this.mesh.position.set(this.x, Math.max(this.y, (CONFIG.WORLD?.WATER_LEVEL ?? -0.5) + 0.15), this.z);
+    }
+
+    logger.info(
+      'PLAYER',
+      `✨ Grâce Temporaire du Sanctuaire invoquée : Le Gardien se relève à 100% PV (${this.hp}/${this.maxHp}) !`,
+      { continueCount: this.continueCount, hp: this.hp, food: this.resources.food }
+    );
+
+    return {
+      isDead: this.isDead,
+      hp: this.hp,
+      maxHp: this.maxHp,
+      continueCount: this.continueCount,
+      food: this.resources.food,
+    };
+  }
+
+  /**
+   * Phase 9 — Completely resets the Hero to Level 1 on Island #1 for a fresh Roguelike Run
+   * ("Repartir à Zéro — Nouvelle Run Roguelike").
+   *
+   * @returns {Object} Summary of reset Hero state.
+   */
+  resetForNewRoguelikeRun() {
+    this.level = 1;
+    this.xp = 0;
+    this.nextLevelXp = CONFIG.PLAYER?.BASE_XP_NEXT || 60;
+    this.pendingLevelUps = 0;
+    this.maxHp = CONFIG.PLAYER?.MAX_HP || 160;
+    this.hp = this.maxHp;
+    this.isDead = false;
+    this.lastDeathReason = null;
+    this.lastKillerName = null;
+
+    this.x = 0;
+    this.z = 6.5;
+    this.vx = 0;
+    this.vz = 0;
+    this.y = this.terrain ? this.terrain.getHeightAt(this.x, this.z) : 0;
+    this.facingAngle = Math.PI;
+    this.dashTimer = 0;
+    this.dashCooldown = 0;
+    this.cleaveCooldown = 0;
+    this.cleaveAnimTimer = 0;
+
+    // Reset all stat & upgrade multipliers
+    this.speedMult = 1.0;
+    this.cleaveDamageMult = 1.0;
+    this.mutantDamageMult = 1.0;
+    this.dashCooldownMult = 1.0;
+    this.damageReduction = 0.0;
+    this.regenPerSec = 1.2;
+    this.scoutVisionMult = 1.0;
+    this.scoutSpeedMult = 1.0;
+    this.turretDamageMult = 1.0;
+    this.juvenilePurge = false;
+    this.patientZeroTracker = false;
+    this.upgrades = [];
+
+    // Reset run counters & resources
+    this.kills = 0;
+    this.enemiesKilledCount = 0;
+    this.mutantsSlain = 0;
+    this.mutantsKilledCount = 0;
+    this.preySlain = 0;
+    this.collateralPreyKills = 0;
+    this.cagesRescuedCount = 0;
+    this.relicFragmentsCollected = 0;
+    this.resources = {
+      wood: 20,
+      crystal: 10,
+      biomass: 5,
+      food: 80,
+      maxFood: 150,
+    };
+    this.maxFood = 150;
+    this.isWellFed = true;
+    this.isStarvingFamine = false;
+
+    // Reset weapon to Runic Steel Greatsword
+    this.unlockedWeapons = new Set(['runic_steel']);
+    this.equipElementalWeapon('runic_steel');
+
+    // Clear 3D spells & orbital blades, then grant starter spell of current combatMode
+    this.abilities.clear();
+    this.abilityOrder = [];
+    this._orbitalHitTimers.clear();
+    if (this.orbitalBladesGroup) {
+      while (this.orbitalBladesGroup.children.length > 0) {
+        this.orbitalBladesGroup.remove(this.orbitalBladesGroup.children[0]);
+      }
+      this.orbitalBladesGroup.visible = false;
+    }
+    this.setCombatMode(this.combatMode || 'diablo_action', true);
+
+    // Reset Adaptive Mastery System
+    this.mastery = new AdaptiveMasterySystem();
+
+    if (this.mesh) {
+      this.mesh.position.set(this.x, Math.max(this.y, (CONFIG.WORLD?.WATER_LEVEL ?? -0.5) + 0.15), this.z);
+      this.mesh.rotation.y = this.facingAngle;
+    }
+
+    logger.info(
+      'PLAYER',
+      '🔄 Nouvelle Run Roguelike initialisée : Héros remis au Niveau 1 avec Lame d’Acier Runique.',
+      { level: this.level, hp: this.hp, maxHp: this.maxHp, equippedWeaponId: this.equippedWeaponId }
+    );
+
+    return {
+      level: this.level,
+      hp: this.hp,
+      maxHp: this.maxHp,
+      isDead: this.isDead,
+      equippedWeaponId: this.equippedWeaponId,
+    };
   }
 
   /**
@@ -2326,6 +2506,11 @@ export class PlayerController {
     this.lastEnemyManagerRef = enemyManager || this.lastEnemyManagerRef;
     if (enemyManager) {
       enemyManager.playerRef = this;
+    }
+    if (this.isDead) {
+      this.vx = 0;
+      this.vz = 0;
+      return;
     }
 
     this.cleaveCooldown = Math.max(0, this.cleaveCooldown - dt);

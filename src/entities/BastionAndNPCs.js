@@ -212,6 +212,8 @@ export class BastionAndNPCs {
     this.onIslandShieldActivated = null;
     /** @type {Function|null} Optional callback `(relic, scout)` when a Scout spots a Relic Monolith */
     this.onRelicSpottedByScout = null;
+    /** @type {Function|null} Optional callback `(deathInfo)` when the Bastion Sanctuary HP reaches 0 */
+    this.onBastionDestroyed = null;
 
     /** @type {THREE.Group|null} Root 3D group for the Bastion Sanctuary */
     this.bastionGroup = null;
@@ -1698,6 +1700,63 @@ export class BastionAndNPCs {
   }
 
   /**
+   * Phase 9 — Completely resets the Bastion Sanctuary, buildings, allied NPCs, Prisoner Cages,
+   * Elemental Weapon Shrines, and Relic Monoliths back to Island #1 for a fresh Roguelike Run.
+   *
+   * @returns {Object} Summary of reset Bastion state.
+   */
+  resetForNewRoguelikeRun() {
+    this.tutorialMode = false;
+    this.islandNumber = 1;
+    this.islandShieldActive = false;
+    this.collectedRelicFragments = 0;
+
+    if (this.vfx && typeof this.vfx.clearIslandShieldDome === 'function') {
+      this.vfx.clearIslandShieldDome();
+    }
+
+    this.structures = {
+      watchtower: 1,
+      scout_guild: 0,
+      lumber_forge: 0,
+      palisade: 0,
+      biolab: 0,
+      sanctuary_hearth: 1,
+    };
+    this._recomputeBuildingStats();
+    for (const id of this.buildingPads.keys()) {
+      this._rebuildSingleBuildingPadMesh(id);
+    }
+    this.hp = this.maxHp;
+
+    // Reset Allied NPCs (1 Harvester, 1 Scout, 1 Guard)
+    this.clearAllNpcs();
+    this.spawnNpc('harvester', -4.5, 3.5);
+    this.spawnNpc('scout', 4.5, 3.5);
+    this.spawnNpc('guard', 0, -5.0);
+
+    // Reset Prisoner Cages, Elemental Weapon Shrines & Island #1 Relic Monoliths
+    this.clearAllCages();
+    this.rescuedCount = 0;
+    this._spawnPrisonerCages();
+    this._spawnWeaponShrines();
+    this._spawnRelicMonoliths(1);
+
+    logger.info(
+      'BASTION',
+      '🔄 Bastion réinitialisé pour une Nouvelle Run Roguelike sur l’Île #1 (PV: 100%, 3 Alliés, 3 Monolithes).',
+      { islandNumber: this.islandNumber, hp: this.hp, maxHp: this.maxHp }
+    );
+
+    return {
+      islandNumber: this.islandNumber,
+      hp: this.hp,
+      maxHp: this.maxHp,
+      npcsCount: this.npcs.length,
+    };
+  }
+
+  /**
    * Returns current Relic Fragment progress and Planetary Island Shield state for the HUD.
    * @returns {Object}
    */
@@ -1993,8 +2052,18 @@ export class BastionAndNPCs {
     }
     this.hp = Math.max(0, this.hp - amount);
     if (this.hp <= 0) {
-      this.hp = Math.round(this.maxHp * 0.4);
-      logger.warn('BASTION', 'Les défenses du Bastion ont vacillé ! Réparation d’urgence engagée.');
+      if (typeof this.onBastionDestroyed === 'function') {
+        this.hp = 0;
+        logger.alert('💀 GAME OVER : Le Cœur du Sanctuaire a été détruit par la horde !');
+        this.onBastionDestroyed({
+          reason: 'bastion_fallen',
+          killerName: 'Siège contre le Cœur du Sanctuaire',
+          bastion: this,
+        });
+      } else {
+        this.hp = Math.round(this.maxHp * 0.4);
+        logger.warn('BASTION', 'Les défenses du Bastion ont vacillé ! Réparation d’urgence engagée.');
+      }
     }
     return this.thornsDamage;
   }
