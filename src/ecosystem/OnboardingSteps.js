@@ -217,12 +217,12 @@ export const ONBOARDING_ACTS = [
     timeWindow: '4:00 – 5:15',
     ecoPaused: true,
     instructionText:
-      'La section Bâtiments du panneau gauche vient de s’ouvrir ! Cliquez sur le bouton doré [🏹 Construire : Tour de Guet] (ou appuyez sur [1]), puis observez-la repousser l’assaut de 2 Gobelins.',
+      'La section Bâtiments du panneau gauche vient de s’ouvrir ! Cliquez sur le bouton doré [🏹 Construire : Tour de Guet] (ou appuyez sur [F1]), puis observez-la repousser l’assaut de 2 Gobelins.',
     whyItMatters:
       'Lorsque l’écosystème s’éveillera, vous devrez vous éloigner du Bastion pour traquer des mutants. Les Tours de Guet et les Gardes protègent le feu sacré en votre absence.',
-    keys: ['Clic sur Tour de Guet', 'Touche 1'],
+    keys: ['Clic sur Tour de Guet', 'Touche F1'],
     keyBadges: [
-      { keys: ['Clic Gauche', '1'], altKeys: [], label: 'Construire : Tour de Guet (Panneau Gauche)' },
+      { keys: ['Clic Gauche', 'F1'], altKeys: [], label: 'Construire : Tour de Guet (Panneau Gauche)' },
     ],
     objectiveLabel: 'Construire une Tour de Guet et repousser les 2 Gobelins assaillants',
     progressLabelTemplate: 'Défense du Bastion : {current}/{target}',
@@ -232,7 +232,7 @@ export const ONBOARDING_ACTS = [
     subObjectives: [
       {
         id: 'build_watchtower',
-        label: '4A. Cliquer sur « Tour de Guet » dans le panneau gauche (ou touche [1])',
+        label: '4A. Cliquer sur « Tour de Guet » dans le panneau gauche (ou touche [F1])',
         targetPos: { x: 0, z: 0 },
       },
       {
@@ -329,10 +329,10 @@ export const ONBOARDING_ACTS = [
       '🦅 ALERTE ÉCLAIREUR ! Votre Éclaireur a repéré au Nord-Est un Bébé Troll de Feu (mutation Glande Pyroclastique) ! Ce monstre vient de naître : c’est encore un BÉBÉ (taille 0.5x, incapable de se reproduire). Éliminez-le avant qu’il ne devienne ADULTE, puis ouvrez le Codex [Tab] !',
     whyItMatters:
       'Dans Genesis Bastion, les mutations sont mendéliennes et dominantes (78% de transmission). Tuer un Patient Zéro tant qu’il est encore BÉBÉ éradique la lignée avant son 1er cycle de reproduction !',
-    keys: ['Sprint / Shift', 'Clic Gauche', 'Tab (Codex Génétique)'],
+    keys: ['Sprint / Shift', 'Clic Gauche / Sorts 1..4', 'Tab (Codex Génétique)'],
     keyBadges: [
       { keys: ['Shift'], altKeys: ['Z/Q/S/D'], label: 'Foncer vers le faisceau rouge (Nord-Est)' },
-      { keys: ['Clic Gauche'], altKeys: ['Espace'], label: 'Éliminer le Bébé Troll de Feu' },
+      { keys: ['Clic Gauche', '1..4'], altKeys: ['Auto'], label: 'Éliminer le Bébé Troll de Feu' },
       { keys: ['Tab'], altKeys: [], label: 'Ouvrir l’Arbre Phylogénétique & Codex' },
     ],
     objectiveLabel: 'Éliminer le Bébé Troll de Feu (Patient Zéro) au Nord-Est puis appuyer sur [Tab]',
@@ -393,11 +393,11 @@ export const ONBOARDING_ACTS = [
       'Vous maîtrisez toutes les commandes ! La Barre d’Eco-Tick est activée et les 7 espèces sauvages peuplent désormais l’île : toutes les 12s, les meutes en densité optimale (2 à 6) se reproduisent, s’hybrident et mutent, tandis que la surpopulation (> 6) provoque des famines et des migrations vers le Bastion.',
     whyItMatters:
       'Libérez les cages restantes, recrutez davantage d’Éclaireurs pour surveiller la Caldeira Volcanique et les forêts lointaines, et interceptez les Bébés Patients Zéro avant qu’ils ne dominent l’île !',
-    keys: ['Tab : Codex', 'G : Grille Conway', 'T : Forcer Eco-Tick', 'M : Spawner Mutant'],
+    keys: ['1..4 : Sorts', 'C : Mode Auto/Actif', 'Tab : Codex', 'G : Grille Conway'],
     keyBadges: [
-      { keys: ['Tab'], altKeys: [], label: 'Codex Phylogénétique' },
-      { keys: ['G'], altKeys: [], label: 'Grille Biomasse Conway (Minimap)' },
-      { keys: ['1', '2', '3'], altKeys: [], label: 'Raccourcis Bastion' },
+      { keys: ['1', '2', '3', '4'], altKeys: ['C : Mode Auto'], label: 'Compétences & Sorts 3D' },
+      { keys: ['Tab'], altKeys: ['G'], label: 'Codex Phylogénétique & Grille Conway' },
+      { keys: ['F1', 'F2', 'F3'], altKeys: [], label: 'Bâtiments du Bastion' },
     ],
     objectiveLabel: 'Survie Ouverte : Protégez le Bastion et éradiquez les lignées mutantes !',
     progressLabelTemplate: 'Écosystème Actif',

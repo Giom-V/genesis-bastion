@@ -63,9 +63,10 @@ L'implémentation de référence se trouve dans [`src/ecosystem/OnboardingSteps.
 * **Sous-étape 2B (Esquive / Dash)** :
   - Une fois le Gobelin vaincu, un **Orc Maraudeur** ($70\text{ PV}$) surgit à `(13, -9)`.
   - Le joueur effectue un **Dash (`[Shift]` ou `[Clic Droit]`)** et terrasse l'Orc.
-* **Sous-étape 2C (Récompense Roguelike)** :
+* **Sous-étape 2C (Récompense Roguelike en Pause Totale & 1re Maîtrise Adaptative)** :
+  - Dès le 1er Gobelin éliminé, le joueur voit apparaître sa première maîtrise adaptative : **`⚔️ Maîtrise : Fléau des Gobelins (Rang 1 : +12% Dégâts)`** !
   - L'XP combinée du Gobelin ($45\text{ XP}$) et de l'Orc ($80\text{ XP}$) fait passer le héros au **Niveau 2** !
-  - La **Modale d'Amélioration Roguelike** s'ouvre : le joueur choisit sa première carte de spécialisation.
+  - La **Modale d'Amélioration Roguelike** s'ouvre et **met automatiquement le jeu en PAUSE TOTALE (`⏸️ JEU EN PAUSE`)** : le joueur prend tout son temps pour lire et choisir son premier nouveau Sort 3D (ex. *Nova Pyroclastique*, *Arc Foudroyant*, *Javelot Cryogénique*) ou passif.
 
 ### Acte 3 — Sauver son 1er Survivant & Récolter des Ressources (2:30 – 4:00)
 * **Mise en scène** : Une **Cage de Prisonnier** apparaît à $28\text{m}$ au Sud-Est `(20, 20)`, gardée par un **Loup**.
@@ -76,7 +77,7 @@ L'implémentation de référence se trouve dans [`src/ecosystem/OnboardingSteps.
 ### Acte 4 — Construire son 1er Bâtiment : La Tour de Guet (4:00 – 5:15)
 * **Déverrouillage UI** : La section **Bâtiments** du panneau gauche se débloque, et le bouton **`🏹 Tour de Guet`** pulse d'un halo doré.
 * **Action & Validation par le Spectacle** :
-  - Dès que le joueur clique sur **`Tour de Guet`** (ou appuie sur **`[1]`**), la tour de bois et de cristal s'élève en 3D au Bastion.
+  - Dès que le joueur clique sur **`Tour de Guet`** (ou appuie sur **`[F1]`**), la tour de bois et de cristal s'élève en 3D au Bastion.
   - Immédiatement, **2 Gobelins Pilleurs** attaquent depuis l'Ouest `(-22, 16)` : la Tour de Guet leur décoche automatiquement des traits lumineux, prouvant au joueur que son Bastion peut désormais se défendre pendant qu'il partira en expédition.
 
 ### Acte 5 — Le Tournant du Jeu : 2e Survivant & Recrutement d'un Éclaireur (5:15 – 6:45)
@@ -95,19 +96,27 @@ L'implémentation de référence se trouve dans [`src/ecosystem/OnboardingSteps.
 * **Enseignement de la Règle Bébé → Adulte** :
   > *« 🦅 ALERTE ÉCLAIREUR ! Ce Troll de Feu vient de naître : c'est encore un **BÉBÉ** (taille `0.5x`, stats réduites, **incapable de se reproduire**). Si vous le laissez devenir **ADULTE**, sa mutation dominante (`78%` de transmission) contaminera toute son espèce ! Foncez l'éliminer maintenant ! »*
   - *(Sécurité pédagogique : tant que l'Acte 6 est en cours, la barre de croissance du Bébé Troll de Feu ralentit et plafonne à `80%` afin que le joueur ait la garantie de comprendre la mécanique et de l'abattre avant sa maturité).*
-* **Célébration & Codex** :
-  - À la mort du Bébé Troll de Feu, la bannière **« 🏆 LIGNÉE MUTANTE ÉRADIQUÉE À TEMPS ! »** s'affiche.
-  - Le tutoriel invite le joueur à appuyer sur **`[Tab]`** pour admirer l'**Arbre Phylogénétique interactif** et le schéma des lois de densité de Conway.
+* **Célébration, Maîtrise Anti-Pyro & Codex** :
+  - À la mort du Bébé Troll de Feu, la bannière **« 🏆 LIGNÉE MUTANTE ÉRADIQUÉE À TEMPS ! »** s'affiche ET le Héros acquiert **`🧬 Adaptation Génétique : Chasseur [Pyro / Feu] (Rang 1 : +15% Dégâts)`**.
+  - Le tutoriel invite le joueur à appuyer sur **`[Tab]`** (en pause sécurisée) pour admirer l'**Arbre Phylogénétique interactif** et le schéma des lois de densité de Conway.
 
 ### Acte 7 — L'Éveil de l'Écosystème (8:30+ → Boucle de Survie Infinie)
 * **Ouverture Totale** :
   - La **Barre Supérieure d'Eco-Tick** et les **Outils de Laboratoire** se déverrouillent (`FULL_UNLOCKED_HUD`).
   - L'écosystème sort de pause (`ecoPaused = false`) et génère les meutes sauvages sur toute l'île (`spawnInitialPopulation(42)`).
-  - Le joueur entre dans la vraie boucle de survie de *Genesis Bastion* en maîtrisant 100% de ses armes, de ses constructions, de ses Éclaireurs et des lois de l'évolution darwinienne.
+  - Le joueur entre dans la vraie boucle de survie de *Genesis Bastion* en maîtrisant 100% de ses armes, de ses 4 sorts (`[1][2][3][4]` ou `Auto`), de ses constructions (`[F1][F2][F3]`), de ses Éclaireurs et des lois de l'évolution darwinienne.
 
 ---
 
-## 4. Courbe de Tension & Charge Cognitive (Minutes 0 à 10)
+## 4. Choix Initial du Mode de Combat & Pause de Lecture
+
+Avant le début de l'Acte 1 (et permutable à tout moment via **`[C]`**), une modale d'accueil en pause invite le joueur à choisir son confort de jeu :
+- **🧛 Mode Vampire Survivors (Auto-Cast)** : Frappe et lancement automatique des sorts 3D dès qu'un ennemi est à portée — idéal pour se concentrer sur le déplacement et la gestion écologique.
+- **⚔️ Mode Diablo (Action-RPG)** : Frappe manuelle au `Clic Gauche`/`Espace` et déclenchement tactique des 4 sorts équipés via `[1] [2] [3] [4]`.
+
+---
+
+## 5. Courbe de Tension & Charge Cognitive (Minutes 0 à 10)
 
 ```
 Tension / Complexité UI
@@ -115,9 +124,9 @@ Tension / Complexité UI
        │                                           ╭──────────╯     (100% HUD + Boucle Conway active)
    75% │                                ╭──────────╯ Acte 6 : Alerte Bébé Patient Zéro (Troll de Feu)
        │                     ╭──────────╯ Acte 5 : 2e Cage + Minimap + 1er Éclaireur
-   50% │          ╭──────────╯ Acte 4 : Tour de Guet + Assaut de 2 Gobelins
+   50% │          ╭──────────╯ Acte 4 : Tour de Guet [F1] + Assaut de 2 Gobelins
        │     ╭────╯ Acte 3 : 1re Cage + Loup + Récolte (Débloque Panneau Bastion)
-   25% │  ╭──╯ Acte 2 : Gobelin + Dash Orc + Level-Up (Combat pur, 0 panneau complexe)
+   25% │  ╭──╯ Acte 2 : Gobelin + Dash Orc + Level-Up en Pause + 1re Maîtrise Adaptative
     0% └──┴────────────────────────────────────────────────────────────────────────────► Temps
       0:00   1:00       2:30       4:00       5:15       6:45       8:30             10:00
 ```

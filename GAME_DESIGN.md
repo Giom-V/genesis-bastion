@@ -124,3 +124,62 @@ L'exécution du simulateur déterministe sans interface (`npm run dry-run`, grai
 | **🛡️ Lame Pyrophage & Égide Cryo** | Contre-Mutation | Réduit de **40%** les dégâts élémentaires (*Feu*, *Venin*, *Givre*) et élargit l'arc d'attaque de `+1.4m`. | **Dominance de la Glande Pyroclastique** (*Trolls de Feu*) et des *Dragons*. |
 | **🥾 Bottes d'Expédition Véloce** | Mobilité | `+24%` vitesse permanente et `-30%` temps de recharge d'esquive (Dash). | **Compte à rebours Eco-Tick ($12\text{s}$)** lors des traversées d'un bout à l'autre de l'île. |
 | **❤️ Sang d'Ambre Régénérant** | Survie | `+60 PV Max`, soin immédiat de `70 PV` et régénération passive de `+3.0 PV/s`. | **Guerre d'usure** lors des expéditions prolongées loin du feu de camp du Bastion. |
+
+---
+
+## 6. Pause Tactique Stricte & Choix du Style de Combat (`Vampire Survivors` vs `Diablo`)
+
+Défini dans [`src/ecosystem/RoguelikeAbilitiesAndMastery.js`](file:///usr/local/google/home/giom/.gemini/jetski/scratch/genesis-bastion/src/ecosystem/RoguelikeAbilitiesAndMastery.js) (`COMBAT_MODES`), le système de combat respecte deux règles d'ergonomie fondamentales :
+
+### 6.1. Pause Stricte pendant les Modales (`isModalPaused = true`)
+Dès que la modale de **Montée de Niveau (Level-Up)**, la modale d'accueil ou le **Codex Phylogénétique (`[Tab]`)** est ouverte :
+- **La simulation physique, les déplacements ennemis, les projectiles et les minuteries d'Eco-Tick sont 100% mis en pause**.
+- Le joueur dispose d'un bandeau explicite **`⏸️ JEU EN PAUSE — Prenez tout votre temps pour lire et choisir votre compétence`** afin d'analyser ses synergies sans jamais subir de dégâts injustes en arrière-plan.
+
+### 6.2. Deux Philosophies de Gameplay permutables à la volée (`[C]`)
+Au lancement de la partie (et à tout instant via le bouton du HUD ou la touche **`[C]`**), le joueur choisit son mode de contrôle :
+1. **🧛 Mode `vampire_survivors` (Auto-Battler / Auto-Cast)** :
+   - Le joueur se concentre à 100% sur son **positionnement (`ZQSD`/`WASD`)**, ses **esquives (`Shift`)** et ses **décisions stratégiques** (expéditions, sauvetages, traque de Patient Zéro).
+   - Le Héros **frappe automatiquement à l'épée** dès qu'un ennemi entre dans son cercle de portée ET **déclenche automatiquement toutes ses compétences 3D équipées** dès que leur temps de recharge est prêt et qu'une cible est à portée.
+   - Compétence de départ offerte : **🌀 Lames Orbitales Spectrales (Niv. 1)**.
+2. **⚔️ Mode `diablo_action` (Action-RPG Viscéral)** :
+   - Le joueur déclenche manuellement ses frappes de fente (**`Clic Gauche`** / **`Espace`**), son esquive (**`Clic Droit`** / **`Shift`**) et **ses 4 sorts actifs équipés avec les touches `[1]`, `[2]`, `[3]`, `[4]`** (les raccourcis de construction du Bastion basculent sur `F1`/`F2`/`F3`).
+   - Compétence de départ offerte : **🔥 Nova Pyroclastique (Niv. 1)**.
+
+---
+
+## 7. Arsenal des 8 Sorts 3D Évolutifs (`ROGUELIKE_ABILITIES`, Niv. 1 → 5)
+
+Chaque montée de niveau propose 3 cartes tirées via `drawRoguelikeLevelUpChoices()`, permettant de débloquer jusqu'à 4 sorts actifs/auto-cast et de les faire évoluer jusqu'au **Niveau 5** :
+
+| Sort 3D (`id`) | Icône & Catégorie | Dégâts Base → Niv. 5 | Recharge Base → Niv. 5 | Mécanique 3D & Rôle Tactique | Affinité Génétique |
+| :--- | :---: | :---: | :---: | :--- | :--- |
+| **Lames Orbitales** (`spinning_blades`) | 🌀 Orbite 3D Permanente | `18` → `38` / coup | Permanent (`4.5s` pulse) | **2 à 6 lames spectrales** tournent en orbite autour du Héros et tranchent tout ennemi au contact. | `goblin` / `winged_leap` |
+| **Nova Pyroclastique** (`pyro_nova`) | 🔥 Explosion de Feu | `42` → `89` (+Brûlure) | `5.2s` → `3.4s` | Onde de choc circulaire de magma (`8.5m` → `12.6m`) calcinant les meutes denses. | `troll` / `pyro_gland` |
+| **Arc Foudroyant** (`chain_lightning`) | ⚡ Foudre en Chaîne | `34` → `72` / cible | `3.8s` → `2.5s` | Éclair 3D haute tension rebondissant instantanément de **3 à 7 ennemis**. | `vulture` / `winged_leap` |
+| **Javelot Cryogénique** (`frost_spear`) | ❄️ Perforation & Gel | `38` → `81` | `3.2s` → `2.1s` | Lance de glace perforante (`1` à `3` projectiles) qui **ralentit de 50%** : idéal pour bloquer un Patient Zéro ! | `wolf` / `cryo_blood` |
+| **Salve Venimeuse** (`venom_volley`) | 🧪 Barrage Toxique | `22` → `47` (+Poison) | `3.6s` → `2.4s` | Éventail de **5 à 13 dagues neurotoxiques** infligeant un lourd poison sur la durée (DoT). | `orc` / `venom_sacs` |
+| **Météore d'Ambre** (`meteor_strike`) | ☄️ Frappe Anti-Apex | `68` → `144` (AoE) | `7.0s` → `4.6s` | Cible automatiquement l'ennemi au **plus haut `fitnessScore`** (ou Patient Zéro) et abat un météore explosif. | `dragon` / `titan_growth` |
+| **Siphon Vampirique** (`soul_siphon`) | 🩸 Drain Hématophage | `32` → `68` | `5.5s` → `3.6s` | Rayon cramoisi reliant **2 à 6 cibles** au Héros et convertissant **45% à 65%** des dégâts en soin immédiat. | `lion` / `vampiric_maw` |
+| **Onde Sismique** (`seismic_slam`) | 🔨 Onde & Stun | `36` → `76` | `5.0s` → `3.3s` | Frappe tellurique qui **repousse violemment (`5.5m+`)** et **étourdit (`1.4s` → `2.4s`)** la horde entourant le joueur. | `troll` / `osteo_plating` |
+
+---
+
+## 8. Apprentissage & Adaptation par l'Action (`AdaptiveMasterySystem`)
+
+Pour que le Héros évolue lui aussi en symbiose avec l'écosystème darwinien, la classe [`AdaptiveMasterySystem`](file:///usr/local/google/home/giom/.gemini/jetski/scratch/genesis-bastion/src/ecosystem/RoguelikeAbilitiesAndMastery.js) implémente la loi **"Plus tu fais ou subis X, plus tu deviens fort et résistant face à X"** :
+
+1. **⚔️ Maîtrise de Chasse par Espèce (`recordKill`)** :
+   - Paliers rapides : **`1`, `3`, `6`, `10`, `16` éliminations** d'une même espèce (et les deux espèces parentes lorsqu'on tue un hybride comme un *Goblorc*).
+   - Dès le **1er kill**, le joueur débloque **Rang 1 (+12% Dégâts contre cette espèce)**, grimpant jusqu'à **+60% au Rang 5**.
+2. **🧬 Maîtrise Anti-Mutation & Affinité Élémentaire (`recordKill`)** :
+   - Paliers : **`1`, `2`, `4`, `7`, `12` mutants éliminés** d'une même souche (`pyro_gland`, `venom_sacs`, `cryo_blood`, `osteo_plating`, etc.).
+   - Confère **+15% Dégâts par rang** (jusqu'à **+75%**) contre tous les porteurs de cette mutation ET multiplie par **$\times 1.75$** la probabilité que l'arbre de Level-Up propose le sort élémentaire correspondant (ex. tuer le *Troll de Feu* favorise l'apparition de la *Nova Pyroclastique* !).
+3. **🛡️ Résistance Corporelle Adaptative (`recordDamageTaken`)** :
+   - Paliers : **`2`, `5`, `9`, `15`, `22` coups encaissés** dans chacune des 4 catégories (`fire`, `venom`, `cryo`, `physical`).
+   - Plus le Héros survit aux flammes, aux toxines, au givre ou aux coups de masse, plus son corps s'immunise :
+     - **🔥 Ignifugation Sang-de-Dragon (Feu)** : `+9%` de réduction par rang (**jusqu'à 45%**).
+     - **🧪 Immunité Antitoxine (Venin)** : `+9%` de réduction par rang (**jusqu'à 45%**).
+     - **❄️ Sang Calorigène (Givre)** : `+9%` de réduction par rang (**jusqu'à 45%**).
+     - **🛡️ Endurcissement Ostéo-Dermique (Physique)** : `+6%` de réduction par rang (**jusqu'à 30%**).
+
