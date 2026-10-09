@@ -100,6 +100,10 @@ export class VFXManager {
     this.activeRings = [];
     /** @type {Array<Object>} Active rising DNA double-helix birth spirals */
     this.activeHelices = [];
+    /** @type {Array<Object>} Active 3D lightning & siphon tether beams */
+    this.activeBeams = [];
+    /** @type {Array<Object>} Active 3D spell projectiles (frost spears, venom daggers, meteors, soul orbs) */
+    this.activeProjectiles = [];
     /** @type {Map<string|number, Object>} Active Patient Zero beacons keyed by enemyId */
     this.patientZeroBeacons = new Map();
 
@@ -108,6 +112,16 @@ export class VFXManager {
     this._helixNodeGeo = new THREE.SphereGeometry(0.15, 6, 6);
     this._ringGeo = new THREE.RingGeometry(0.55, 0.85, 28);
     this._ringGeo.rotateX(-Math.PI / 2);
+
+    // Shared 3D geometries for the 8 Roguelike Abilities
+    this._spearGeo = new THREE.ConeGeometry(0.24, 1.9, 6);
+    this._spearGeo.rotateX(Math.PI / 2);
+    this._daggerGeo = new THREE.ConeGeometry(0.15, 0.95, 4);
+    this._daggerGeo.rotateX(Math.PI / 2);
+    this._meteorGeo = new THREE.DodecahedronGeometry(1.15, 1);
+    this._spikeGeo = new THREE.ConeGeometry(0.36, 1.65, 5);
+    this._spikeGeo.translate(0, 0.8, 0);
+    this._domeGeo = new THREE.SphereGeometry(1.0, 20, 14);
 
     this._beamHeight = 52;
     this._beamGeo = new THREE.CylinderGeometry(0.65, 1.35, this._beamHeight, 20, 1, true);
@@ -118,7 +132,7 @@ export class VFXManager {
 
     this._crestGeo = new THREE.OctahedronGeometry(0.75, 0);
 
-    logger.info('WORLD', 'VFXManager initialized (3D particles, DNA birth helices & Patient Zero beacons)');
+    logger.info('WORLD', 'VFXManager initialized (3D particles, DNA helices, Patient Zero beacons & 8 Roguelike Ability VFX)');
   }
 
   /**
@@ -550,8 +564,557 @@ export class VFXManager {
   }
 
   /**
+   * Normalizes `targetsOrTargetPos` into an array of `{x, y, z}` positions.
+   *
+   * @param {Array<Object>|Object|null} targetsOrTargetPos - Single target or array of targets/positions.
+   * @param {number} [defaultY=1.8] - Fallback Y coordinate.
+   * @returns {Array<{x: number, y: number, z: number}>}
+   * @private
+   */
+  _resolveTargetsList(targetsOrTargetPos, defaultY = 1.8) {
+    if (!targetsOrTargetPos) return [];
+    if (Array.isArray(targetsOrTargetPos)) {
+      const list = [];
+      for (let i = 0; i < targetsOrTargetPos.length; i++) {
+        const item = targetsOrTargetPos[i];
+        if (item) list.push(this._resolvePos(item, defaultY));
+      }
+      return list;
+    }
+    if (typeof targetsOrTargetPos === 'object') {
+      return [this._resolvePos(targetsOrTargetPos, defaultY)];
+    }
+    return [];
+  }
+
+  /**
+   * Spawns a jagged 3D lightning or siphon energy beam between `startPos` and `endPos`.
+   *
+   * @param {{x: number, y: number, z: number}} startPos - Origin 3D point.
+   * @param {{x: number, y: number, z: number}} endPos - Destination 3D point.
+   * @param {number|string} colorHex - Beam color.
+   * @param {number} [jitterAmp=0.55] - Perpendicular lightning jitter amplitude.
+   * @param {number} [duration=0.30] - Lifetime in seconds.
+   * @private
+   */
+  _spawnEnergyBeam(startPos, endPos, colorHex = 0x55eeff, jitterAmp = 0.55, duration = 0.30) {
+    const segments = 9;
+    const points = [];
+    for (let i = 0; i <= segments; i++) {
+      const t = i / segments;
+      const jitter = i === 0 || i === segments ? 0 : Math.sin(t * Math.PI) * jitterAmp;
+      points.push(
+        new THREE.Vector3(
+          lerp(startPos.x, endPos.x, t) + (Math.random() - 0.5) * jitter * 2.0,
+          lerp(startPos.y, endPos.y, t) + (Math.random() - 0.5) * jitter * 1.4,
+          lerp(startPos.z, endPos.z, t) + (Math.random() - 0.5) * jitter * 2.0
+        )
+      );
+    }
+
+    const geo = new THREE.BufferGeometry().setFromPoints(points);
+    const mat = new THREE.LineBasicMaterial({
+      color: new THREE.Color(colorHex),
+      transparent: true,
+      opacity: 0.98,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+    const line = new THREE.Line(geo, mat);
+    this.vfxGroup.add(line);
+
+    this.activeBeams.push({
+      line,
+      geo,
+      mat,
+      startPos: { ...startPos },
+      endPos: { ...endPos },
+      segments,
+      jitterAmp,
+      age: 0,
+      duration,
+    });
+  }
+
+  /**
+   * Unified dispatcher for all 8 Roguelike 3D Abilities & Adaptive Mastery rank-ups.
+   *
+   * Supported `abilityId` values:
+   * - `'pyro_nova'` (Nova Pyroclastique)
+   * - `'chain_lightning'` (Arc Foudroyant)
+   * - `'frost_spear'` (Javelot Cryogénique)
+   * - `'venom_volley'` (Salve Venimeuse)
+   * - `'meteor_strike'` (Météore d'Ambre)
+   * - `'soul_siphon'` (Siphon Vampirique)
+   * - `'seismic_slam'` (Onde Sismique)
+   * - `'spinning_blades'` (Lames Orbitales)
+   * - `'mastery_rank_up'` (Évolution Adaptative du Héros)
+   *
+   * @param {string} abilityId - Identifier of the cast ability.
+   * @param {THREE.Vector3|{x: number, y?: number, z: number}} originPos - Caster world position.
+   * @param {Array<Object>|Object|null} [targetsOrTargetPos=null] - Target entity/position or array of targets.
+   * @param {Object} [options={}] - Optional parameters (`radius`, `colorHex`, `angle`, `yaw`, `level`, `count`).
+   */
+  spawnAbilityVFX(abilityId, originPos, targetsOrTargetPos = null, options = {}) {
+    const id = String(abilityId || '').toLowerCase();
+
+    switch (id) {
+      case 'pyro_nova':
+        this.spawnPyroNova(originPos, options);
+        break;
+      case 'chain_lightning':
+        this.spawnChainLightning(originPos, targetsOrTargetPos, options);
+        break;
+      case 'frost_spear':
+        this.spawnFrostSpear(originPos, targetsOrTargetPos, options);
+        break;
+      case 'venom_volley':
+        this.spawnVenomVolley(originPos, targetsOrTargetPos, options);
+        break;
+      case 'meteor_strike':
+        this.spawnMeteorStrike(originPos, targetsOrTargetPos, options);
+        break;
+      case 'soul_siphon':
+        this.spawnSoulSiphon(originPos, targetsOrTargetPos, options);
+        break;
+      case 'seismic_slam':
+        this.spawnSeismicSlam(originPos, targetsOrTargetPos, options);
+        break;
+      case 'spinning_blades':
+        this.spawnSpinningBladesPulse(originPos, targetsOrTargetPos, options);
+        break;
+      case 'mastery_rank_up':
+        this.spawnMasteryEffect(originPos, options?.colorHex || 0xffd700);
+        break;
+      default:
+        this.spawnHitEffect(originPos, options?.colorHex || 0x44ddff);
+        break;
+    }
+  }
+
+  /**
+   * 1. `pyro_nova` (Nova Pyroclastique):
+   * Expanding 3D fire dome + dual concentric magma rings + radial eruption of 22 flame embers.
+   *
+   * @param {THREE.Vector3|{x: number, y?: number, z: number}} originPos - Caster world position.
+   * @param {Object} [options={}] - Optional `{ radius, colorHex }`.
+   */
+  spawnPyroNova(originPos, options = {}) {
+    const p = this._resolvePos(originPos, 1.8);
+    const radius = options?.radius || 8.5;
+
+    this._spawnShockRing(p, 0xff4500, 0.6, radius, 0.48);
+    this._spawnShockRing({ x: p.x, y: p.y + 0.25, z: p.z }, 0xffaa00, 0.4, radius * 0.82, 0.42);
+    this._spawnShockRing({ x: p.x, y: p.y + 0.5, z: p.z }, 0xff2200, 0.3, radius * 1.08, 0.55);
+
+    // Expanding translucent 3D fire dome
+    const domeMat = new THREE.MeshBasicMaterial({
+      color: new THREE.Color(0xff5500),
+      transparent: true,
+      opacity: 0.65,
+      blending: THREE.AdditiveBlending,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+    });
+    const domeMesh = new THREE.Mesh(this._domeGeo, domeMat);
+    domeMesh.position.set(p.x, p.y + 0.2, p.z);
+    domeMesh.scale.setScalar(0.5);
+    this.vfxGroup.add(domeMesh);
+
+    this.activeRings.push({
+      mesh: domeMesh,
+      mat: domeMat,
+      age: 0,
+      duration: 0.40,
+      startScale: 0.5,
+      endScale: radius * 0.72,
+    });
+
+    // Radial ring of 22 erupting magma sparks
+    const count = 22;
+    for (let i = 0; i < count; i++) {
+      const angle = (i / count) * Math.PI * 2 + (Math.random() - 0.5) * 0.2;
+      const speed = radius * (1.55 + Math.random() * 0.7);
+      const mat = new THREE.MeshBasicMaterial({
+        color: new THREE.Color(i % 2 === 0 ? 0xff4500 : 0xffbb22),
+        transparent: true,
+        opacity: 1.0,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+      });
+      const mesh = new THREE.Mesh(this._sparkGeo, mat);
+      mesh.position.set(p.x, p.y + 0.45, p.z);
+      this.vfxGroup.add(mesh);
+
+      this.activeParticles.push({
+        mesh,
+        mat,
+        vx: Math.cos(angle) * speed,
+        vy: 1.8 + Math.random() * 3.8,
+        vz: Math.sin(angle) * speed,
+        gravity: -8.5,
+        drag: 2.2,
+        age: 0,
+        duration: 0.42 + Math.random() * 0.2,
+        initialScale: 1.15 + Math.random() * 0.55,
+      });
+    }
+  }
+
+  /**
+   * 2. `chain_lightning` (Arc Foudroyant):
+   * Jagged 3D electric arcs bouncing sequentially from `originPos` across all chained targets.
+   *
+   * @param {THREE.Vector3|{x: number, y?: number, z: number}} originPos - Caster position.
+   * @param {Array<Object>|Object|null} targetsOrTargetPos - Chained target entities or positions.
+   * @param {Object} [options={}] - Optional `{ colorHex }`.
+   */
+  spawnChainLightning(originPos, targetsOrTargetPos = null, options = {}) {
+    const start = this._resolvePos(originPos, 1.8);
+    let targets = this._resolveTargetsList(targetsOrTargetPos, start.y);
+
+    if (targets.length === 0) {
+      // Fallback visual lightning arcs around caster if triggered without targets
+      for (let i = 0; i < 3; i++) {
+        const a = (i / 3) * Math.PI * 2 + Math.random();
+        targets.push({
+          x: start.x + Math.cos(a) * 6.5,
+          y: start.y,
+          z: start.z + Math.sin(a) * 6.5,
+        });
+      }
+    }
+
+    let prev = { x: start.x, y: start.y + 0.8, z: start.z };
+    const boltColor = options?.colorHex || 0x55eeff;
+
+    for (let i = 0; i < targets.length; i++) {
+      const next = { x: targets[i].x, y: targets[i].y + 0.8, z: targets[i].z };
+      this._spawnEnergyBeam(prev, next, boltColor, 0.65, 0.34);
+      this._spawnEnergyBeam(prev, next, 0xffffff, 0.28, 0.26);
+      this.spawnHitEffect(next, boltColor);
+      prev = next;
+    }
+  }
+
+  /**
+   * 3. `frost_spear` (Javelot Cryogénique):
+   * Launches a piercing 3D crystalline ice spear leaving a trail of frost shards and freezing rings.
+   *
+   * @param {THREE.Vector3|{x: number, y?: number, z: number}} originPos - Caster position.
+   * @param {Array<Object>|Object|null} targetsOrTargetPos - Pierced target(s) or destination point.
+   * @param {Object} [options={}] - Optional `{ angle, yaw, range }`.
+   */
+  spawnFrostSpear(originPos, targetsOrTargetPos = null, options = {}) {
+    const start = this._resolvePos(originPos, 1.8);
+    const targets = this._resolveTargetsList(targetsOrTargetPos, start.y);
+    const range = options?.range || 15.0;
+
+    let endPos;
+    if (targets.length > 0) {
+      const lastTarget = targets[targets.length - 1];
+      const dx = lastTarget.x - start.x;
+      const dz = lastTarget.z - start.z;
+      const len = Math.hypot(dx, dz) || 1;
+      const dist = Math.max(len, range * 0.85);
+      endPos = {
+        x: start.x + (dx / len) * dist,
+        y: lastTarget.y + 0.6,
+        z: start.z + (dz / len) * dist,
+      };
+    } else {
+      const angle = options?.angle ?? options?.yaw ?? 0;
+      endPos = {
+        x: start.x + Math.sin(angle) * range,
+        y: start.y + 0.6,
+        z: start.z + Math.cos(angle) * range,
+      };
+    }
+
+    const spearMat = new THREE.MeshBasicMaterial({
+      color: new THREE.Color(0x00e5ff),
+      transparent: true,
+      opacity: 0.95,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+    const spearMesh = new THREE.Mesh(this._spearGeo, spearMat);
+    spearMesh.position.set(start.x, start.y + 0.7, start.z);
+    spearMesh.lookAt(endPos.x, endPos.y, endPos.z);
+    spearMesh.scale.set(1.2, 1.2, 1.5);
+    this.vfxGroup.add(spearMesh);
+
+    this.activeProjectiles.push({
+      mesh: spearMesh,
+      mat: spearMat,
+      startPos: { x: start.x, y: start.y + 0.7, z: start.z },
+      endPos,
+      arcHeight: 0,
+      trailColor: 0x80f4ff,
+      impactColor: 0x00e5ff,
+      impactScale: 3.4,
+      age: 0,
+      duration: 0.25,
+    });
+
+    for (let i = 0; i < targets.length; i++) {
+      this._spawnShockRing(targets[i], 0x00e5ff, 0.4, 2.8, 0.45);
+    }
+  }
+
+  /**
+   * 4. `venom_volley` (Salve Venimeuse):
+   * Fires a fan of 5 toxic green daggers across a wide cone, leaving spore trails and acid rings.
+   *
+   * @param {THREE.Vector3|{x: number, y?: number, z: number}} originPos - Caster position.
+   * @param {Array<Object>|Object|null} targetsOrTargetPos - Target position(s) to orient the cone.
+   * @param {Object} [options={}] - Optional `{ count, angle, yaw, range }`.
+   */
+  spawnVenomVolley(originPos, targetsOrTargetPos = null, options = {}) {
+    const start = this._resolvePos(originPos, 1.8);
+    const targets = this._resolveTargetsList(targetsOrTargetPos, start.y);
+    const count = options?.count || 5;
+    const range = options?.range || 12.5;
+
+    let baseAngle = options?.angle ?? options?.yaw ?? 0;
+    if (targets.length > 0) {
+      baseAngle = Math.atan2(targets[0].x - start.x, targets[0].z - start.z);
+    }
+
+    const spreadArc = 0.95; // ~54 degrees total fan spread
+    for (let i = 0; i < count; i++) {
+      const frac = count > 1 ? i / (count - 1) - 0.5 : 0;
+      const angle = baseAngle + frac * spreadArc;
+      const endPos = {
+        x: start.x + Math.sin(angle) * range,
+        y: start.y + 0.5,
+        z: start.z + Math.cos(angle) * range,
+      };
+
+      const daggerMat = new THREE.MeshBasicMaterial({
+        color: new THREE.Color(0x39ff14),
+        transparent: true,
+        opacity: 0.95,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+      });
+      const daggerMesh = new THREE.Mesh(this._daggerGeo, daggerMat);
+      daggerMesh.position.set(start.x, start.y + 0.65, start.z);
+      daggerMesh.lookAt(endPos.x, endPos.y, endPos.z);
+      this.vfxGroup.add(daggerMesh);
+
+      this.activeProjectiles.push({
+        mesh: daggerMesh,
+        mat: daggerMat,
+        startPos: { x: start.x, y: start.y + 0.65, z: start.z },
+        endPos,
+        arcHeight: 0.35,
+        trailColor: 0x39ff14,
+        impactColor: 0x1ec800,
+        impactScale: 2.1,
+        age: 0,
+        duration: 0.28 + Math.random() * 0.05,
+      });
+    }
+
+    for (let i = 0; i < targets.length; i++) {
+      this._spawnShockRing(targets[i], 0x39ff14, 0.3, 2.4, 0.4);
+    }
+  }
+
+  /**
+   * 5. `meteor_strike` (Météore d'Ambre):
+   * Calls down a blazing molten amber meteor from the sky onto the highest-fitness target,
+   * creating a target reticle followed by a massive crater shockwave and volcanic debris.
+   *
+   * @param {THREE.Vector3|{x: number, y?: number, z: number}} originPos - Caster position.
+   * @param {Array<Object>|Object|null} targetsOrTargetPos - Target impact coordinate.
+   * @param {Object} [options={}] - Optional `{ radius }`.
+   */
+  spawnMeteorStrike(originPos, targetsOrTargetPos = null, options = {}) {
+    const start = this._resolvePos(originPos, 1.8);
+    const targets = this._resolveTargetsList(targetsOrTargetPos, start.y);
+    const impactPos = targets.length > 0 ? targets[0] : start;
+    const blastRadius = options?.radius || 7.2;
+
+    // Ground target reticle rings
+    this._spawnShockRing(impactPos, 0xffaa00, 0.5, blastRadius, 0.55);
+    this._spawnShockRing(impactPos, 0xff3300, blastRadius * 0.75, 0.6, 0.26);
+
+    // Descending molten amber meteor from high altitude
+    const skyStart = {
+      x: impactPos.x - 4.5,
+      y: impactPos.y + 22.0,
+      z: impactPos.z - 3.5,
+    };
+
+    const meteorMat = new THREE.MeshBasicMaterial({
+      color: new THREE.Color(0xff9911),
+      transparent: true,
+      opacity: 1.0,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+    const meteorMesh = new THREE.Mesh(this._meteorGeo, meteorMat);
+    meteorMesh.position.set(skyStart.x, skyStart.y, skyStart.z);
+    meteorMesh.scale.setScalar(1.35);
+    this.vfxGroup.add(meteorMesh);
+
+    this.activeProjectiles.push({
+      mesh: meteorMesh,
+      mat: meteorMat,
+      startPos: skyStart,
+      endPos: { x: impactPos.x, y: impactPos.y + 0.3, z: impactPos.z },
+      arcHeight: 0,
+      trailColor: 0xff5500,
+      impactColor: 0xff8800,
+      impactScale: blastRadius,
+      isMeteor: true,
+      age: 0,
+      duration: 0.26,
+    });
+  }
+
+  /**
+   * 6. `soul_siphon` (Siphon Vampirique):
+   * Connects crimson-violet life-drain beams from nearby enemies to the Hero and pulls
+   * glowing blood-soul orbs into the Hero while emitting a vampiric heal ring.
+   *
+   * @param {THREE.Vector3|{x: number, y?: number, z: number}} originPos - Hero world position.
+   * @param {Array<Object>|Object|null} targetsOrTargetPos - Drained enemy target(s).
+   * @param {Object} [options={}] - Optional settings.
+   */
+  spawnSoulSiphon(originPos, targetsOrTargetPos = null, options = {}) {
+    const heroPos = this._resolvePos(originPos, 1.8);
+    let targets = this._resolveTargetsList(targetsOrTargetPos, heroPos.y);
+
+    if (targets.length === 0) {
+      targets = [{ x: heroPos.x + 4.0, y: heroPos.y, z: heroPos.z + 4.0 }];
+    }
+
+    // Vampiric heal rings around Hero
+    this._spawnShockRing(heroPos, 0xdc143c, 0.4, 3.2, 0.5);
+    this._spawnShockRing({ x: heroPos.x, y: heroPos.y + 0.3, z: heroPos.z }, 0x38ff88, 0.3, 2.4, 0.55);
+
+    for (let i = 0; i < targets.length; i++) {
+      const tPos = targets[i];
+      const beamStart = { x: tPos.x, y: tPos.y + 0.85, z: tPos.z };
+      const beamEnd = { x: heroPos.x, y: heroPos.y + 0.95, z: heroPos.z };
+
+      this._spawnEnergyBeam(beamStart, beamEnd, 0xdc143c, 0.32, 0.42);
+      this._spawnEnergyBeam(beamStart, beamEnd, 0xff4488, 0.15, 0.38);
+
+      // Spawn 4 blood-soul orbs flying from target into the Hero
+      for (let k = 0; k < 4; k++) {
+        const orbMat = new THREE.MeshBasicMaterial({
+          color: new THREE.Color(k % 2 === 0 ? 0xff1e56 : 0x38ff88),
+          transparent: true,
+          opacity: 0.95,
+          blending: THREE.AdditiveBlending,
+          depthWrite: false,
+        });
+        const orbMesh = new THREE.Mesh(this._helixNodeGeo, orbMat);
+        orbMesh.position.set(beamStart.x, beamStart.y, beamStart.z);
+        orbMesh.scale.setScalar(1.35);
+        this.vfxGroup.add(orbMesh);
+
+        this.activeProjectiles.push({
+          mesh: orbMesh,
+          mat: orbMat,
+          startPos: { ...beamStart },
+          endPos: { ...beamEnd },
+          arcHeight: 1.2 + k * 0.35,
+          trailColor: 0xdc143c,
+          impactColor: 0x38ff88,
+          impactScale: 1.5,
+          age: -k * 0.04,
+          duration: 0.34,
+        });
+      }
+    }
+  }
+
+  /**
+   * 7. `seismic_slam` (Onde Sismique):
+   * Tectonic ground shockwaves + 12 erupting 3D stone spikes bursting around the Hero.
+   *
+   * @param {THREE.Vector3|{x: number, y?: number, z: number}} originPos - Hero world position.
+   * @param {Array<Object>|Object|null} [targetsOrTargetPos=null] - Hit enemies.
+   * @param {Object} [options={}] - Optional `{ radius }`.
+   */
+  spawnSeismicSlam(originPos, targetsOrTargetPos = null, options = {}) {
+    const p = this._resolvePos(originPos, 1.8);
+    const radius = options?.radius || 7.2;
+
+    this._spawnShockRing(p, 0xe6a145, 0.5, radius, 0.48);
+    this._spawnShockRing({ x: p.x, y: p.y + 0.15, z: p.z }, 0xc97a3e, 0.8, radius * 0.85, 0.54);
+    this._spawnShockRing({ x: p.x, y: p.y + 0.25, z: p.z }, 0xffd166, 0.3, radius * 1.12, 0.42);
+
+    const spikeCount = 12;
+    for (let i = 0; i < spikeCount; i++) {
+      const angle = (i / spikeCount) * Math.PI * 2 + (Math.random() - 0.5) * 0.25;
+      const dist = radius * (0.42 + Math.random() * 0.48);
+      const sx = p.x + Math.cos(angle) * dist;
+      const sz = p.z + Math.sin(angle) * dist;
+
+      const mat = new THREE.MeshBasicMaterial({
+        color: new THREE.Color(i % 2 === 0 ? 0xd99b38 : 0x8c7656),
+        transparent: true,
+        opacity: 0.95,
+      });
+      const spike = new THREE.Mesh(this._spikeGeo, mat);
+      spike.position.set(sx, p.y - 0.8, sz);
+      spike.rotation.set((Math.random() - 0.5) * 0.35, Math.random() * Math.PI * 2, (Math.random() - 0.5) * 0.35);
+      this.vfxGroup.add(spike);
+
+      this.activeParticles.push({
+        mesh: spike,
+        mat,
+        vx: Math.cos(angle) * 1.2,
+        vy: 5.2,
+        vz: Math.sin(angle) * 1.2,
+        gravity: -14.0,
+        drag: 3.0,
+        age: 0,
+        duration: 0.52,
+        initialScale: 0.9 + Math.random() * 0.45,
+      });
+    }
+  }
+
+  /**
+   * 8. `spinning_blades` (Lames Orbitales):
+   * Spawns a metallic cyan whirlwind ring and hit sparks on sliced targets.
+   *
+   * @param {THREE.Vector3|{x: number, y?: number, z: number}} originPos - Hero position.
+   * @param {Array<Object>|Object|null} [targetsOrTargetPos=null] - Sliced targets.
+   * @param {Object} [options={}] - Optional `{ radius }`.
+   */
+  spawnSpinningBladesPulse(originPos, targetsOrTargetPos = null, options = {}) {
+    const p = this._resolvePos(originPos, 1.8);
+    const radius = options?.radius || 4.2;
+    this._spawnShockRing({ x: p.x, y: p.y + 0.65, z: p.z }, 0x70f5ff, radius * 0.75, radius * 1.15, 0.28);
+
+    const targets = this._resolveTargetsList(targetsOrTargetPos, p.y);
+    for (let i = 0; i < targets.length; i++) {
+      this.spawnHitEffect(targets[i], 0x70f5ff);
+    }
+  }
+
+  /**
+   * Spawns a golden evolutionary ascension effect when the Hero gains a rank in
+   * `AdaptiveMasterySystem` (e.g. Slayer Mastery vs a species/mutation or Adaptive Resistance).
+   *
+   * @param {THREE.Vector3|{x: number, y?: number, z: number}} pos - Hero position.
+   * @param {number|string} [colorHex=0xffd700] - Mastery highlight color.
+   */
+  spawnMasteryEffect(pos, colorHex = 0xffd700) {
+    this.spawnBirthEffect(pos, true, false, colorHex);
+  }
+
+  /**
    * Per-frame update for all active particle bursts, shock rings, DNA double-helices,
-   * and Patient Zero sky beacons.
+   * 3D lightning/siphon beams, spell projectiles, and Patient Zero sky beacons.
    *
    * @param {number} dt - Frame delta time in seconds.
    * @param {number} elapsedTime - Total elapsed time in seconds.
@@ -629,7 +1192,70 @@ export class VFXManager {
       }
     }
 
-    // 4. Update active Patient Zero sky beacons
+    // 4. Update 3D lightning & siphon tether beams
+    for (let i = this.activeBeams.length - 1; i >= 0; i--) {
+      const b = this.activeBeams[i];
+      b.age += safeDt;
+      if (b.age >= b.duration) {
+        this.vfxGroup.remove(b.line);
+        b.geo.dispose();
+        b.mat.dispose();
+        this.activeBeams.splice(i, 1);
+        continue;
+      }
+
+      const progress = b.age / b.duration;
+      b.mat.opacity = (1.0 - progress) * 0.95;
+
+      // Live crackle jitter on intermediate vertices
+      const posAttr = b.geo.attributes.position;
+      if (posAttr && b.jitterAmp > 0.1) {
+        for (let idx = 1; idx < b.segments; idx++) {
+          const frac = idx / b.segments;
+          const amp = Math.sin(frac * Math.PI) * b.jitterAmp * (1.0 - progress * 0.5);
+          posAttr.setXYZ(
+            idx,
+            lerp(b.startPos.x, b.endPos.x, frac) + (Math.random() - 0.5) * amp * 2.0,
+            lerp(b.startPos.y, b.endPos.y, frac) + (Math.random() - 0.5) * amp * 1.4,
+            lerp(b.startPos.z, b.endPos.z, frac) + (Math.random() - 0.5) * amp * 2.0
+          );
+        }
+        posAttr.needsUpdate = true;
+      }
+    }
+
+    // 5. Update 3D spell projectiles (frost spears, venom daggers, meteors, soul orbs)
+    for (let i = this.activeProjectiles.length - 1; i >= 0; i--) {
+      const proj = this.activeProjectiles[i];
+      proj.age += safeDt;
+      if (proj.age < 0) continue;
+
+      if (proj.age >= proj.duration) {
+        this._spawnShockRing(proj.endPos, proj.impactColor, 0.4, proj.impactScale, 0.38);
+        if (proj.isMeteor) {
+          this.spawnPyroNova(proj.endPos, { radius: proj.impactScale });
+        }
+        this.vfxGroup.remove(proj.mesh);
+        proj.mat.dispose();
+        this.activeProjectiles.splice(i, 1);
+        continue;
+      }
+
+      const progress = clamp(proj.age / proj.duration, 0, 1);
+      const px = lerp(proj.startPos.x, proj.endPos.x, progress);
+      const pz = lerp(proj.startPos.z, proj.endPos.z, progress);
+      const py =
+        lerp(proj.startPos.y, proj.endPos.y, progress) +
+        Math.sin(progress * Math.PI) * (proj.arcHeight || 0);
+
+      proj.mesh.position.set(px, py, pz);
+      if (proj.isMeteor) {
+        proj.mesh.rotation.x += 9.0 * safeDt;
+        proj.mesh.rotation.z += 7.0 * safeDt;
+      }
+    }
+
+    // 6. Update active Patient Zero sky beacons
     for (const beacon of this.patientZeroBeacons.values()) {
       beacon.highlightTimer = Math.max(0, beacon.highlightTimer - safeDt);
       const pulseBoost = beacon.highlightTimer > 0 ? beacon.highlightTimer * 0.65 : 0.15 * (0.5 + 0.5 * Math.sin(t * 4.0));
