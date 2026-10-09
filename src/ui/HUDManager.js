@@ -2375,7 +2375,7 @@ export class HUDManager {
       el(
         'div',
         'hud-mastery-empty',
-        'Combattez des espèces/mutants (+12% à +15% dégâts/rang) ou encaissez des éléments (-9% dégâts reçus/rang) pour vous adapter.'
+        'Combattez des espèces/mutants (+1% dégâts/monstre, rendement décroissant, max +15%) ou encaissez des éléments (-0.5%/coup, max -10%) pour vous adapter.'
       )
     );
 
@@ -2413,41 +2413,41 @@ export class HUDManager {
 
     const pills = [];
 
-    // 1. Maîtrises d'Espèce (Rangs débloqués ou progression en cours)
+    // 1. Maîtrises d'Espèce (<= 1% par monstre avec rendement décroissant rapide, max +15%)
     for (const sp of summary.speciesMasteries || []) {
       if (sp.rank > 0) {
         pills.push({
           cls: 'mastery-species',
           text: `🗡️ Chasseur ${sp.name} Rg.${sp.rank}`,
-          val: `+${sp.bonusPct}% Dégâts (${sp.kills} tués)`,
+          val: `+${sp.bonusPct}% Dégâts (${sp.kills} tué${sp.kills > 1 ? 's' : ''})`,
         });
       } else if (sp.kills > 0) {
         pills.push({
           cls: 'mastery-species',
           text: `🎯 Traque ${sp.name}`,
-          val: `${sp.kills}/${sp.nextThreshold} tués → Rg.1 (+12%)`,
+          val: `+${sp.bonusPct ?? sp.kills}% Dégâts (${sp.kills}/${sp.nextThreshold || 1} tués)`,
         });
       }
     }
 
-    // 2. Maîtrises Anti-Mutation
+    // 2. Maîtrises Anti-Mutation (<= 1% par mutant avec rendement décroissant rapide, max +15%)
     for (const mut of summary.mutationMasteries || []) {
       if (mut.rank > 0) {
         pills.push({
           cls: 'mastery-mutation',
           text: `🧬 Purge ${mut.name} Rg.${mut.rank}`,
-          val: `+${mut.bonusPct}% Dégâts`,
+          val: `+${mut.bonusPct}% Dégâts (${mut.kills || 1} tué${(mut.kills || 1) > 1 ? 's' : ''})`,
         });
       } else if (mut.kills > 0) {
         pills.push({
           cls: 'mastery-mutation',
           text: `🧬 Étude ${mut.name}`,
-          val: `${mut.kills}/2 tués → Rg.1 (+15%)`,
+          val: `+${mut.bonusPct ?? mut.kills}% Dégâts (${mut.kills}/${mut.nextThreshold || 1} tués)`,
         });
       }
     }
 
-    // 3. Résistances Élémentaires & Physiques
+    // 3. Résistances Élémentaires & Physiques (-0.5%/coup avec rendement décroissant, max -10%)
     for (const res of summary.resistances || []) {
       if (res.rank > 0) {
         pills.push({
@@ -2459,7 +2459,7 @@ export class HUDManager {
         pills.push({
           cls: 'mastery-resist',
           text: `${res.icon || '🛡️'} Immunité ${res.name}`,
-          val: `${res.hits}/${res.nextThreshold} coups → Rg.1`,
+          val: `-${res.reductionPct ?? 0.5}% (${res.hits}/${res.nextThreshold || 2} coups)`,
         });
       }
     }
@@ -2480,7 +2480,7 @@ export class HUDManager {
         el(
           'div',
           'hud-mastery-empty',
-          'Combattez des espèces/mutants (+12% à +15% dégâts/rang) ou encaissez des éléments (-9% dégâts reçus/rang) pour vous adapter.'
+          'Combattez des espèces/mutants (+1% dégâts/monstre, rendement décroissant, max +15%) ou encaissez des éléments (-0.5%/coup, max -10%) pour vous adapter.'
         )
       );
       return;
