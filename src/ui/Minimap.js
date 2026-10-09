@@ -461,12 +461,24 @@ export class Minimap {
       ctx.fillRect(pCanvas.px - 2, pCanvas.py - 2, 4, 4);
       ctx.strokeRect(pCanvas.px - 2, pCanvas.py - 2, 4, 4);
     }
+
+    // Dôme-Bouclier Planétaire de l'Île (Phase 8 : actif lorsque les 3 Reliques d'Éden sont assemblées)
+    if (bastionAndNpcs?.islandShieldActive) {
+      const domeRadiusPx = (108 / this.worldSize) * this.size;
+      ctx.beginPath();
+      ctx.arc(px, py, domeRadiusPx, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(0, 210, 211, 0.1)';
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(255, 209, 102, 0.88)';
+      ctx.lineWidth = 2.0;
+      ctx.stroke();
+    }
     ctx.restore();
   }
 
   /**
-   * Dessine les cages de prisonniers restant à libérer sur l'île.
-   * Met en évidence d'un anneau doré celles repérées par la mission `'find_cages'` des Éclaireurs.
+   * Dessine les cages de prisonniers restant à libérer sur l'île, ainsi que les Monolithes de Reliques d'Éden
+   * (`relicShrines`) et les Sanctuaires d'Armes Élémentaires (`weaponShrines`) de Phase 8.
    * @param {CanvasRenderingContext2D} ctx
    * @param {Object|null} bastionAndNpcs
    * @private
@@ -476,28 +488,82 @@ export class Minimap {
     const cages =
       bastionAndNpcs.cages ||
       (typeof bastionAndNpcs.getCages === 'function' ? bastionAndNpcs.getCages() : []);
-    if (!Array.isArray(cages)) return;
 
     ctx.save();
-    for (const cage of cages) {
-      if (!cage || cage.rescued || cage.isRescued) continue;
-      const cx = cage.x ?? cage.pos?.x ?? cage.mesh?.position?.x ?? 0;
-      const cz = cage.z ?? cage.pos?.z ?? cage.mesh?.position?.z ?? 0;
-      const { px, py } = this.worldToCanvas(cx, cz);
+    if (Array.isArray(cages)) {
+      for (const cage of cages) {
+        if (!cage || cage.rescued || cage.isRescued) continue;
+        const cx = cage.x ?? cage.pos?.x ?? cage.mesh?.position?.x ?? 0;
+        const cz = cage.z ?? cage.pos?.z ?? cage.mesh?.position?.z ?? 0;
+        const { px, py } = this.worldToCanvas(cx, cz);
 
-      if (cage.discoveredByScout || cage.spottedByScout) {
+        if (cage.discoveredByScout || cage.spottedByScout) {
+          ctx.beginPath();
+          ctx.arc(px, py, 6.2, 0, Math.PI * 2);
+          ctx.strokeStyle = 'rgba(255, 209, 102, 0.85)';
+          ctx.lineWidth = 1.3;
+          ctx.stroke();
+        }
+
+        ctx.fillStyle = '#ffd285';
+        ctx.strokeStyle = '#0d131a';
+        ctx.lineWidth = 1;
+        ctx.fillRect(px - 2.5, py - 2.5, 5, 5);
+        ctx.strokeRect(px - 2.5, py - 2.5, 5, 5);
+      }
+    }
+
+    // Monolithes des 3 Fragments de Relique d'Éden (`relicShrines`) — losanges dorés/cyan
+    const relicShrines = bastionAndNpcs.relicShrines || [];
+    if (Array.isArray(relicShrines)) {
+      for (const relic of relicShrines) {
+        if (!relic || relic.collected || relic.isCollected) continue;
+        const rx = relic.x ?? relic.pos?.x ?? relic.mesh?.position?.x ?? 0;
+        const rz = relic.z ?? relic.pos?.z ?? relic.mesh?.position?.z ?? 0;
+        const { px, py } = this.worldToCanvas(rx, rz);
+
         ctx.beginPath();
-        ctx.arc(px, py, 6.2, 0, Math.PI * 2);
-        ctx.strokeStyle = 'rgba(255, 209, 102, 0.85)';
+        ctx.arc(px, py, 6.8, 0, Math.PI * 2);
+        ctx.strokeStyle = 'rgba(0, 210, 211, 0.82)';
         ctx.lineWidth = 1.3;
         ctx.stroke();
-      }
 
-      ctx.fillStyle = '#ffd285';
-      ctx.strokeStyle = '#0d131a';
-      ctx.lineWidth = 1;
-      ctx.fillRect(px - 2.5, py - 2.5, 5, 5);
-      ctx.strokeRect(px - 2.5, py - 2.5, 5, 5);
+        ctx.beginPath();
+        ctx.moveTo(px, py - 4.2);
+        ctx.lineTo(px + 4.2, py);
+        ctx.lineTo(px, py + 4.2);
+        ctx.lineTo(px - 4.2, py);
+        ctx.closePath();
+        ctx.fillStyle = '#ffd166';
+        ctx.fill();
+        ctx.strokeStyle = '#0d131a';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+      }
+    }
+
+    // Sanctuaires des 4 Armes Élémentaires Légendaires (`weaponShrines`)
+    const weaponShrines = bastionAndNpcs.weaponShrines || [];
+    if (Array.isArray(weaponShrines)) {
+      for (const shrine of weaponShrines) {
+        if (!shrine) continue;
+        const wx = shrine.x ?? shrine.pos?.x ?? shrine.mesh?.position?.x ?? 0;
+        const wz = shrine.z ?? shrine.pos?.z ?? shrine.mesh?.position?.z ?? 0;
+        const { px, py } = this.worldToCanvas(wx, wz);
+        const wId = shrine.weaponId || shrine.id || '';
+        let color = '#ff6b35';
+        if (wId.includes('ice')) color = '#48dbfb';
+        else if (wId.includes('lightning')) color = '#ffd32a';
+        else if (wId.includes('venom')) color = '#2ed573';
+
+        ctx.beginPath();
+        ctx.arc(px, py, 3.6, 0, Math.PI * 2);
+        ctx.fillStyle = color;
+        ctx.fill();
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+      }
     }
     ctx.restore();
   }

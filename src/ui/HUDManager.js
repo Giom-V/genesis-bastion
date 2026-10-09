@@ -42,6 +42,10 @@ import {
   canAffordBuildingUpgrade,
   SCOUT_MISSIONS_CATALOG,
   getScoutMissionSpec,
+  ELEMENTAL_WEAPONS_CATALOG,
+  getElementalWeaponSpec,
+  RELIC_FRAGMENTS_SPEC,
+  getIslandTierSpec,
 } from '../ecosystem/BaseAndQuestsDesign.js';
 import {
   CHARACTER_PORTRAITS,
@@ -330,6 +334,10 @@ export class HUDManager {
     this.isCombatModeModalOpen = false;
     /** @type {boolean} */
     this.isBastionModalOpen = false;
+    /** @type {boolean} */
+    this.isWeaponModalOpen = false;
+    /** @type {boolean} */
+    this.isIslandModalOpen = false;
     /** @type {'vampire_survivors'|'diablo_action'} */
     this.combatMode = 'vampire_survivors';
     /** @type {number} */
@@ -369,6 +377,8 @@ export class HUDManager {
     this._buildLevelUpModal();
     this._buildCombatModeModal();
     this._buildBastionArchitectModal();
+    this._buildWeaponForgeModal();
+    this._buildIslandVictoryModal();
 
     // Abonnement temps réel au logger pour le fil d'évolution
     this._unsubscribeLogger = logger.subscribe(() => {
@@ -379,7 +389,8 @@ export class HUDManager {
 
   /**
    * Indique si le jeu doit être mis en pause totale (`true` dès que la modale de Montée de Niveau,
-   * la modale de Choix du Mode de Combat, l'Architecte du Bastion `[H]` ou le Codex Phylogénétique `[Tab]` est ouvert).
+   * la modale de Choix du Mode de Combat, l'Architecte du Bastion `[H]`, l'Armurerie des Artefacts `[K]`,
+   * la Victoire du Bouclier d'Éden `[V]` ou le Codex Phylogénétique `[Tab]` est ouvert).
    * @returns {boolean}
    */
   get isModalPaused() {
@@ -387,7 +398,9 @@ export class HUDManager {
       this.isLevelUpOpen ||
         this.isCodexOpen ||
         this.isCombatModeModalOpen ||
-        this.isBastionModalOpen
+        this.isBastionModalOpen ||
+        this.isWeaponModalOpen ||
+        this.isIslandModalOpen
     );
   }
 
@@ -617,8 +630,15 @@ export class HUDManager {
 
     vitalsGroup.append(hpBox, xpBox);
 
-    // Ressources (Bois, Cristal, Biomasse, Rations 🍖 & Santé Écologique du Gibier 🦌)
+    // Ressources (Bois, Cristal, Biomasse, Rations 🍖, Gibier 🦌, Arme Élémentaire ⚔️ [K], Reliques 🧩 & Île 🏝️)
     this.resGroup = el('div', 'hud-resources-group');
+    this.islandBadge = el(
+      'div',
+      'hud-resource-badge res-island',
+      '🏝️ Île #1'
+    );
+    this.islandBadge.title = 'Île actuelle et multiplicateur de difficulté de la campagne';
+
     this.woodBadge = el('div', 'hud-resource-badge res-wood', '🪵 Bois: 40');
     this.crystalBadge = el('div', 'hud-resource-badge res-crystal', '💎 Cristal: 20');
     this.biomassBadge = el('div', 'hud-resource-badge res-biomass', '🌿 Biomasse: 15');
@@ -638,12 +658,40 @@ export class HUDManager {
     this.preyHealthBadge.title =
       'Santé écologique du Gibier Herbivore (Biches Sylvestres & Lapins des Plaines). Attention : vos sorts de zone peuvent les décimer (<2 = Extinction !)';
 
+    this.weaponBadgeBtn = el(
+      'button',
+      'hud-weapon-badge-btn weapon-runic_steel',
+      '⚔️ Arme: Espadon Runique [K]'
+    );
+    this.weaponBadgeBtn.type = 'button';
+    this.weaponBadgeBtn.title =
+      'Ouvrir la Forge des Armes Élémentaires Légendaires (Feu / Glace / Foudre / Venin Symbiotique) [Raccourci : K]';
+    this.weaponBadgeBtn.addEventListener('click', () => {
+      this.toggleWeaponModal();
+    });
+
+    this.relicBadge = el(
+      'div',
+      'hud-resource-badge res-relic',
+      '🧩 Reliques: 0/3'
+    );
+    this.relicBadge.title =
+      'Fragments de Relique d’Éden assemblés (3/3 requis pour ériger le Dôme-Bouclier Planétaire de l’Île et passer à l’Île suivante [V])';
+    this.relicBadge.addEventListener('click', () => {
+      if (this.callbacks.onActivateIslandShield) {
+        this.callbacks.onActivateIslandShield();
+      }
+    });
+
     this.resGroup.append(
+      this.islandBadge,
       this.woodBadge,
       this.crystalBadge,
       this.biomassBadge,
       this.foodBadge,
-      this.preyHealthBadge
+      this.preyHealthBadge,
+      this.weaponBadgeBtn,
+      this.relicBadge
     );
 
     this.topBar.append(brandGroup, this.ecoGroup, this.statsCluster, vitalsGroup, this.resGroup);
@@ -904,6 +952,32 @@ export class HUDManager {
       }
     });
 
+    this.openWeaponModalBtn = el(
+      'button',
+      'hud-btn hud-btn-amber',
+      '⚔️ Armes Élémentaires [K]'
+    );
+    this.openWeaponModalBtn.type = 'button';
+    this.openWeaponModalBtn.title =
+      'Ouvrir la Forge des 4 Armes Élémentaires Légendaires (Feu / Glace / Foudre / Venin Symbiotique) [K]';
+    this.openWeaponModalBtn.addEventListener('click', () => {
+      this.toggleWeaponModal();
+    });
+
+    this.activateIslandShieldBtn = el(
+      'button',
+      'hud-btn hud-btn-shield',
+      '🛡️ Bouclier & Île Suiv. [V]'
+    );
+    this.activateIslandShieldBtn.type = 'button';
+    this.activateIslandShieldBtn.title =
+      'Assembler les 3 Reliques d’Éden, ériger le Dôme-Bouclier Planétaire 3D et mettre le cap sur l’Île suivante [V]';
+    this.activateIslandShieldBtn.addEventListener('click', () => {
+      if (this.callbacks.onActivateIslandShield) {
+        this.callbacks.onActivateIslandShield();
+      }
+    });
+
     this.openCodexBtn = el(
       'button',
       'hud-btn hud-btn-scout is-full-span',
@@ -920,6 +994,8 @@ export class HUDManager {
       this.sharkLandingBtn,
       this.moleEruptionBtn,
       this.reintroducePreyBtn,
+      this.openWeaponModalBtn,
+      this.activateIslandShieldBtn,
       this.openCodexBtn
     );
     this.simLab.appendChild(simGrid);
@@ -1100,6 +1176,18 @@ export class HUDManager {
         if (typeof this.callbacks.onReintroducePrey === 'function') {
           this.callbacks.onReintroducePrey();
         }
+        this.hideAlertBanner();
+        return;
+      }
+      if (this.currentAlertTarget?.actionType === 'activate_island_shield') {
+        if (typeof this.callbacks.onActivateIslandShield === 'function') {
+          this.callbacks.onActivateIslandShield();
+        }
+        this.hideAlertBanner();
+        return;
+      }
+      if (this.currentAlertTarget?.actionType === 'open_weapon_forge') {
+        this.toggleWeaponModal(true);
         this.hideAlertBanner();
         return;
       }
@@ -1393,7 +1481,8 @@ export class HUDManager {
       'is-dragon-wrath',
       'is-shark-landing',
       'is-mole-eruption',
-      'is-prey-crisis'
+      'is-prey-crisis',
+      'is-relic-found'
     );
   }
 
@@ -1658,7 +1747,49 @@ export class HUDManager {
   }
 
   /**
-   * Masque la bannière d'alerte centrale.
+   * Affiche la bannière de découverte d'un Fragment de Relique d'Éden (`1/3`, `2/3`, ou `3/3` prêt pour le Bouclier).
+   * @param {Object} [relicData={}]
+   */
+  showRelicCollectedAlert(relicData = {}) {
+    if (!this.alertBanner) return;
+    const collected = relicData.collectedCount ?? relicData.collected ?? 1;
+    const required = relicData.requiredCount ?? RELIC_FRAGMENTS_SPEC.requiredCount ?? 3;
+    const relicName = relicData.name || relicData.shrine?.name || `Fragment d’Éden #${collected}`;
+    const isComplete = collected >= required;
+
+    this.currentAlertTarget = {
+      x: 0,
+      z: 0,
+      actionType: 'activate_island_shield',
+    };
+
+    this._applyAlertBannerPortrait('relic_found');
+    this._resetAlertBannerVariantClasses();
+    this.alertBanner.classList.add('is-relic-found');
+    this.alertIconWrap.textContent = isComplete ? '🛡️' : '🧩';
+    this.trackPatientZeroBtn.className = `hud-btn hud-btn-shield${isComplete ? ' is-shield-ready' : ''}`;
+    this.trackPatientZeroBtn.textContent = isComplete
+      ? '🛡️ ÉRIGER LE BOUCLIER DE L’ÎLE [V]'
+      : `🧩 ${collected}/${required} RELIQUES (VOIR BOUCLIER)`;
+    this.trackPatientZeroBtn.style.display = 'inline-flex';
+
+    this.alertTitleEl.textContent = isComplete
+      ? `🛡️ LES ${required} RELIQUES D’ÉDEN SONT RÉUNIES (${collected}/${required}) !`
+      : `🧩 RELIQUE D’ÉDEN ASSEMBLÉE : ${relicName.toUpperCase()} (${collected}/${required})`;
+    this.alertDescEl.textContent = isComplete
+      ? 'L’Artefact Solaire est complet ! Appuyez sur [V] ou cliquez sur le bouton pour déployer le Dôme-Bouclier Planétaire sur toute l’île et valider la zone !'
+      : `+50 XP & +15 Cristal ! Retrouvez les ${required - collected} monolithe(s) runique(s) restant(s) sur l’île pour débloquer le Dôme-Bouclier Planétaire !`;
+
+    if (this.alertTimeoutId) {
+      clearTimeout(this.alertTimeoutId);
+    }
+    this.alertTimeoutId = window.setTimeout(() => {
+      this.hideAlertBanner();
+    }, 12000);
+  }
+
+  /**
+   *Masque la bannière d'alerte centrale.
    */
   hideAlertBanner() {
     if (this.alertBanner) {
@@ -2337,6 +2468,8 @@ export class HUDManager {
       { key: 'Shift', label: 'Esquive' },
       { key: 'E', label: 'Bâtir / Secourir / Récolter' },
       { key: 'H', label: 'Architecte Bastion' },
+      { key: 'K', label: 'Armes Élémentaires' },
+      { key: 'V', label: 'Bouclier Île' },
       { key: 'Tab', label: 'Codex Génétique' },
       { key: 'T', label: 'Eco-Tick' },
     ];
@@ -3443,6 +3576,322 @@ export class HUDManager {
     }
   }
 
+  /* ==========================================================================
+     7C. MODALE FORGE DES ARMES ÉLÉMENTAIRES LÉGENDAIRES [K] (PHASE 8)
+     ========================================================================== */
+  _buildWeaponForgeModal() {
+    this.weaponModalBackdrop = el('div', 'modal-backdrop hud-interactive');
+
+    const card = el('div', 'modal-card');
+    card.style.maxWidth = '1060px';
+
+    const header = el('div', 'modal-header');
+    const titleWrap = el('div', 'modal-title-wrap');
+    titleWrap.append(
+      el(
+        'h2',
+        'modal-title',
+        '⚔️ Forge des Artéfacts Élémentaires & Reliques d’Éden [K]'
+      ),
+      el(
+        'p',
+        'modal-subtitle',
+        'Équipez librement l’une des 4 Grandes Épées Élémentaires Légendaires (Feu, Glace, Foudre, Venin Bio-Sélectif) ou votre Lame d’Acier Runique. La Lame de Venin Sylvestre épargne automatiquement le Gibier Herbivore (Biches & Lapins) !'
+      )
+    );
+
+    const closeBtn = el('button', 'modal-close-btn', '✕ Fermer [K / Échap]');
+    closeBtn.type = 'button';
+    closeBtn.addEventListener('click', () => this.toggleWeaponModal(false));
+
+    header.append(titleWrap, closeBtn);
+
+    const body = el('div', 'modal-body');
+
+    // Bandeau de progression des Reliques Anciennes (0/3 -> 3/3) dans la modale
+    this.weaponModalRelicBanner = el('div', 'codex-summary-grid');
+    this.weaponForgeGridEl = el('div', 'weapon-forge-grid');
+
+    body.append(this.weaponModalRelicBanner, this.weaponForgeGridEl);
+    card.append(header, body);
+    this.weaponModalBackdrop.appendChild(card);
+
+    this.weaponModalBackdrop.addEventListener('click', (e) => {
+      if (e.target === this.weaponModalBackdrop) {
+        this.toggleWeaponModal(false);
+      }
+    });
+
+    this.root.appendChild(this.weaponModalBackdrop);
+  }
+
+  /**
+   * Ouvre ou ferme la modale de la Forge des Armes Élémentaires [K] (met le jeu en pause).
+   * @param {boolean} [forceState]
+   * @param {Object} [player]
+   * @param {Object} [bastionAndNpcs]
+   */
+  toggleWeaponModal(forceState, player = null, bastionAndNpcs = null) {
+    this.isWeaponModalOpen =
+      typeof forceState === 'boolean' ? forceState : !this.isWeaponModalOpen;
+    this.weaponModalBackdrop.classList.toggle('is-open', this.isWeaponModalOpen);
+    if (this.isWeaponModalOpen) {
+      this.renderWeaponForgeContent(
+        player || this.lastPlayerRef,
+        bastionAndNpcs || this.lastBastionRef
+      );
+    }
+  }
+
+  /**
+   * Génère les cartes des 5 armes (Acier Runique + 4 Armes Élémentaires Légendaires) et l'état des 3 Reliques.
+   * @param {Object} player
+   * @param {Object} bastionAndNpcs
+   */
+  renderWeaponForgeContent(player = null, bastionAndNpcs = null) {
+    if (!this.weaponForgeGridEl) return;
+    this.weaponForgeGridEl.replaceChildren();
+
+    const p = player || this.lastPlayerRef;
+    const b = bastionAndNpcs || this.lastBastionRef;
+    const equippedId = p?.equippedWeaponId || 'runic_steel';
+    const relicCount =
+      typeof b?.getCollectedRelicCount === 'function'
+        ? b.getCollectedRelicCount()
+        : b?.collectedRelicFragments || 0;
+    const maxRelics = RELIC_FRAGMENTS_SPEC?.totalRequired || 3;
+
+    if (this.weaponModalRelicBanner) {
+      this.weaponModalRelicBanner.replaceChildren();
+      const equippedSpec = getElementalWeaponSpec(equippedId);
+      const stats = [
+        {
+          val: `${equippedSpec.icon} ${equippedSpec.shortName}`,
+          lbl: 'Arme Équipée Active',
+        },
+        {
+          val: `+${Math.round(((equippedSpec.damageMultiplier || 1) - 1) * 100)}% Dégâts`,
+          lbl: 'Puissance Élémentaire',
+        },
+        {
+          val: `${relicCount} / ${maxRelics} Reliques`,
+          lbl: 'Fragments de Relique d’Éden',
+        },
+        {
+          val: relicCount >= maxRelics ? '🛡️ PRÊT [V]' : '🧭 En Exploration',
+          lbl: 'Dôme-Bouclier Planétaire',
+        },
+      ];
+      for (const s of stats) {
+        const box = el('div', 'codex-stat-card');
+        box.append(
+          el('span', 'codex-stat-val', s.val),
+          el('span', 'codex-stat-lbl', s.lbl)
+        );
+        this.weaponModalRelicBanner.appendChild(box);
+      }
+    }
+
+    for (const wSpec of ELEMENTAL_WEAPONS_CATALOG) {
+      const isEquipped = wSpec.id === equippedId;
+      const card = el(
+        'div',
+        `weapon-forge-card elem-${wSpec.element || 'steel'}${isEquipped ? ' is-equipped' : ''}`
+      );
+
+      const head = el('div', 'weapon-forge-head');
+      const iconBox = el('div', 'weapon-forge-icon', wSpec.icon);
+      const titleGroup = el('div', '');
+      titleGroup.append(
+        el('h4', 'weapon-forge-title', wSpec.name),
+        el('span', 'weapon-forge-element-tag', wSpec.badgeText || wSpec.element)
+      );
+      head.append(iconBox, titleGroup);
+
+      const desc = el('p', 'weapon-forge-desc', wSpec.description);
+      const passive = el('div', 'weapon-forge-passive', wSpec.passiveDesc);
+
+      const equipBtn = el(
+        'button',
+        `weapon-forge-equip-btn${isEquipped ? ' is-equipped' : ''}`,
+        isEquipped
+          ? '✅ Arme Actuellement Équipée'
+          : `⚔️ Équiper ${wSpec.shortName}`
+      );
+      equipBtn.type = 'button';
+      equipBtn.addEventListener('click', () => {
+        if (typeof this.callbacks.onEquipWeapon === 'function') {
+          this.callbacks.onEquipWeapon(wSpec.id);
+        }
+        this.renderWeaponForgeContent(
+          player || this.lastPlayerRef,
+          bastionAndNpcs || this.lastBastionRef
+        );
+      });
+
+      card.append(head, desc, passive, equipBtn);
+      this.weaponForgeGridEl.appendChild(card);
+    }
+  }
+
+  /* ==========================================================================
+     7D. MODALE DÔME-BOUCLIER PLANÉTAIRE & VICTOIRE D'ÎLE [V] (PHASE 8)
+     ========================================================================== */
+  _buildIslandVictoryModal() {
+    this.islandModalBackdrop = el('div', 'modal-backdrop hud-interactive');
+
+    const card = el('div', 'modal-card');
+    card.style.maxWidth = '920px';
+
+    const header = el('div', 'modal-header');
+    const titleWrap = el('div', 'modal-title-wrap');
+    this.islandModalTitleEl = el(
+      'h2',
+      'modal-title',
+      '🛡️ Dôme-Bouclier Planétaire d’Éden & Sanctuarisation de l’Île [V]'
+    );
+    this.islandModalSubtitleEl = el(
+      'p',
+      'modal-subtitle',
+      'Les 3 Fragments de Relique Ancienne résonnent avec le Cœur du Bastion : un Dôme-Bouclier Planétaire protège désormais l’écosystème de cette île !'
+    );
+    titleWrap.append(this.islandModalTitleEl, this.islandModalSubtitleEl);
+
+    const closeBtn = el('button', 'modal-close-btn', '✕ Rester sur l’Île [Échap]');
+    closeBtn.type = 'button';
+    closeBtn.addEventListener('click', () => this.hideIslandVictoryModal());
+
+    header.append(titleWrap, closeBtn);
+
+    const body = el('div', 'modal-body');
+
+    const hero = el('div', 'island-victory-hero');
+    const artWrap = el('div', 'island-victory-artwork-wrap');
+    const artImg = document.createElement('img');
+    artImg.className = 'island-victory-artwork';
+    artImg.src = getSpecimenPortraitUrl('island_victory');
+    artImg.alt = 'Dôme-Bouclier Planétaire Genesis Bastion';
+    artWrap.appendChild(artImg);
+
+    const contentCol = el('div', '');
+    this.islandVictoryHeadlineEl = el(
+      'h3',
+      'modal-title',
+      '🏝️ Île #1 Sanctuarisée — Écosystème Stabilisé !'
+    );
+    this.islandVictoryHeadlineEl.style.marginBottom = '8px';
+
+    this.islandVictoryLoreEl = el(
+      'p',
+      'modal-subtitle',
+      'Le Dôme-Bouclier Planétaire englobe désormais toute l’île dans une voûte d’énergie émeraude et dorée. Vous pouvez continuer à observer cet écosystème ou appareiller immédiatement vers la prochaine île de l’archipel (faune plus dense, mutations accélérées, nouvelles reliques).'
+    );
+
+    this.islandVictoryStatsGrid = el('div', 'island-victory-stats-grid');
+
+    const actionsWrap = el('div', 'island-victory-actions');
+    this.advanceNextIslandBtn = el(
+      'button',
+      'island-next-btn',
+      '⛵ CAP SUR L’ÎLE SUIVANTE (Île #2) →'
+    );
+    this.advanceNextIslandBtn.type = 'button';
+    this.advanceNextIslandBtn.addEventListener('click', () => {
+      this.hideIslandVictoryModal();
+      if (typeof this.callbacks.onAdvanceNextIsland === 'function') {
+        this.callbacks.onAdvanceNextIsland();
+      }
+    });
+
+    const stayBtn = el(
+      'button',
+      'hud-btn',
+      '🔍 Continuer d’explorer cette île sous le Dôme'
+    );
+    stayBtn.type = 'button';
+    stayBtn.addEventListener('click', () => this.hideIslandVictoryModal());
+
+    actionsWrap.append(this.advanceNextIslandBtn, stayBtn);
+    contentCol.append(
+      this.islandVictoryHeadlineEl,
+      this.islandVictoryLoreEl,
+      this.islandVictoryStatsGrid,
+      actionsWrap
+    );
+
+    hero.append(artWrap, contentCol);
+    body.appendChild(hero);
+    card.append(header, body);
+    this.islandModalBackdrop.appendChild(card);
+
+    this.root.appendChild(this.islandModalBackdrop);
+  }
+
+  /**
+   * Affiche la modale de Victoire d'Île / Dôme-Bouclier Planétaire [V] (met le jeu en pause).
+   * @param {Object} [islandData]
+   */
+  showIslandVictoryModal(islandData = {}) {
+    const currentIsland = islandData.islandNumber || 1;
+    const nextIsland = currentIsland + 1;
+    const currentTier = getIslandTierSpec(currentIsland);
+    const nextTier = getIslandTierSpec(nextIsland);
+    const relicCount = islandData.relicCount ?? 3;
+    const equippedWeapon = getElementalWeaponSpec(
+      islandData.equippedWeaponId || this.lastPlayerRef?.equippedWeaponId || 'runic_steel'
+    );
+
+    this.setDynamicPortrait(
+      'island_victory',
+      `Île #${currentIsland} Sanctuarisée !`,
+      `Dôme-Bouclier Planétaire Actif · Cap sur ${nextTier.name}`
+    );
+
+    if (this.islandVictoryHeadlineEl) {
+      this.islandVictoryHeadlineEl.textContent = `🛡️ ${currentTier.name} Sanctuarisée — Dôme-Bouclier Planétaire Actif !`;
+    }
+    if (this.islandVictoryLoreEl) {
+      this.islandVictoryLoreEl.textContent = `Grâce aux ${relicCount}/3 Reliques d'Éden, le Dôme-Bouclier Planétaire protège désormais ${currentTier.name} (${currentTier.subtitle}). Prochaine destination : ${nextTier.name} (${nextTier.subtitle}) — Multiplicateur de menace x${nextTier.enemyStatMultiplier.toFixed(2)}, bonus de mutation +${Math.round(nextTier.mutationRateBonus * 100)}%.`;
+    }
+
+    if (this.islandVictoryStatsGrid) {
+      this.islandVictoryStatsGrid.replaceChildren();
+      const stats = [
+        { val: `Île #${currentIsland} → #${nextIsland}`, lbl: 'Campagne Archipel' },
+        { val: `${relicCount} / 3 🧩`, lbl: 'Reliques d’Éden Assemblées' },
+        {
+          val: `${equippedWeapon.icon} ${equippedWeapon.shortName}`,
+          lbl: 'Arme Élémentaire Conservée',
+        },
+      ];
+      for (const s of stats) {
+        const box = el('div', 'island-victory-stat-box');
+        box.append(
+          el('span', 'island-victory-stat-val', s.val),
+          el('span', 'island-victory-stat-lbl', s.lbl)
+        );
+        this.islandVictoryStatsGrid.appendChild(box);
+      }
+    }
+
+    if (this.advanceNextIslandBtn) {
+      this.advanceNextIslandBtn.textContent = `⛵ CAP SUR L’ÎLE SUIVANTE (${nextTier.name}) →`;
+    }
+
+    this.isIslandModalOpen = true;
+    this.islandModalBackdrop.classList.add('is-open');
+  }
+
+  /**
+   * Ferme la modale du Dôme-Bouclier Planétaire.
+   */
+  hideIslandVictoryModal() {
+    this.isIslandModalOpen = false;
+    if (this.islandModalBackdrop) {
+      this.islandModalBackdrop.classList.remove('is-open');
+    }
+  }
+
   /**
    * Met à jour les 5 lignes de bâtiments du Bastion dans le panneau gauche.
    * @param {Object} bastionAndNpcs
@@ -3649,13 +4098,24 @@ export class HUDManager {
       }
     }
 
-    // 1. Horloge Jour / Nuit
+    // 1. Horloge Jour / Nuit & Numéro d'Île (Phase 8)
     if (sceneManager && typeof sceneManager.getTimeOfDay === 'function') {
       const tod = sceneManager.getTimeOfDay();
       const icon = tod.isNight ? '🌙' : tod.phase === 'dawn' || tod.phase === 'dusk' ? '🌅' : '☀️';
       const timeStr = tod.formattedTime ? ` — ${tod.formattedTime}` : '';
       this.clockBadge.textContent = `${icon} Jour ${tod.dayNumber || 1}${timeStr} (${tod.label || 'Jour'})`;
       this.clockBadge.classList.toggle('is-night', Boolean(tod.isNight));
+    }
+
+    const currentIslandNumber =
+      enemyManager?.islandNumber ||
+      ecoSim?.islandNumber ||
+      bastionAndNpcs?.islandNumber ||
+      1;
+    if (this.islandBadge) {
+      const tierSpec = getIslandTierSpec(currentIslandNumber);
+      this.islandBadge.textContent = `🏝️ ${tierSpec.name}`;
+      this.islandBadge.title = `${tierSpec.name} — ${tierSpec.subtitle}`;
     }
 
     // 2. Compte à rebours Eco-Tick & Population (Adultes vs Bébés)
@@ -3724,7 +4184,7 @@ export class HUDManager {
       this.reintroducePreyBtn.classList.toggle('is-urgent-reintroduce', needsReintro);
     }
 
-    // 3. Statistiques & Ressources du Joueur (dont 🍖 Rations / Nourriture)
+    // 3. Statistiques & Ressources du Joueur (dont 🍖 Rations / Nourriture & ⚔️ Arme Élémentaire)
     if (player) {
       const hp = Math.max(0, Math.round(player.hp ?? 160));
       const maxHp = Math.max(1, Math.round(player.maxHp ?? 160));
@@ -3769,12 +4229,18 @@ export class HUDManager {
         }
       }
 
+      if (this.weaponBadgeBtn) {
+        const wSpec = getElementalWeaponSpec(player.equippedWeaponId || 'runic_steel');
+        this.weaponBadgeBtn.className = `hud-weapon-badge-btn elem-${wSpec.element || 'steel'}`;
+        this.weaponBadgeBtn.textContent = `${wSpec.icon} Arme: ${wSpec.shortName} [K]`;
+      }
+
       // Mise à jour de la Barre de Compétences Roguelike (4 Sorts 3D) et du Panneau des Maîtrises Adaptatives
       this._updateSkillBar(player);
       this._updateMasteryPanel(player);
     }
 
-    // 4. Bastion & PNJ Alliés (Éclaireurs en expédition lointaine, Gardes, Récolteurs, Bâtiments Niv. 0->3)
+    // 4. Bastion & PNJ Alliés (Éclaireurs en expédition lointaine, Gardes, Récolteurs, Bâtiments Niv. 0->3, Reliques X/3)
     if (bastionAndNpcs) {
       const bHp = Math.max(0, Math.round(bastionAndNpcs.hp ?? bastionAndNpcs.bastionHp ?? 500));
       const bMaxHp = Math.max(
@@ -3783,6 +4249,28 @@ export class HUDManager {
       );
       this.bastionHpText.textContent = `${bHp} / ${bMaxHp}`;
       this.bastionHpFill.style.width = `${Math.min(100, Math.round((bHp / bMaxHp) * 100))}%`;
+
+      const relicCount =
+        typeof bastionAndNpcs.getCollectedRelicCount === 'function'
+          ? bastionAndNpcs.getCollectedRelicCount()
+          : bastionAndNpcs.collectedRelicFragments || 0;
+      const maxRelics = RELIC_FRAGMENTS_SPEC?.totalRequired || 3;
+      const shieldReady = relicCount >= maxRelics || Boolean(bastionAndNpcs.islandShieldActive);
+
+      if (this.relicBadge) {
+        this.relicBadge.classList.toggle('is-complete', shieldReady);
+        this.relicBadge.textContent = bastionAndNpcs.islandShieldActive
+          ? `🛡️ Reliques: ${relicCount}/${maxRelics} (DÔME ACTIF [V])`
+          : `🧩 Reliques: ${relicCount}/${maxRelics}${shieldReady ? ' (PRÊT [V] !)' : ''}`;
+      }
+      if (this.activateIslandShieldBtn) {
+        this.activateIslandShieldBtn.classList.toggle('is-ready-glow', shieldReady);
+        this.activateIslandShieldBtn.textContent = bastionAndNpcs.islandShieldActive
+          ? `⛵ Cap sur Île #${currentIslandNumber + 1} [V]`
+          : shieldReady
+            ? '🛡️ Activer Dôme & Île Suiv. [V] !'
+            : `🛡️ Bouclier & Île (${relicCount}/${maxRelics}) [V]`;
+      }
 
       const counts =
         typeof bastionAndNpcs.getRoleCounts === 'function'
@@ -3826,6 +4314,9 @@ export class HUDManager {
 
     if (this.isBastionModalOpen) {
       this.renderBastionArchitectContent(bastionAndNpcs, player);
+    }
+    if (this.isWeaponModalOpen) {
+      this.renderWeaponForgeContent(player, bastionAndNpcs);
     }
   }
 }

@@ -41,6 +41,9 @@ import {
 import {
   DynamicQuestSystem,
   getBuildingUpgradeSpec,
+  getElementalWeaponSpec,
+  RELIC_FRAGMENTS_SPEC,
+  getIslandTierSpec,
 } from './ecosystem/BaseAndQuestsDesign.js';
 import { EnemyManager } from './entities/EnemyManager.js';
 import { PlayerController } from './entities/PlayerController.js';
@@ -132,6 +135,9 @@ export class GenesisBastionGame {
       onTriggerSharkLanding: () => this.triggerSharkLanding(),
       onTriggerMoleEruption: () => this.triggerMoleEruption(),
       onReintroducePrey: () => this.handleReintroducePrey(),
+      onEquipWeapon: (weaponId) => this.handleEquipElementalWeapon(weaponId),
+      onActivateIslandShield: () => this.triggerIslandShieldAndVictory(true),
+      onAdvanceNextIsland: () => this.advanceToNextIsland(),
       onAssignRole: (targetRole) => this.handleRoleAssignment(targetRole),
       onBuildStructure: (structId) => this.handleBuildStructure(structId),
       onFocusWorldPos: (wx, wz, lineageId) => this.focusWorldPosition(wx, wz, lineageId),
@@ -1118,6 +1124,45 @@ export class GenesisBastionGame {
     const px = this.player.x;
     const pz = this.player.z;
 
+    // 0A. Monolithe de Relique Ancienne non collecté à proximité (<= 9.5m)
+    if (this.bastionAndNpcs && typeof this.bastionAndNpcs.getNearestRelicShrine === 'function') {
+      const relic = this.bastionAndNpcs.getNearestRelicShrine(px, pz, 9.5);
+      if (relic) {
+        const nextCount = (this.bastionAndNpcs.collectedRelicFragments || 0) + 1;
+        const maxCount = this.bastionAndNpcs.maxRelicFragments || 3;
+        const screenPos = this.sceneManager.worldToScreen(
+          new THREE.Vector3(relic.x, relic.y || 0, relic.z),
+          3.4
+        );
+        this.hud.updateContextualPrompt(
+          screenPos,
+          'E',
+          `🏛️ Collecter ${relic.name} (${nextCount}/${maxCount} Reliques)`,
+          'prompt-rescue'
+        );
+        return;
+      }
+    }
+
+    // 0B. Sanctuaire d'Arme Élémentaire à proximité (<= 8.5m)
+    if (this.bastionAndNpcs && typeof this.bastionAndNpcs.getNearestWeaponShrine === 'function') {
+      const shrine = this.bastionAndNpcs.getNearestWeaponShrine(px, pz, 8.5);
+      if (shrine) {
+        const wSpec = getElementalWeaponSpec(shrine.weaponId);
+        const screenPos = this.sceneManager.worldToScreen(
+          new THREE.Vector3(shrine.x, shrine.y || 0, shrine.z),
+          3.0
+        );
+        this.hud.updateContextualPrompt(
+          screenPos,
+          'E',
+          `⚔️ Forger & Équiper : ${wSpec.icon} ${wSpec.shortName}`,
+          'prompt-build'
+        );
+        return;
+      }
+    }
+
     // 1. Cage de prisonnier verrouillée à proximité (<= 9.5m)
     const cages = this.bastionAndNpcs?.cages || [];
     for (const cage of cages) {
@@ -1266,6 +1311,20 @@ export class GenesisBastionGame {
 
     if (this.bastionAndNpcs) {
       this.bastionAndNpcs.onScoutDiscovery = this.handleScoutDiscovery;
+      this.bastionAndNpcs.onRelicCollected = (relic, collectedCount, maxCount) =>
+        this.handleRelicCollected(relic, collectedCount, maxCount);
+      this.bastionAndNpcs.onWeaponShrineInteracted = (_shrine, weaponSpec) => {
+        if (weaponSpec && this.sound && typeof this.sound.playWeaponForge === 'function') {
+          this.sound.playWeaponForge(weaponSpec.id || weaponSpec.element);
+        }
+        this.hud?.refreshLogFeed?.();
+      };
+      this.bastionAndNpcs.onRelicSpottedByScout = (relic) => {
+        if (relic && this.minimap && typeof this.minimap.pingLocation === 'function') {
+          this.minimap.pingLocation(relic.x || 0, relic.z || 0, 'RELIQUE', 7000);
+        }
+        this.hud?.refreshLogFeed?.();
+      };
     }
 
     /**
@@ -1544,12 +1603,27 @@ export class GenesisBastionGame {
         }
       };
 
+      this.player.onWeaponEquipped = (wSpec) => {
+        if (this.sound && typeof this.sound.playWeaponForge === 'function') {
+          this.sound.playWeaponForge(wSpec?.id || wSpec?.element || 'runic_steel');
+        }
+        if (wSpec && this.sceneManager && typeof this.sceneManager.worldToScreen === 'function') {
+          const screenPos = this.sceneManager.worldToScreen(
+            new THREE.Vector3(this.player.x, this.player.y + 0.8, this.player.z),
+            2.6
+          );
+          this.hud.spawnFloatingNumber(screenPos, `${wSpec.icon} ${wSpec.shortName}`, 'dmg-mastery');
+        }
+        this.hud?.refreshLogFeed?.();
+      };
+
       if (typeof this.player.interact === 'function') {
         const origInteract = this.player.interact.bind(this.player);
         this.player.interact = (bastionAndNpcs) => {
           const prevWood = this.player.resources?.wood || 0;
           const prevCrystal = this.player.resources?.crystal || 0;
           const prevRescued = bastionAndNpcs?.rescuedCount || 0;
+          const prevRelics = bastionAndNpcs?.collectedRelicFragments || 0;
           const prevWatchtowerLvl =
             typeof bastionAndNpcs?.getBuildingLevel === 'function'
               ? bastionAndNpcs.getBuildingLevel('watchtower')
@@ -1560,6 +1634,7 @@ export class GenesisBastionGame {
           const newWood = this.player.resources?.wood || 0;
           const newCrystal = this.player.resources?.crystal || 0;
           const newRescued = bastionAndNpcs?.rescuedCount || 0;
+          const newRelics = bastionAndNpcs?.collectedRelicFragments || 0;
           const newWatchtowerLvl =
             typeof bastionAndNpcs?.getBuildingLevel === 'function'
               ? bastionAndNpcs.getBuildingLevel('watchtower')
@@ -1570,8 +1645,12 @@ export class GenesisBastionGame {
             this.hud.refreshLogFeed();
           }
 
-          // Si le joueur a récolté un gisement (sans que ce soit le bonus d'ouverture d'une cage)
-          if (newRescued === prevRescued && (newWood > prevWood || newCrystal > prevCrystal)) {
+          // Si le joueur a récolté un gisement (sans que ce soit le bonus d'ouverture d'une cage ou d'une relique)
+          if (
+            newRescued === prevRescued &&
+            newRelics === prevRelics &&
+            (newWood > prevWood || newCrystal > prevCrystal)
+          ) {
             this.tutState.harvestedInAct3 = true;
             if (this.sceneManager && typeof this.sceneManager.worldToScreen === 'function') {
               const screenPos = this.sceneManager.worldToScreen(
@@ -1631,6 +1710,216 @@ export class GenesisBastionGame {
         this.hud.refreshLogFeed();
       };
     }
+  }
+
+  /**
+   * Équipe une Arme Élémentaire Légendaire (`fire_greatsword`, `ice_greatsword`, `lightning_greatsword`,
+   * `venom_greatsword`, ou `runic_steel`) sur le Héros (Phase 8).
+   * @param {string} weaponId
+   * @returns {Object} Spécification de l'arme équipée.
+   */
+  handleEquipElementalWeapon(weaponId = 'runic_steel') {
+    const wSpec = getElementalWeaponSpec(weaponId);
+    if (!this.player) return wSpec;
+
+    if (typeof this.player.equipElementalWeapon === 'function') {
+      this.player.equipElementalWeapon(wSpec.id);
+    } else {
+      this.player.equippedWeaponId = wSpec.id;
+      this.player.equippedWeapon = wSpec;
+      if (this.sound && typeof this.sound.playWeaponForge === 'function') {
+        this.sound.playWeaponForge(wSpec.id);
+      }
+    }
+
+    this.hud?.refreshLogFeed?.();
+    return wSpec;
+  }
+
+  /**
+   * Callback déclenché lorsqu'un Fragment de Relique d'Éden (`1/3`, `2/3`, `3/3`) est collecté (Phase 8).
+   * @param {Object} relic
+   * @param {number} collectedCount
+   * @param {number} maxCount
+   */
+  handleRelicCollected(relic, collectedCount = 1, maxCount = 3) {
+    if (this.player) {
+      this.player.relicFragmentsCollected = collectedCount;
+    }
+
+    if (this.sound && typeof this.sound.playRelicPickup === 'function') {
+      this.sound.playRelicPickup(collectedCount, !this.tutorialActive);
+    }
+
+    if (this.sceneManager && typeof this.sceneManager.worldToScreen === 'function') {
+      const rx = relic?.x ?? this.player?.x ?? 0;
+      const ry = relic?.y ?? this.player?.y ?? 0;
+      const rz = relic?.z ?? this.player?.z ?? 0;
+      const screenPos = this.sceneManager.worldToScreen(new THREE.Vector3(rx, ry + 1.0, rz), 2.8);
+      this.hud.spawnFloatingNumber(
+        screenPos,
+        `🧩 Relique ${collectedCount}/${maxCount} (+15 💎)`,
+        'dmg-mastery'
+      );
+    }
+
+    if (this.hud && typeof this.hud.showRelicCollectedAlert === 'function') {
+      this.hud.showRelicCollectedAlert({
+        relic,
+        fragmentCount: collectedCount,
+        maxFragments: maxCount,
+        x: relic?.x ?? 0,
+        z: relic?.z ?? 0,
+      });
+    }
+
+    if (collectedCount >= maxCount) {
+      if (this.bastionAndNpcs && typeof this.bastionAndNpcs.activateIslandShield === 'function') {
+        this.bastionAndNpcs.activateIslandShield(true);
+      }
+      if (this.enemyManager) {
+        this.enemyManager.islandShieldActive = true;
+      }
+    }
+
+    this.hud?.refreshLogFeed?.();
+  }
+
+  /**
+   * Collecte immédiatement le prochain Fragment de Relique Ancienne non collecté (pour test / vérification).
+   * @returns {Object|null}
+   */
+  collectNextRelicFragmentForTest() {
+    if (!this.bastionAndNpcs) return null;
+    if (typeof this.bastionAndNpcs.collectRelicFragment === 'function') {
+      const relic = this.bastionAndNpcs.collectRelicFragment(null, this.player?.resources);
+      if (relic && typeof this.player?.gainXp === 'function') {
+        this.player.gainXp(RELIC_FRAGMENTS_SPEC?.fragmentRewardXp || 50);
+      }
+      return relic;
+    }
+    return null;
+  }
+
+  /**
+   * Active le Dôme-Bouclier Planétaire d'Éden (`3/3 Reliques`) et ouvre la modale de Victoire d'Île `[V]` (Phase 8).
+   * @param {boolean} [forceCollectAll=true] - Si `true`, complète les reliques restantes pour permettre le test immédiat via `[V]`.
+   * @returns {boolean}
+   */
+  triggerIslandShieldAndVictory(forceCollectAll = true) {
+    if (this.bastionAndNpcs) {
+      const maxRelics = this.bastionAndNpcs.maxRelicFragments || 3;
+      if (forceCollectAll && (this.bastionAndNpcs.collectedRelicFragments || 0) < maxRelics) {
+        for (const r of this.bastionAndNpcs.relicShrines || []) {
+          if (!r.collected && typeof this.bastionAndNpcs.collectRelicFragment === 'function') {
+            this.bastionAndNpcs.collectRelicFragment(r, this.player?.resources);
+          }
+        }
+      }
+      if (typeof this.bastionAndNpcs.activateIslandShield === 'function') {
+        this.bastionAndNpcs.activateIslandShield(true);
+      } else {
+        this.bastionAndNpcs.islandShieldActive = true;
+      }
+    }
+
+    if (this.enemyManager) {
+      this.enemyManager.islandShieldActive = true;
+    }
+
+    if (this.sound && typeof this.sound.playIslandShieldActivation === 'function') {
+      this.sound.playIslandShieldActivation(!this.tutorialActive);
+    }
+
+    const currentIsland =
+      this.enemyManager?.islandNumber ||
+      this.bastionAndNpcs?.islandNumber ||
+      1;
+    this.hud.showIslandVictoryModal({
+      islandNumber: currentIsland,
+      relicCount: this.bastionAndNpcs?.collectedRelicFragments || 3,
+      equippedWeaponId: this.player?.equippedWeaponId || 'runic_steel',
+    });
+
+    this.hud?.refreshLogFeed?.();
+    return true;
+  }
+
+  /**
+   * Appareille vers l'Île suivante de la campagne (`Île #1 -> Île #2 -> Île #3...`) en conservant
+   * le niveau du Héros, son Arme Élémentaire Légendaire, ses Sorts 3D, ses Maîtrises et ses Bâtiments (Phase 8).
+   * @returns {Object} Spécification du palier de la nouvelle île (`getIslandTierSpec`).
+   */
+  advanceToNextIsland() {
+    const currentIsland =
+      this.enemyManager?.islandNumber ||
+      this.bastionAndNpcs?.islandNumber ||
+      1;
+    const nextIsland = currentIsland + 1;
+    const tierSpec = getIslandTierSpec(nextIsland);
+
+    this.hud.hideIslandVictoryModal();
+    this.hud.hideAlertBanner();
+
+    if (this.tutorialActive) {
+      this.skipTutorial();
+    }
+
+    // 1. Réinitialiser la grille écologique et escalader le taux de mutation sur la nouvelle île
+    if (this.ecoSim && typeof this.ecoSim.resetForNextIsland === 'function') {
+      this.ecoSim.resetForNextIsland(nextIsland, tierSpec);
+    }
+
+    // 2. Réinitialiser les 3 Monolithes de Relique, les Cages et le Dôme sur le Bastion
+    if (this.bastionAndNpcs && typeof this.bastionAndNpcs.resetForNextIsland === 'function') {
+      this.bastionAndNpcs.resetForNextIsland(nextIsland);
+    } else if (this.bastionAndNpcs) {
+      this.bastionAndNpcs.islandNumber = nextIsland;
+      this.bastionAndNpcs.islandShieldActive = false;
+      this.bastionAndNpcs.collectedRelicFragments = 0;
+    }
+
+    // 3. Transitionner EnemyManager vers la nouvelle île avec escalade de difficulté et meutes fraîches
+    if (this.enemyManager) {
+      if (typeof this.enemyManager.resetForNextIsland === 'function') {
+        this.enemyManager.resetForNextIsland(nextIsland);
+      } else {
+        this.enemyManager.islandNumber = nextIsland;
+        this.enemyManager.islandDifficultyMult = tierSpec.enemyStatMultiplier || 1.35;
+        this.enemyManager.islandShieldActive = false;
+        this.enemyManager.clearAllEnemies();
+        this.enemyManager.spawnInitialPopulation(
+          (CONFIG.ECO?.INITIAL_POPULATION || 42) + (tierSpec.extraInitialPackCount || 0) * 3
+        );
+      }
+      this._ensurePhase7EcosystemPopulated();
+    }
+
+    // 4. Repositionner le Héros devant le Foyer du Sanctuaire avec santé restaurée et rations de voyage
+    if (this.player) {
+      this.player.x = 0;
+      this.player.z = 6.5;
+      this.player.y = this.terrain ? this.terrain.getHeightAt(0, 6.5) : 0;
+      this.player.hp = this.player.maxHp;
+      this.player.relicFragmentsCollected = 0;
+      if (this.player.resources) {
+        const maxFood = this.player.resources.maxFood || 150;
+        this.player.resources.food = Math.min(maxFood, (this.player.resources.food || 60) + 45);
+      }
+    }
+
+    logger.evolution(
+      `⛵ Débarquement sur ${tierSpec.name} (${tierSpec.subtitle}) ! Difficulté x${tierSpec.enemyStatMultiplier.toFixed(2)} · Mutations +${Math.round(tierSpec.mutationRateBonus * 100)}%.`,
+      {
+        islandNumber: nextIsland,
+        tierName: tierSpec.name,
+        enemyStatMultiplier: tierSpec.enemyStatMultiplier,
+        mutationRateBonus: tierSpec.mutationRateBonus,
+      }
+    );
+
+    this.hud?.refreshLogFeed?.();
+    return tierSpec;
   }
 
   /**
@@ -2033,6 +2322,16 @@ export class GenesisBastionGame {
       } else if (evt.code === 'KeyH' && !evt.ctrlKey && !evt.metaKey) {
         evt.preventDefault();
         this.hud.toggleBastionArchitectModal(undefined, this.bastionAndNpcs, this.player);
+      } else if (evt.code === 'KeyK' && !evt.ctrlKey && !evt.metaKey) {
+        evt.preventDefault();
+        this.hud.toggleWeaponModal(undefined, this.player, this.bastionAndNpcs);
+      } else if (evt.code === 'KeyV' && !evt.ctrlKey && !evt.metaKey) {
+        evt.preventDefault();
+        if (this.hud.isIslandModalOpen) {
+          this.hud.hideIslandVictoryModal();
+        } else {
+          this.triggerIslandShieldAndVictory(true);
+        }
       } else if (evt.code === 'KeyP' && !evt.ctrlKey && !evt.metaKey) {
         if (this.tutorialActive) {
           this.skipTutorial();
@@ -2054,6 +2353,12 @@ export class GenesisBastionGame {
         }
         if (this.hud.isBastionModalOpen) {
           this.hud.toggleBastionArchitectModal(false);
+        }
+        if (this.hud.isWeaponModalOpen) {
+          this.hud.toggleWeaponModal(false);
+        }
+        if (this.hud.isIslandModalOpen) {
+          this.hud.hideIslandVictoryModal();
         }
         this.hud.hideAlertBanner();
       } else if (evt.code === 'KeyT' && !evt.ctrlKey && !evt.metaKey) {
@@ -2101,8 +2406,8 @@ export class GenesisBastionGame {
   /**
    * Exécute un pas de simulation et de rendu (`requestAnimationFrame`).
    * Si une modale tactique est ouverte (`this.hud.isModalPaused === true` : Level-Up, Mode de Combat,
-   * Architecte du Bastion `[H]` ou Codex Phylogénétique `[Tab]`), toute la simulation de gameplay est mise
-   * en PAUSE STRICTE afin que le joueur puisse lire et planifier sans subir d'attaques.
+   * Architecte du Bastion `[H]`, Forge des Armes `[K]`, Dôme-Bouclier `[V]` ou Codex Phylogénétique `[Tab]`),
+   * toute la simulation de gameplay est mise en PAUSE STRICTE afin que le joueur puisse lire et planifier sans subir d'attaques.
    *
    * @param {number} nowMs - Timestamp haute précision fourni par `requestAnimationFrame`.
    */
@@ -2354,6 +2659,16 @@ function bootstrapGenesisBastion() {
       triggerSharkLanding: () => gameInstance.triggerSharkLanding(),
       triggerMoleEruption: () => gameInstance.triggerMoleEruption(),
       reintroducePreyHerds: () => gameInstance.handleReintroducePrey(),
+      equipWeapon: (weaponId) => gameInstance.handleEquipElementalWeapon(weaponId),
+      toggleWeaponForge: (forceState) =>
+        gameInstance.hud.toggleWeaponModal(
+          forceState,
+          gameInstance.player,
+          gameInstance.bastionAndNpcs
+        ),
+      collectNextRelic: () => gameInstance.collectNextRelicFragmentForTest(),
+      activateIslandShield: (force = true) => gameInstance.triggerIslandShieldAndVictory(force),
+      advanceToNextIsland: () => gameInstance.advanceToNextIsland(),
       skipTutorial: () => gameInstance.skipTutorial(),
       startTutorialAct: (actNum) => gameInstance.startTutorialAct(actNum),
       playTutorialVoice: (actOrKey) => gameInstance.sound?.playTutorialVoice?.(actOrKey),
