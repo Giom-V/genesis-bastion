@@ -641,6 +641,37 @@ export class Minimap {
       }
 
       // Anneau pulsant cramoisi pour les Patients Zéro / Mutants repérés par un Éclaireur
+      const isDragon =
+        genome.speciesId === 'dragon' || enemy.aggroStance === 'pacifist_apex';
+      const isEnragedDragon = Boolean(
+        isDragon && (enemy.enraged || enemy.state === 'wrath_raid')
+      );
+
+      if (isEnragedDragon) {
+        // Trajectoire de Courroux Draconique droit vers le Bastion (0, 0)
+        ctx.beginPath();
+        ctx.moveTo(px, py);
+        ctx.lineTo(this.half, this.half);
+        ctx.strokeStyle = `rgba(255, 71, 87, ${0.55 + pulse * 0.4})`;
+        ctx.lineWidth = 1.6;
+        ctx.setLineDash([4, 3]);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        ctx.beginPath();
+        ctx.arc(px, py, 6.0 + pulse * 4.0, 0, Math.PI * 2);
+        ctx.strokeStyle = '#ff4757';
+        ctx.lineWidth = 2.0;
+        ctx.stroke();
+      } else if (isDragon) {
+        // Halo doré souverain pour un Dragon Pacifique non provoqué
+        ctx.beginPath();
+        ctx.arc(px, py, 4.8, 0, Math.PI * 2);
+        ctx.strokeStyle = 'rgba(255, 209, 102, 0.72)';
+        ctx.lineWidth = 1.2;
+        ctx.stroke();
+      }
+
       if ((hasMutation || isHybrid) && (isSpotted || matchesHighlight)) {
         const ringRadius = 5.5 + pulse * 4.5 + (matchesHighlight ? 2.5 : 0);
         ctx.beginPath();
@@ -660,14 +691,20 @@ export class Minimap {
         ctx.lineWidth = 1;
         ctx.stroke();
       } else {
-        // Point d'ennemi standard coloré selon l'espèce (plus petit si Bébé juvénile)
+        // Point d'ennemi standard coloré selon l'espèce (plus petit si Bébé juvénile, plus grand si Dragon)
         const spColor =
           CONFIG.SPECIES?.[genome.speciesId]?.color ||
           (isHybrid ? '#e6a145' : '#9fb1c1');
         ctx.beginPath();
-        const dotR = isBaby ? 1.5 : hasMutation ? 2.8 : 2.1;
+        const dotR = isBaby ? 1.5 : isDragon ? 3.3 : hasMutation ? 2.8 : 2.1;
         ctx.arc(px, py, dotR, 0, Math.PI * 2);
-        ctx.fillStyle = hasMutation ? '#ff6b6b' : spColor;
+        ctx.fillStyle = isEnragedDragon
+          ? '#ff4757'
+          : isDragon
+            ? '#ff9436'
+            : hasMutation
+              ? '#ff6b6b'
+              : spColor;
         ctx.fill();
       }
     }

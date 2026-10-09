@@ -2058,12 +2058,141 @@ body {
   background: rgba(56, 193, 114, 0.1);
 }
 
-.bastion-tier-item.is-next {
+.bastion-tier-item.is-next,
+.bastion-tier-item.is-current {
   color: var(--text-primary);
   border-left-color: var(--accent-amber-bright);
   background: rgba(230, 161, 69, 0.12);
   font-weight: 600;
 }
 
+/* ==========================================================================
+   12. PHASE 5 : CYCLES DE GESTATION, ÉTENDUE GÉNÉTIQUE [PAPA, MAMAN] ± 10%
+       & COURROUX DRACONIQUE (DRAGONS SOUVERAINS PACIFIQUES)
+   ========================================================================== */
 
+.hud-context-prompt.prompt-dragon-peaceful {
+  border-color: #ffd166;
+  background: rgba(34, 20, 12, 0.94);
+  color: #fff3d1;
+  box-shadow:
+    0 0 22px rgba(255, 209, 102, 0.45),
+    0 0 12px rgba(255, 71, 87, 0.35);
+}
 
+.hud-context-prompt.prompt-dragon-wrath {
+  border-color: #ff4757;
+  background: rgba(58, 12, 16, 0.95);
+  color: #ffd6db;
+  box-shadow: 0 0 26px rgba(255, 71, 87, 0.72);
+}
+
+.hud-scout-alert-banner.is-dragon-wrath {
+  border-color: #ff4757;
+  background: linear-gradient(135deg, rgba(64, 12, 18, 0.96), rgba(28, 10, 14, 0.96));
+  box-shadow:
+    0 12px 38px rgba(0, 0, 0, 0.82),
+    0 0 34px rgba(255, 71, 87, 0.65),
+    inset 0 0 22px rgba(255, 148, 54, 0.25);
+}
+
+.hud-scout-alert-banner.is-dragon-wrath .hud-alert-title {
+  color: #ffd166;
+  text-shadow: 0 0 12px rgba(255, 71, 87, 0.8);
+}
+
+.hud-lineage-traits-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 3px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-secondary);
+}
+
+.hud-lineage-trait-pill {
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(10, 15, 22, 0.78);
+  border: 1px solid rgba(230, 161, 69, 0.28);
+}
+
+.codex-species-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.codex-species-card {
+  background: rgba(15, 22, 31, 0.92);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.codex-species-card.is-dragon-card {
+  border-color: rgba(255, 148, 54, 0.62);
+  background: linear-gradient(155deg, rgba(36, 16, 18, 0.92), rgba(16, 22, 31, 0.94));
+}
+
+.codex-species-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.codex-stance-badge {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 99px;
+  text-transform: uppercase;
+}
+
+.codex-stance-badge.stance-hostile {
+  background: rgba(255, 71, 87, 0.18);
+  color: #ff8a95;
+  border: 1px solid rgba(255, 71, 87, 0.45);
+}
+
+.codex-stance-badge.stance-territorial {
+  background: rgba(230, 161, 69, 0.18);
+  color: #ffd166;
+  border: 1px solid rgba(230, 161, 69, 0.45);
+}
+
+.codex-stance-badge.stance-pacifist_apex {
+  background: rgba(46, 213, 115, 0.18);
+  color: #7bed9f;
+  border: 1px solid rgba(255, 209, 102, 0.6);
+}
+
+.codex-stance-badge.stance-wrath {
+  background: rgba(255, 71, 87, 0.35);
+  color: #ffd166;
+  border: 1px solid #ff4757;
+}
+
+.codex-scope-box {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--text-primary);
+  background: rgba(9, 13, 19, 0.72);
+  border: 1px solid rgba(240, 234, 214, 0.12);
+  border-radius: 5px;
+  padding: 5px 7px;
+  line-height: 1.45;
+}
+
+.codex-repop-pill {
+  font-size: 10.5px;
+  color: #9be061;
+  font-weight: 600;
+}

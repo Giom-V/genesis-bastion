@@ -85,6 +85,71 @@ function svgEl(tag, attrs = {}, text = '') {
 }
 
 /**
+ * Paramètres de référence Phase 5 par espèce (cycles de gestation, maturation, agressivité, posture et repeuplement sauvage).
+ */
+export const SPECIES_CYCLE_AND_AGGRO_DEFAULTS = {
+  goblin: {
+    baseGestationTime: 9,
+    baseMaturationTime: 12,
+    baseAggressiveness: 0.75,
+    aggroStance: 'hostile',
+    repopulationCooldown: 8,
+    repopulationHabitatLabel: 'Terriers forestiers souterrains',
+  },
+  wolf: {
+    baseGestationTime: 13,
+    baseMaturationTime: 15,
+    baseAggressiveness: 0.82,
+    aggroStance: 'hostile',
+    repopulationCooldown: 12,
+    repopulationHabitatLabel: 'Tanières profondes des bois',
+  },
+  vulture: {
+    baseGestationTime: 15,
+    baseMaturationTime: 17,
+    baseAggressiveness: 0.38,
+    aggroStance: 'territorial',
+    repopulationCooldown: 12,
+    repopulationHabitatLabel: 'Nids des falaises rocheuses',
+  },
+  orc: {
+    baseGestationTime: 18,
+    baseMaturationTime: 22,
+    baseAggressiveness: 0.88,
+    aggroStance: 'hostile',
+    repopulationCooldown: 16,
+    repopulationHabitatLabel: 'Avant-postes tribaux des plaines',
+  },
+  lion: {
+    baseGestationTime: 24,
+    baseMaturationTime: 26,
+    baseAggressiveness: 0.70,
+    aggroStance: 'hostile',
+    repopulationCooldown: 16,
+    repopulationHabitatLabel: 'Hautes herbes de la savane',
+  },
+  troll: {
+    baseGestationTime: 30,
+    baseMaturationTime: 34,
+    baseAggressiveness: 0.48,
+    aggroStance: 'territorial',
+    repopulationCooldown: 16,
+    repopulationHabitatLabel: 'Cavernes des hautes terres',
+  },
+  dragon: {
+    baseGestationTime: 65,
+    baseMaturationTime: 50,
+    baseAggressiveness: 0.08,
+    aggroStance: 'pacifist_apex',
+    repopulationCooldown: 28,
+    repopulationHabitatLabel: 'Caldeira volcanique & hautes nuées',
+    baseHp: 680,
+    baseDamage: 58,
+    baseSpeed: 8.2,
+  },
+};
+
+/**
  * Catalogue de secours des 8 Compétences / Sorts 3D Roguelike pour affichage riche dans la Skill Bar et Level-Up.
  */
 export const FALLBACK_ROGUELIKE_ABILITIES = {
@@ -1012,8 +1077,9 @@ export class HUDManager {
       lineageId: mutId || genome.speciesId || genome.lineageId,
     };
 
-    this.alertBanner.classList.remove('is-hidden', 'is-eradicated');
+    this.alertBanner.classList.remove('is-hidden', 'is-eradicated', 'is-dragon-wrath');
     this.alertIconWrap.textContent = '🦅';
+    this.trackPatientZeroBtn.textContent = '🎯 TRAQUER LE PATIENT ZÉRO';
     this.trackPatientZeroBtn.style.display = 'inline-flex';
 
     const babyTag = isBaby ? '🐣 BÉBÉ JUVÉNILE — ' : '';
@@ -1043,7 +1109,7 @@ export class HUDManager {
     const mutName = mutDef ? mutDef.name : mutationId || 'Lignée Mutante';
     const speciesName = lastEnemy?.genome?.speciesName || 'Porteur';
 
-    this.alertBanner.classList.remove('is-hidden');
+    this.alertBanner.classList.remove('is-hidden', 'is-dragon-wrath');
     this.alertBanner.classList.add('is-eradicated');
     this.alertIconWrap.textContent = '✨';
     this.trackPatientZeroBtn.style.display = 'none';
@@ -1057,6 +1123,40 @@ export class HUDManager {
     this.alertTimeoutId = window.setTimeout(() => {
       this.hideAlertBanner();
     }, 8000);
+  }
+
+  /**
+   * Affiche la bannière cramoisie de Courroux Collectif lorsqu'un Dragon Souverain pacifique est attaqué.
+   * @param {string} [speciesId='dragon']
+   * @param {Object|null} [targetEnemy=null]
+   */
+  showSpeciesWrathBanner(speciesId = 'dragon', targetEnemy = null) {
+    if (!this.alertBanner) return;
+    const spName = CONFIG.SPECIES?.[speciesId]?.name || 'Dragon';
+    const ex = targetEnemy?.x ?? 0;
+    const ez = targetEnemy?.z ?? 0;
+
+    this.currentAlertTarget = {
+      x: 0,
+      z: 0,
+      lineageId: speciesId,
+    };
+
+    this.alertBanner.classList.remove('is-hidden', 'is-eradicated');
+    this.alertBanner.classList.add('is-dragon-wrath');
+    this.alertIconWrap.textContent = '🐉';
+    this.trackPatientZeroBtn.textContent = '🏰 DÉFENDRE LE BASTION';
+    this.trackPatientZeroBtn.style.display = 'inline-flex';
+
+    this.alertTitleEl.textContent = `🐉 COURROUX DRACONIQUE ! TOUS LES ${spName.toUpperCase()}S ATTAQUENT VOTRE BASTION !`;
+    this.alertDescEl.textContent = `Vous avez provoqué un ${spName} Souverain (${Math.round(ex)}m, ${Math.round(ez)}m) : toute l’espèce entre en rage collective (Agressivité 100%, Vitesse ×1.25) et fond sur votre Bastion ("notre villa") pour le raser !`;
+
+    if (this.alertTimeoutId) {
+      clearTimeout(this.alertTimeoutId);
+    }
+    this.alertTimeoutId = window.setTimeout(() => {
+      this.hideAlertBanner();
+    }, 14000);
   }
 
   /**
@@ -1176,8 +1276,8 @@ export class HUDManager {
   /**
    * Met à jour la liste des lignées mutantes et hybrides dans le panneau droit.
    * Combine le rapport de `ecoSim.getLineageReport(enemies)` et l'analyse directe des ennemis vivants
-   * (afin d'afficher le détail Adultes reproducteurs vs Bébés juvéniles, le nombre de porteurs repérés
-   * par les Éclaireurs, et un bouton direct pour ordonner la traque d'une lignée).
+   * (afin d'afficher le détail Adultes reproducteurs vs Bébés juvéniles, le cycle de gestation,
+   * l'agressivité, l'étendue phénotypique `[Papa, Maman] ± 10%`, et un bouton direct de traque).
    *
    * @param {Object} ecoSim - Instance `EcosystemSimulator`.
    * @param {Array<Object>} enemies - Liste des ennemis vivants.
@@ -1219,6 +1319,12 @@ export class HUDManager {
           spottedCount: 0,
           minMaturationRem: null,
           maxFitness: 0,
+          maxHpVal: 0,
+          maxStrengthVal: 0,
+          maxSpeedVal: 0,
+          gestationSum: 0,
+          aggroSum: 0,
+          sampleCount: 0,
           speciesNames: new Set(),
           generationMax: item.generationMax || 1,
           discoveredByScout: Boolean(item.discoveredByScout),
@@ -1228,17 +1334,40 @@ export class HUDManager {
       }
     }
 
-    // Enrichissement direct depuis les entités vivantes (Adultes vs Bébés, Repérés, Fitness, Espèces porteuses)
+    // Enrichissement direct depuis les entités vivantes
     for (const enemy of enemies) {
       if (!enemy || enemy.dead || (typeof enemy.hp === 'number' && enemy.hp <= 0)) continue;
       const genome = enemy.genome || {};
+      const genes = genome.genes || {};
+      const spId = genome.speciesId || 'goblin';
+      const spDefaults = SPECIES_CYCLE_AND_AGGRO_DEFAULTS[spId] || {};
       const isBaby = enemy.lifeStage === 'baby' || enemy.isAdult === false;
-      const spName = genome.speciesName || CONFIG.SPECIES?.[genome.speciesId]?.name || 'Créature';
+      const spName = genome.speciesName || CONFIG.SPECIES?.[spId]?.name || 'Créature';
       const fit = genome.fitnessScore || 1.0;
       const matRem =
         isBaby && typeof enemy.maturationTime === 'number' && typeof enemy.age === 'number'
           ? Math.max(0, enemy.maturationTime - enemy.age)
           : null;
+
+      const hpVal = Number(enemy.maxHp || genes.maxHp || CONFIG.SPECIES?.[spId]?.baseHp || 90);
+      const strVal = Number(
+        enemy.damage || genes.strength || CONFIG.SPECIES?.[spId]?.baseDamage || 15
+      );
+      const spdVal = Number(enemy.speed || genes.speed || CONFIG.SPECIES?.[spId]?.baseSpeed || 6.5);
+      const gestVal = Number(
+        enemy.gestationTime ||
+          genes.gestationTime ||
+          CONFIG.SPECIES?.[spId]?.baseGestationTime ||
+          spDefaults.baseGestationTime ||
+          18
+      );
+      const aggroVal = Number(
+        enemy.aggressiveness ??
+          genes.aggressiveness ??
+          CONFIG.SPECIES?.[spId]?.baseAggressiveness ??
+          spDefaults.baseAggressiveness ??
+          0.7
+      );
 
       // Mutations portées par l'ennemi
       const muts = Array.isArray(genome.mutations) ? genome.mutations : [];
@@ -1255,6 +1384,12 @@ export class HUDManager {
             spottedCount: 0,
             minMaturationRem: null,
             maxFitness: 0,
+            maxHpVal: 0,
+            maxStrengthVal: 0,
+            maxSpeedVal: 0,
+            gestationSum: 0,
+            aggroSum: 0,
+            sampleCount: 0,
             speciesNames: new Set(),
             generationMax: genome.generation || 1,
             discoveredByScout: Boolean(enemy.spottedByScout),
@@ -1278,6 +1413,12 @@ export class HUDManager {
         }
         entry.count = Math.max(entry.count, entry.adultCount + entry.babyCount);
         entry.maxFitness = Math.max(entry.maxFitness, fit);
+        entry.maxHpVal = Math.max(entry.maxHpVal || 0, hpVal);
+        entry.maxStrengthVal = Math.max(entry.maxStrengthVal || 0, strVal);
+        entry.maxSpeedVal = Math.max(entry.maxSpeedVal || 0, spdVal);
+        entry.gestationSum = (entry.gestationSum || 0) + gestVal;
+        entry.aggroSum = (entry.aggroSum || 0) + aggroVal;
+        entry.sampleCount = (entry.sampleCount || 0) + 1;
         entry.generationMax = Math.max(entry.generationMax, genome.generation || 1);
         if (!entry.patientZeroPos) entry.patientZeroPos = { x: enemy.x, z: enemy.z };
       }
@@ -1296,6 +1437,12 @@ export class HUDManager {
             spottedCount: 0,
             minMaturationRem: null,
             maxFitness: 0,
+            maxHpVal: 0,
+            maxStrengthVal: 0,
+            maxSpeedVal: 0,
+            gestationSum: 0,
+            aggroSum: 0,
+            sampleCount: 0,
             speciesNames: new Set([spName]),
             generationMax: genome.generation || 2,
             discoveredByScout: Boolean(enemy.spottedByScout),
@@ -1319,6 +1466,12 @@ export class HUDManager {
         }
         hEntry.count = Math.max(hEntry.count, hEntry.adultCount + hEntry.babyCount);
         hEntry.maxFitness = Math.max(hEntry.maxFitness, fit);
+        hEntry.maxHpVal = Math.max(hEntry.maxHpVal || 0, hpVal);
+        hEntry.maxStrengthVal = Math.max(hEntry.maxStrengthVal || 0, strVal);
+        hEntry.maxSpeedVal = Math.max(hEntry.maxSpeedVal || 0, spdVal);
+        hEntry.gestationSum = (hEntry.gestationSum || 0) + gestVal;
+        hEntry.aggroSum = (hEntry.aggroSum || 0) + aggroVal;
+        hEntry.sampleCount = (hEntry.sampleCount || 0) + 1;
         hEntry.generationMax = Math.max(hEntry.generationMax, genome.generation || 2);
       }
     }
@@ -1400,6 +1553,23 @@ export class HUDManager {
       metaRow.append(el('span', '', stageDetail), el('span', '', genFitnessText));
 
       card.append(topRow, metaRow);
+
+      // Barre des traits évolutifs (Gestation, Agressivité, Étendue Phénotypique [Papa, Maman] ± 10%)
+      if (!isEradicated && item.sampleCount > 0) {
+        const avgGest = Math.round(item.gestationSum / item.sampleCount);
+        const avgAggroPct = Math.round((item.aggroSum / item.sampleCount) * 100);
+        const traitsBar = el('div', 'hud-lineage-traits-bar');
+        traitsBar.append(
+          el('span', 'hud-lineage-trait-pill', `⏱️ Gestation ~${avgGest}s`),
+          el('span', 'hud-lineage-trait-pill', `💢 Agressivité ${avgAggroPct}%`),
+          el(
+            'span',
+            'hud-lineage-trait-pill',
+            `🧬 PV max ${Math.round(item.maxHpVal)} · Force ${Math.round(item.maxStrengthVal)} · Vit ${item.maxSpeedVal.toFixed(1)}`
+          )
+        );
+        card.appendChild(traitsBar);
+      }
 
       // Message tactique contextuel + Bouton direct "Ordonner aux Éclaireurs : Traquer cette lignée"
       if (!isEradicated) {
@@ -1831,16 +2001,77 @@ export class HUDManager {
     const graphData = getPhylogenyGraphData();
     const mutationsCatalog = getMutationsCatalog();
 
-    // Comptage des populations vivantes par espèce, hybride et mutation
+    // Comptage des populations vivantes et de l'étendue phénotypique par espèce, hybride et mutation
     const speciesCounts = {};
     const mutationCounts = {};
+    const speciesScope = {};
+
     for (const e of enemies) {
       if (!e || e.dead || (typeof e.hp === 'number' && e.hp <= 0)) continue;
-      const spId = e.genome?.speciesId || 'goblin';
+      const genome = e.genome || {};
+      const genes = genome.genes || {};
+      const spId = genome.speciesId || 'goblin';
       speciesCounts[spId] = (speciesCounts[spId] || 0) + 1;
-      for (const m of e.genome?.mutations || []) {
+
+      for (const m of genome.mutations || []) {
         mutationCounts[m] = (mutationCounts[m] || 0) + 1;
       }
+
+      if (!speciesScope[spId]) {
+        speciesScope[spId] = {
+          adults: 0,
+          babies: 0,
+          enraged: 0,
+          minHp: Infinity,
+          maxHp: 0,
+          minDmg: Infinity,
+          maxDmg: 0,
+          minSpd: Infinity,
+          maxSpd: 0,
+          minGest: Infinity,
+          maxGest: 0,
+          gestSum: 0,
+          aggroSum: 0,
+          count: 0,
+        };
+      }
+      const sc = speciesScope[spId];
+      const isBaby = e.lifeStage === 'baby' || e.isAdult === false;
+      if (isBaby) sc.babies++;
+      else sc.adults++;
+      if (e.enraged || e.state === 'wrath_raid') sc.enraged++;
+
+      const spConf = CONFIG.SPECIES?.[spId] || {};
+      const spDef = SPECIES_CYCLE_AND_AGGRO_DEFAULTS[spId] || {};
+      const hp = Number(e.maxHp || genes.maxHp || spConf.baseHp || 60);
+      const dmg = Number(e.damage || genes.strength || spConf.baseDamage || 10);
+      const spd = Number(e.speed || genes.speed || spConf.baseSpeed || 7);
+      const gest = Number(
+        e.gestationTime ||
+          genes.gestationTime ||
+          spConf.baseGestationTime ||
+          spDef.baseGestationTime ||
+          18
+      );
+      const aggro = Number(
+        e.aggressiveness ??
+          genes.aggressiveness ??
+          spConf.baseAggressiveness ??
+          spDef.baseAggressiveness ??
+          0.7
+      );
+
+      sc.minHp = Math.min(sc.minHp, hp);
+      sc.maxHp = Math.max(sc.maxHp, hp);
+      sc.minDmg = Math.min(sc.minDmg, dmg);
+      sc.maxDmg = Math.max(sc.maxDmg, dmg);
+      sc.minSpd = Math.min(sc.minSpd, spd);
+      sc.maxSpd = Math.max(sc.maxSpd, spd);
+      sc.minGest = Math.min(sc.minGest, gest);
+      sc.maxGest = Math.max(sc.maxGest, gest);
+      sc.gestSum += gest;
+      sc.aggroSum += aggro;
+      sc.count++;
     }
 
     // Section 1 : Graphe SVG de l'Arbre Phylogénétique & Distances d'Hybridation
@@ -1854,25 +2085,126 @@ export class HUDManager {
       this._buildPhylogenySvg(graphData, speciesCounts)
     );
 
-    // Section 2 : Encadré explicatif de la Formule de Fitness Darwinienne & Cycle Bébé -> Adulte
+    // Section 2 : Encadré explicatif de la Loi [Papa, Maman] ± 10%, Cycles de Gestation & Repeuplement Sauvage
     const formulaCard = el('div', 'codex-item-card');
     formulaCard.append(
       el(
         'div',
         'codex-item-title',
-        '📐 Loi de Sélection Darwinienne, Fitness Score & Maturation Juvénile'
+        '📐 Lois Génétiques : Croisement [Papa, Maman] ± 10%, Cycles de Gestation & Dragons Souverains'
       ),
       el(
         'div',
         'codex-item-desc',
-        '1. Maturation Bébé -> Adulte : Chaque naissance issue d’un croisement génétique crée un individu BÉBÉ (échelle 0.5x, stats 0.55x) qui NE PEUT PAS SE REPRODUIRE avant d’atteindre l’âge Adulte (~16s à 38s selon l’espèce). Profitez de cette fenêtre pour éliminer un Patient Zéro juvénile repéré par vos Éclaireurs !'
+        '1. Croisement à Étendue Élargie ([Papa, Maman] ± 10%) : Pour chaque trait quantitatif (PV, Force, Vitesse, Taille, Gestation, Agressivité), l’enfant tire une valeur aléatoire entre le Père et la Mère puis applique une dérive de [-10%, +10%] (×0.90 à ×1.10). Les lignées peuvent ainsi dépasser les limites de la Génération 1 au fil de la sélection darwinienne !'
       ),
       el(
         'div',
         'codex-item-stats',
-        '2. Formule Fitness = Score Poly-Génétique Normalisé (PV×0.24 + Force×0.26 + Vitesse×0.18 + Taille×0.10 + Fertilité×0.14 + Efficacité Métabolique×0.08) + Bonus Mutations Dominantes (+0.34 à +0.48) + Vigueur Hybride (+0.18).'
+        '2. Repeuplement Sauvage & Courroux Draconique : Les 7 espèces de base ne s’éteignent jamais (elles réémergent de leurs terriers ou falaises si < 2 individus), tandis que les lignées mutantes s’éteignent définitivement une fois éradiquées. Les Dragons Souverains (680 PV, Gestation 65s) sont pacifiques tant que vous ne les attaquez pas — mais si vous en blessez un seul, TOUTE l’espèce fondra sur votre Bastion !'
       )
     );
+
+    // Section 2B : Cycles de Gestation, Agressivité & Étendue Génétique des 7 Espèces Fondatrices
+    const speciesTitle = el(
+      'div',
+      'hud-section-label',
+      'Cycles de Gestation, Agressivité & Étendue Génétique [Papa, Maman] ± 10% des 7 Espèces'
+    );
+    const speciesGrid = el('div', 'codex-species-grid');
+    const orderedSpeciesIds = ['goblin', 'wolf', 'vulture', 'orc', 'lion', 'troll', 'dragon'];
+
+    for (const spId of orderedSpeciesIds) {
+      const spConf = CONFIG.SPECIES?.[spId] || {};
+      const spDef = SPECIES_CYCLE_AND_AGGRO_DEFAULTS[spId] || {};
+      const sc = speciesScope[spId] || null;
+
+      const name = spConf.name || spId;
+      const baseGest = spConf.baseGestationTime ?? spDef.baseGestationTime ?? 18;
+      const baseMat = spConf.baseMaturationTime ?? spDef.baseMaturationTime ?? 20;
+      const baseAggro = spConf.baseAggressiveness ?? spDef.baseAggressiveness ?? 0.7;
+      const stance = spConf.aggroStance || spDef.aggroStance || 'hostile';
+      const repopCd = spConf.repopulationCooldown ?? spDef.repopulationCooldown ?? 15;
+      const habitat =
+        spConf.repopulationHabitatLabel || spDef.repopulationHabitatLabel || 'Terres sauvages';
+      const baseHp = spConf.baseHp ?? spDef.baseHp ?? 60;
+      const baseDmg = spConf.baseDamage ?? spDef.baseDamage ?? 10;
+      const baseSpd = spConf.baseSpeed ?? spDef.baseSpeed ?? 7.0;
+
+      const avgGest = sc && sc.count > 0 ? Math.round(sc.gestSum / sc.count) : baseGest;
+      const avgAggroPct =
+        sc && sc.count > 0
+          ? Math.round((sc.aggroSum / sc.count) * 100)
+          : Math.round(baseAggro * 100);
+      const isWrath = Boolean(sc && sc.enraged > 0);
+
+      let stanceLabel = `⚔️ Hostile à vue (${avgAggroPct}%)`;
+      let stanceCls = 'stance-hostile';
+      if (isWrath) {
+        stanceLabel = '🔥 COURROUX DRACONIQUE (100%)';
+        stanceCls = 'stance-wrath';
+      } else if (stance === 'pacifist_apex') {
+        stanceLabel = `👑 Souverain Pacifique (${avgAggroPct}%)`;
+        stanceCls = 'stance-pacifist_apex';
+      } else if (stance === 'territorial') {
+        stanceLabel = `🛡️ Territorial (${avgAggroPct}%)`;
+        stanceCls = 'stance-territorial';
+      }
+
+      const spCard = el(
+        'div',
+        `codex-species-card${spId === 'dragon' ? ' is-dragon-card' : ''}`
+      );
+      spCard.style.borderLeft = `4px solid ${spConf.color || '#e6a145'}`;
+
+      const spHeader = el('div', 'codex-species-header');
+      spHeader.append(
+        el(
+          'span',
+          'codex-item-title',
+          `${spId === 'dragon' ? '🐉 ' : ''}${name} (${sc ? `${sc.adults} Ad. / ${sc.babies} 🐣` : '0 en vie'})`
+        ),
+        el('span', `codex-stance-badge ${stanceCls}`, stanceLabel)
+      );
+
+      const cycleLine = el(
+        'div',
+        'codex-item-desc',
+        `⏱️ Cycle Reproduction : Gestation ~${avgGest}s (Base ${baseGest}s) · Maturation Bébé ${baseMat}s`
+      );
+
+      const hpRange =
+        sc && sc.count > 0
+          ? `${Math.round(sc.minHp)}–${Math.round(sc.maxHp)}`
+          : `${Math.round(baseHp * 0.9)}–${Math.round(baseHp * 1.1)}`;
+      const dmgRange =
+        sc && sc.count > 0
+          ? `${Math.round(sc.minDmg)}–${Math.round(sc.maxDmg)}`
+          : `${Math.round(baseDmg * 0.9)}–${Math.round(baseDmg * 1.1)}`;
+      const spdRange =
+        sc && sc.count > 0
+          ? `${sc.minSpd.toFixed(1)}–${sc.maxSpd.toFixed(1)}`
+          : `${(baseSpd * 0.9).toFixed(1)}–${(baseSpd * 1.1).toFixed(1)}`;
+      const gestRange =
+        sc && sc.count > 0
+          ? `${Math.round(sc.minGest)}–${Math.round(sc.maxGest)}s`
+          : `${Math.round(baseGest * 0.9)}–${Math.round(baseGest * 1.1)}s`;
+
+      const scopeBox = el(
+        'div',
+        'codex-scope-box',
+        `🧬 Étendue [Papa,Maman]±10% : PV ${hpRange} · Force ${dmgRange} · Vit ${spdRange} · Gest. ${gestRange}`
+      );
+
+      const repopLine = el(
+        'div',
+        'codex-repop-pill',
+        `🕳️ Repeuplement auto (<2 indiv., ${repopCd}s) : ${habitat}`
+      );
+
+      spCard.append(spHeader, cycleLine, scopeBox, repopLine);
+      speciesGrid.appendChild(spCard);
+    }
 
     // Section 3 : Catalogue des Hybrides Inter-Espèces Viables
     const hybridTitle = el(
@@ -1934,7 +2266,16 @@ export class HUDManager {
       mutGrid.appendChild(mCard);
     }
 
-    this.codexBody.append(graphSection, formulaCard, hybridTitle, hybridGrid, mutTitle, mutGrid);
+    this.codexBody.append(
+      graphSection,
+      formulaCard,
+      speciesTitle,
+      speciesGrid,
+      hybridTitle,
+      hybridGrid,
+      mutTitle,
+      mutGrid
+    );
   }
 
   /**
@@ -2648,45 +2989,58 @@ export class HUDManager {
 
     // 2. Mise à jour de la Quête Dynamique en 2 phases (Panneau Droit)
     if (!questSystem || !this.questCardEl) return;
-    const qState =
-      typeof questSystem.getQuestHUDState === 'function'
-        ? questSystem.getQuestHUDState(enemies, bastionAndNpcs)
+
+    const summary =
+      typeof questSystem.getQuestsSummaryForHUD === 'function'
+        ? questSystem.getQuestsSummaryForHUD()
         : null;
-    if (!qState) return;
+    const primaryQuest =
+      summary?.primaryQuest ||
+      questSystem.activeQuests?.[0] ||
+      (typeof questSystem.getQuestHUDState === 'function'
+        ? questSystem.getQuestHUDState(enemies, bastionAndNpcs)
+        : null);
+    if (!primaryQuest) return;
 
-    this.questCardEl.classList.toggle('is-phase-2', qState.phase === 2);
-    this.questTitleEl.textContent = qState.title;
-    this.questPhaseBadgeEl.textContent = qState.phaseBadge;
-    this.questDescEl.textContent = qState.objectiveText;
+    this._currentPrimaryQuest = primaryQuest;
+    const isPhase2 = primaryQuest.phase === 2;
+    this.questCardEl.classList.toggle('is-phase-2', isPhase2);
+    this.questTitleEl.textContent = primaryQuest.title || '📜 Opération Prioritaire';
+    this.questPhaseBadgeEl.textContent =
+      primaryQuest.phaseBadge || (isPhase2 ? 'PHASE 2/2' : 'PHASE 1/2');
+    this.questPhaseBadgeEl.className = `hud-lineage-badge ${isPhase2 ? 'badge-spread' : 'badge-pz'}`;
 
-    // Étape 1 : Éclaireurs
-    this.questStep1Row.className = `hud-quest-step${
-      qState.step1Done ? ' is-done' : qState.phase === 1 ? ' is-active' : ''
-    }`;
-    this.questStep1Icon.textContent = qState.step1Done ? '✅' : '1️⃣';
-    this.questStep1Text.textContent = qState.step1Label;
-
-    // Étape 2 : Extermination
-    this.questStep2Row.className = `hud-quest-step${
-      qState.step2Done ? ' is-done' : qState.phase === 2 ? ' is-active' : ''
-    }`;
-    this.questStep2Icon.textContent = qState.step2Done
-      ? '✅'
-      : qState.phase === 2
-        ? '⚔️'
-        : '2️⃣';
-    this.questStep2Text.textContent = qState.step2Label;
-
-    this.questProgressFillEl.style.width = `${Math.min(100, Math.max(0, qState.progressPct || 0))}%`;
-    this.questRewardEl.textContent = `🎁 Récompense : ${qState.rewardText}`;
-
-    if (this.questActionBtnEl) {
-      if (qState.type === 'track_and_eradicate' && !qState.step1Done) {
-        this.questActionBtnEl.textContent = `🦅 Ordonner aux Éclaireurs : Localiser la Lignée (${qState.spottedCarriers}/${qState.totalCarriers})`;
-      } else if (qState.type === 'track_and_eradicate') {
-        this.questActionBtnEl.textContent = `🎯 Centrer Radar sur la Lignée (${qState.totalCarriers} restant${qState.totalCarriers > 1 ? 's' : ''})`;
+    if (this.questStep1El) {
+      this.questStep1El.className = `hud-quest-step ${isPhase2 ? 'is-done' : 'is-active'}`;
+      this.questStep1El.textContent = primaryQuest.step1Text || primaryQuest.step1Label || '';
+    }
+    if (this.questStep2El) {
+      this.questStep2El.className = `hud-quest-step ${isPhase2 ? 'is-active' : ''}`;
+      this.questStep2El.textContent = primaryQuest.step2Text || primaryQuest.step2Label || '';
+    }
+    if (this.questHintEl && (primaryQuest.actionHint || primaryQuest.objectiveText)) {
+      this.questHintEl.textContent = primaryQuest.actionHint || primaryQuest.objectiveText;
+    }
+    if (this.questRewardEl) {
+      const rw = primaryQuest.rewards;
+      this.questRewardEl.textContent = rw
+        ? `🎁 +${rw.wood || 0} Bois · +${rw.crystal || 0} Cristal · +${rw.biomass || 0} Bio · +${rw.xp || 0} XP`
+        : `🎁 Récompense : ${primaryQuest.rewardText || ''}`;
+    }
+    if (this.questActionBtn) {
+      if (
+        (primaryQuest.type === 'eradicate_lineage' ||
+          primaryQuest.type === 'track_and_eradicate') &&
+        !isPhase2
+      ) {
+        this.questActionBtn.textContent = `🦅 Lancer Traque Éclaireurs (${primaryQuest.spottedCarriers || 0}/${Math.max(1, primaryQuest.totalCarriers || 1)})`;
+      } else if (
+        primaryQuest.type === 'eradicate_lineage' ||
+        primaryQuest.type === 'track_and_eradicate'
+      ) {
+        this.questActionBtn.textContent = `🎯 Cibler la Lignée (${primaryQuest.totalCarriers || 0} restant${(primaryQuest.totalCarriers || 0) > 1 ? 's' : ''})`;
       } else {
-        this.questActionBtnEl.textContent = '🏰 Ouvrir l’Architecte du Bastion [H]';
+        this.questActionBtn.textContent = '🏰 Ouvrir l’Architecte du Bastion [H]';
       }
     }
   }

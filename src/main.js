@@ -1055,8 +1055,50 @@ export class GenesisBastionGame {
       }
     }
 
-    // 2. Ennemi à portée de combat (<= 8.0m)
+    // 1B. Dragon Souverain à proximité (<= 14.0m) : Avertissement royal Pacifique ou Alerte Courroux Draconique
     const enemies = this.enemyManager?.getEnemies ? this.enemyManager.getEnemies() : [];
+    let nearestDragon = null;
+    let minDragonDist = 14.0;
+    for (const e of enemies) {
+      if (!e || e.hp <= 0) continue;
+      if (e.genome?.speciesId !== 'dragon' && e.aggroStance !== 'pacifist_apex') continue;
+      const d = dist2D(px, pz, e.x, e.z);
+      if (d < minDragonDist) {
+        minDragonDist = d;
+        nearestDragon = e;
+      }
+    }
+    if (nearestDragon) {
+      const screenPos = this.sceneManager.worldToScreen(
+        new THREE.Vector3(nearestDragon.x, nearestDragon.y || 0, nearestDragon.z),
+        3.4
+      );
+      const isDragonProvoked =
+        Boolean(nearestDragon.enraged) ||
+        nearestDragon.state === 'wrath_raid' ||
+        (typeof this.enemyManager?.isSpeciesProvoked === 'function' &&
+          this.enemyManager.isSpeciesProvoked('dragon'));
+      const hpRounded = Math.round(nearestDragon.hp || nearestDragon.maxHp || 680);
+
+      if (!isDragonProvoked) {
+        this.hud.updateContextualPrompt(
+          screenPos,
+          '⚠️ PACIFIQUE',
+          `[DRAGON SOUVERAIN — ${hpRounded} PV] Ne l'attaquez pas ou TOUTE l'espèce rasera votre Bastion !`,
+          'prompt-dragon-peaceful'
+        );
+      } else {
+        this.hud.updateContextualPrompt(
+          screenPos,
+          '🔥 COURROUX',
+          `[DRAGON ENRAGÉ — ${hpRounded} PV] Toute l'espèce converge vers le Bastion !`,
+          'prompt-dragon-wrath'
+        );
+      }
+      return;
+    }
+
+    // 2. Ennemi à portée de combat (<= 8.0m)
     let nearestEnemy = null;
     let minEnemyDist = 8.0;
     for (const e of enemies) {
@@ -1160,6 +1202,29 @@ export class GenesisBastionGame {
 
     this.enemyManager.onLineageEradicated = this.handleLineageEradicated;
 
+    /**
+     * Callback Phase 5 : déclenché lorsqu'un Dragon Souverain pacifique est attaqué
+     * et que toute l'espèce entre en Courroux Draconique collectif contre le Bastion.
+     * @param {string} speciesId
+     * @param {Object} targetEnemy
+     */
+    this._wrathBannerShownForSpecies = new Set();
+    this.handleSpeciesWrath = (speciesId = 'dragon', targetEnemy = null) => {
+      const spKey = speciesId || 'dragon';
+      this._wrathBannerShownForSpecies.add(spKey);
+      const ex = targetEnemy?.x ?? targetEnemy?.mesh?.position?.x ?? 0;
+      const ez = targetEnemy?.z ?? targetEnemy?.mesh?.position?.z ?? 0;
+
+      if (this.hud && typeof this.hud.showSpeciesWrathBanner === 'function') {
+        this.hud.showSpeciesWrathBanner(spKey, targetEnemy);
+      }
+      if (this.minimap && typeof this.minimap.pingLocation === 'function') {
+        this.minimap.pingLocation(ex, ez, 'COURROUX DRACONIQUE', 10000);
+      }
+    };
+
+    this.enemyManager.onSpeciesWrathTriggered = this.handleSpeciesWrath;
+
     // Interception non-intrusive de `enemyManager.damageEnemy` pour faire jaillir les dégâts flottants 3D->2D
     const origDamageEnemy = this.enemyManager.damageEnemy.bind(this.enemyManager);
     this.enemyManager.damageEnemy = (enemyIdOrObj, amount, knockbackDir, onEradicated) => {
@@ -1169,7 +1234,27 @@ export class GenesisBastionGame {
       const ty = targetRef ? targetRef.y : 0;
       const tz = targetRef ? targetRef.z : 0;
 
+      const wasPeacefulDragon =
+        Boolean(targetRef) &&
+        (targetRef.genome?.speciesId === 'dragon' || targetRef.aggroStance === 'pacifist_apex') &&
+        !targetRef.enraged &&
+        targetRef.state !== 'wrath_raid' &&
+        !this._wrathBannerShownForSpecies.has('dragon');
+
       const res = origDamageEnemy(enemyIdOrObj, amount, knockbackDir, onEradicated);
+
+      if (wasPeacefulDragon && !this._wrathBannerShownForSpecies.has('dragon')) {
+        if (typeof this.enemyManager.provokeSpecies === 'function') {
+          this.enemyManager.provokeSpecies('dragon', targetRef);
+        }
+        if (!this._wrathBannerShownForSpecies.has('dragon')) {
+          this.handleSpeciesWrath('dragon', targetRef);
+        }
+      }
+
+      if (res && res.killed && targetRef && this.questSystem && typeof this.questSystem.recordEnemyKilled === 'function') {
+        this.questSystem.recordEnemyKilled(targetRef);
+      }
 
       if (targetRef && this.sceneManager && typeof this.sceneManager.worldToScreen === 'function') {
         const screenPos = this.sceneManager.worldToScreen(new THREE.Vector3(tx, ty, tz), 2.1);
@@ -1660,44 +1745,77 @@ export class GenesisBastionGame {
         );
 
         // 4B. Évaluation des Quêtes Dynamiques en 2 phases (Repérage Éclaireur -> Extermination)
-        if (this.questSystem && typeof this.questSystem.evaluateProgress === 'function') {
-          this.questSystem.evaluateProgress({
-            enemies: this.enemyManager.getEnemies(),
-            bastionAndNpcs: this.bastionAndNpcs,
-            player: this.player,
-            onStep1Complete: () => {
-              this.hud.refreshLogFeed();
-            },
-            onQuestComplete: (reward) => {
-              if (this.player && typeof this.player.applyQuestReward === 'function') {
-                this.player.applyQuestReward(reward);
-              }
-              this.hud.refreshLogFeed();
-              const nextQ = this.questSystem.advanceToNextQuest();
-              if (
-                nextQ &&
-                nextQ.type === 'track_and_eradicate' &&
-                typeof this.enemyManager.spawnQuestLineagePack === 'function'
-              ) {
-                const existing = this.enemyManager
-                  .getEnemies()
-                  .filter(
-                    (e) =>
-                      e &&
-                      e.hp > 0 &&
-                      Array.isArray(e.genome?.mutations) &&
-                      e.genome.mutations.includes(nextQ.targetMutationId)
-                  );
-                if (existing.length === 0) {
-                  this.enemyManager.spawnQuestLineagePack(
-                    nextQ.targetMutationId,
-                    nextQ.targetSpeciesId,
-                    nextQ.initialPackSize || 3
-                  );
+        if (this.questSystem) {
+          if (typeof this.questSystem.update === 'function') {
+            const buildingLevels = this.bastionAndNpcs?.buildingLevels || {};
+            const activeScoutMission =
+              typeof this.bastionAndNpcs?.getScoutMission === 'function'
+                ? this.bastionAndNpcs.getScoutMission()
+                : {};
+            this.questSystem.update(
+              this.enemyManager.getEnemies(),
+              buildingLevels,
+              activeScoutMission,
+              this.tutorialActive
+            );
+            if (typeof this.questSystem.consumePendingRewards === 'function') {
+              const rewards = this.questSystem.consumePendingRewards();
+              for (const r of rewards) {
+                const rw = r.rewards || r;
+                if (this.player) {
+                  if (typeof this.player.applyQuestReward === 'function') {
+                    this.player.applyQuestReward(rw);
+                  } else {
+                    if (rw.wood) this.player.resources.wood = (this.player.resources.wood || 0) + rw.wood;
+                    if (rw.crystal) this.player.resources.crystal = (this.player.resources.crystal || 0) + rw.crystal;
+                    if (rw.biomass) this.player.resources.biomass = (this.player.resources.biomass || 0) + rw.biomass;
+                    if (rw.xp && typeof this.player.gainXp === 'function') {
+                      this.player.gainXp(rw.xp);
+                    }
+                  }
                 }
+                this.hud.refreshLogFeed();
               }
-            },
-          });
+            }
+          } else if (typeof this.questSystem.evaluateProgress === 'function') {
+            this.questSystem.evaluateProgress({
+              enemies: this.enemyManager.getEnemies(),
+              bastionAndNpcs: this.bastionAndNpcs,
+              player: this.player,
+              onStep1Complete: () => {
+                this.hud.refreshLogFeed();
+              },
+              onQuestComplete: (reward) => {
+                if (this.player && typeof this.player.applyQuestReward === 'function') {
+                  this.player.applyQuestReward(reward);
+                }
+                this.hud.refreshLogFeed();
+                const nextQ = this.questSystem.advanceToNextQuest();
+                if (
+                  nextQ &&
+                  nextQ.type === 'track_and_eradicate' &&
+                  typeof this.enemyManager.spawnQuestLineagePack === 'function'
+                ) {
+                  const existing = this.enemyManager
+                    .getEnemies()
+                    .filter(
+                      (e) =>
+                        e &&
+                        e.hp > 0 &&
+                        Array.isArray(e.genome?.mutations) &&
+                        e.genome.mutations.includes(nextQ.targetMutationId)
+                    );
+                  if (existing.length === 0) {
+                    this.enemyManager.spawnQuestLineagePack(
+                      nextQ.targetMutationId,
+                      nextQ.targetSpeciesId,
+                      nextQ.initialPackSize || 3
+                    );
+                  }
+                }
+              },
+            });
+          }
         }
       } catch (err) {
         logger.error('GAMEPLAY', 'Erreur interceptée dans la mise à jour gameplay', {
@@ -1802,6 +1920,16 @@ function bootstrapGenesisBastion() {
       toggleCombatMode: () => gameInstance.hud.toggleCombatMode(),
       openCombatModeModal: () => gameInstance.hud.showCombatModeModal(),
       castSpellSlot: (slotIdx) => gameInstance.handleCastSpellSlot(slotIdx),
+      provokeDragonWrath: () => {
+        const dragon = gameInstance.enemyManager
+          .getEnemies()
+          .find((e) => e.hp > 0 && e.genome?.speciesId === 'dragon');
+        if (typeof gameInstance.enemyManager.provokeSpecies === 'function') {
+          gameInstance.enemyManager.provokeSpecies('dragon', dragon);
+        } else {
+          gameInstance.handleSpeciesWrath('dragon', dragon);
+        }
+      },
     };
   }
   gameInstance.start();
