@@ -196,29 +196,95 @@ func get_biome_at(x: float, z: float) -> String:
 	return _biome_grid[iz * BIOME_RES + ix]
 
 
-## Computes vertex color for a given elevation and biome.
+## Computes Stylized Fantasy (`Tunic` / `Zelda: Link's Awakening` / `Death's Door`) vertex color for a given elevation and biome.
 func _get_vertex_color(x: float, z: float, h: float, biome: String) -> Color:
-	if h < WATER_LEVEL:
-		return Color(0.14, 0.32, 0.42)
+	var dist: float = sqrt(x * x + z * z)
+	var detail_n: float = _noise_detail.get_noise_2d(x * 1.4, z * 1.4)
+
+	if h < WATER_LEVEL - 0.15:
+		var depth_t: float = clampf((WATER_LEVEL - h) / 3.8, 0.0, 1.0)
+		return Color(0.24, 0.86, 0.85).lerp(Color(0.08, 0.42, 0.58), depth_t)
+
+	# Carved golden-limestone Sanctuary courtyard (`r < 22m`) with concentric cobblestone rings & mossy joints
+	if dist < 22.0 or biome == "sanctuary":
+		var courtyard_blend: float = 1.0 - smoothstep(14.5, 22.0, dist)
+		var ring_wave: float = sin(dist * 2.35)
+		var radial_joint: float = sin(atan2(z, x) * 16.0)
+		var stone_base := Color(0.784, 0.729, 0.596) # #c8ba98 warm carved limestone
+		var stone_Sun := Color(0.871, 0.824, 0.706)  # #ded2b4 sunlit flagstone
+		var stone_joint := Color(0.651, 0.588, 0.455) # #a69674 stone mortar
+		var moss_joint := Color(0.361, 0.561, 0.384)  # #5c8f62 mossy sanctuary seams
+		var cobble_t: float = clampf(ring_wave * 0.5 + 0.5, 0.0, 1.0)
+		var courtyard_col: Color = stone_joint.lerp(stone_Sun if detail_n > 0.05 else stone_base, cobble_t)
+		if ring_wave < -0.55 and radial_joint > 0.35 and dist > 5.0:
+			courtyard_col = courtyard_col.lerp(moss_joint, 0.55)
+		var ring_dist: float = absf(dist - SANCTUARY_RADIUS * 0.85)
+		if ring_dist < 1.1:
+			courtyard_col = courtyard_col.lerp(Color(0.24, 0.88, 0.94), 0.65)
+		var meadow_edge := Color(0.345, 0.722, 0.408) # #58b868
+		return meadow_edge.lerp(courtyard_col, courtyard_blend)
+
 	match biome:
-		"sanctuary":
-			var ring_dist: float = absf(sqrt(x * x + z * z) - SANCTUARY_RADIUS * 0.85)
-			if ring_dist < 1.2:
-				return Color(0.28, 0.78, 0.84)
-			return Color(0.38, 0.66, 0.42)
 		"beach":
-			return Color(0.84, 0.76, 0.54)
+			# Warm sunlit coral-cream beach sand (#f4e2b8) transitioning from wet shoreline sand (#d4b886)
+			var wet_t: float = clampf((h - WATER_LEVEL) / 1.15, 0.0, 1.0)
+			var wet_sand := Color(0.831, 0.722, 0.525)   # #d4b886
+			var dry_sand := Color(0.957, 0.886, 0.722)   # #f4e2b8
+			var coral_tint := Color(0.973, 0.918, 0.784) # #f8eac8
+			var sand_col: Color = wet_sand.lerp(dry_sand, wet_t)
+			if detail_n > 0.15:
+				sand_col = sand_col.lerp(coral_tint, 0.35)
+			return sand_col
 		"forest":
-			return Color(0.16, 0.44, 0.24)
+			# Rich emerald-teal ancient forest floor (#2b6e4e) with sunlit moss glades (#3a875e)
+			var forest_deep := Color(0.169, 0.431, 0.306) # #2b6e4e
+			var forest_moss := Color(0.227, 0.529, 0.369) # #3a875e
+			return forest_deep.lerp(forest_moss, clampf(detail_n * 0.5 + 0.5, 0.0, 1.0))
 		"volcanic":
-			if h > 11.2:
-				return Color(0.68, 0.26, 0.14)
-			return Color(0.26, 0.22, 0.24)
+			# Warm volcanic slate-terracotta highlands (#73645e) with glowing magma veins at caldera ridges
+			var slate_warm := Color(0.451, 0.392, 0.369)  # #73645e
+			var basalt_ridge := Color(0.549, 0.443, 0.396) # #8c7165
+			var col: Color = slate_warm.lerp(basalt_ridge, clampf(detail_n * 0.5 + 0.5, 0.0, 1.0))
+			if h > 11.0 and detail_n > 0.18:
+				var lava_t: float = clampf((h - 11.0) / 3.5, 0.0, 1.0)
+				col = col.lerp(Color(1.0, 0.38, 0.14), lava_t * 0.75)
+			return col
 		_:
-			return Color(0.26, 0.58, 0.30)
+			# Vibrant sunlit spring-meadow grass (#58b868 -> #3e9654) with clover highlights (#78d274)
+			var grass_bright := Color(0.345, 0.722, 0.408) # #58b868
+			var grass_lush := Color(0.243, 0.588, 0.329)   # #3e9654
+			var clover_sun := Color(0.471, 0.824, 0.455)   # #78d274
+			var g_col: Color = grass_lush.lerp(grass_bright, clampf(detail_n * 0.5 + 0.5, 0.0, 1.0))
+			if detail_n > 0.25:
+				g_col = g_col.lerp(clover_sun, 0.4)
+			return g_col
 
 
-## Builds the 3D Island Terrain `ArrayMesh` with smooth vertex normals and vertex colors.
+## Generates a synchronous tileable 64x64 procedural micro-detail Albedo & Normal map pair for crisp ground relief.
+func _create_stylized_ground_textures() -> Dictionary:
+	var size: int = 64
+	var albedo_img: Image = Image.create(size, size, false, Image.FORMAT_RGBA8)
+	var bump_img: Image = Image.create(size, size, false, Image.FORMAT_RF)
+
+	for y in range(size):
+		for x in range(size):
+			# Tileable periodic coordinates
+			var nx: float = cos(float(x) / float(size) * TAU) * 18.0
+			var ny: float = sin(float(y) / float(size) * TAU) * 18.0
+			var n1: float = _noise_detail.get_noise_2d(nx, ny)
+			var blade: float = sin(float(x * 3 + y * 5) * 0.55) * 0.06
+			var shade: float = clampf(0.93 + n1 * 0.09 + blade, 0.80, 1.0)
+			albedo_img.set_pixel(x, y, Color(shade, shade, shade * 0.98, 1.0))
+			var h_val: float = clampf(0.5 + n1 * 0.35 + blade * 1.8, 0.0, 1.0)
+			bump_img.set_pixel(x, y, Color(h_val, 0.0, 0.0, 1.0))
+
+	bump_img.bump_map_to_normal_map(2.2)
+	var detail_tex: ImageTexture = ImageTexture.create_from_image(albedo_img)
+	var normal_tex: ImageTexture = ImageTexture.create_from_image(bump_img)
+	return {"albedo": detail_tex, "normal": normal_tex}
+
+
+## Builds the 3D Island Terrain `ArrayMesh` with smooth vertex normals, tiled UVs, and Stylized Fantasy vertex colors.
 func _build_island_mesh() -> void:
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
@@ -229,9 +295,13 @@ func _build_island_mesh() -> void:
 	for iz in range(MESH_SEGMENTS):
 		var z0: float = -half + float(iz) * step
 		var z1: float = z0 + step
+		var v0: float = float(iz) / float(MESH_SEGMENTS)
+		var v1: float = float(iz + 1) / float(MESH_SEGMENTS)
 		for ix in range(MESH_SEGMENTS):
 			var x0: float = -half + float(ix) * step
 			var x1: float = x0 + step
+			var u0: float = float(ix) / float(MESH_SEGMENTS)
+			var u1: float = float(ix + 1) / float(MESH_SEGMENTS)
 
 			var h00: float = get_height_at(x0, z0)
 			var h10: float = get_height_at(x1, z0)
@@ -250,21 +320,28 @@ func _build_island_mesh() -> void:
 
 			# Triangle 1 (v00, v10, v01)
 			st.set_color(c00)
+			st.set_uv(Vector2(u0, v0))
 			st.add_vertex(v00)
 			st.set_color(c10)
+			st.set_uv(Vector2(u1, v0))
 			st.add_vertex(v10)
 			st.set_color(c01)
+			st.set_uv(Vector2(u0, v1))
 			st.add_vertex(v01)
 
 			# Triangle 2 (v10, v11, v01)
 			st.set_color(c10)
+			st.set_uv(Vector2(u1, v0))
 			st.add_vertex(v10)
 			st.set_color(c11)
+			st.set_uv(Vector2(u1, v1))
 			st.add_vertex(v11)
 			st.set_color(c01)
+			st.set_uv(Vector2(u0, v1))
 			st.add_vertex(v01)
 
 	st.generate_normals()
+	st.generate_tangents()
 	var array_mesh: ArrayMesh = st.commit()
 
 	terrain_mesh_instance = MeshInstance3D.new()
@@ -272,36 +349,65 @@ func _build_island_mesh() -> void:
 	terrain_mesh_instance.mesh = array_mesh
 	terrain_mesh_instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 
+	var tex_pair: Dictionary = _create_stylized_ground_textures()
 	var terrain_mat := StandardMaterial3D.new()
 	terrain_mat.vertex_color_use_as_albedo = true
-	terrain_mat.roughness = 0.86
-	terrain_mat.metallic = 0.06
+	terrain_mat.albedo_texture = tex_pair.get("albedo", null)
+	terrain_mat.normal_enabled = true
+	terrain_mat.normal_scale = 0.28
+	terrain_mat.normal_texture = tex_pair.get("normal", null)
+	terrain_mat.uv1_scale = Vector3(32.0, 32.0, 1.0)
+	terrain_mat.roughness = 0.78
+	terrain_mat.metallic = 0.04
 	terrain_mesh_instance.material_override = terrain_mat
 	add_child(terrain_mesh_instance)
 
 
-## Builds the stylized Ocean Water Plane at `y = WATER_LEVEL`.
+## Builds the stylized Tropical Lagoon & Deep Sapphire Ocean Plane at `y = WATER_LEVEL` plus a shoreline foam ring.
 func _build_ocean_plane() -> void:
 	ocean_mesh_instance = MeshInstance3D.new()
 	ocean_mesh_instance.name = "OceanWaterPlane"
 	var plane := PlaneMesh.new()
 	plane.size = Vector2(680.0, 680.0)
-	plane.subdivide_width = 36
-	plane.subdivide_depth = 36
+	plane.subdivide_width = 48
+	plane.subdivide_depth = 48
 	ocean_mesh_instance.mesh = plane
 	ocean_mesh_instance.position = Vector3(0.0, WATER_LEVEL, 0.0)
 	ocean_mesh_instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 
 	var water_mat := StandardMaterial3D.new()
-	water_mat.albedo_color = Color(0.08, 0.46, 0.62, 0.88)
+	# Vibrant tropical turquoise-cerulean lagoon water (#24b8d1 -> #168aad)
+	water_mat.albedo_color = Color(0.14, 0.72, 0.82, 0.88)
 	water_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	water_mat.roughness = 0.16
-	water_mat.metallic = 0.35
+	water_mat.roughness = 0.12
+	water_mat.metallic = 0.28
 	water_mat.emission_enabled = true
-	water_mat.emission = Color(0.04, 0.22, 0.34)
-	water_mat.emission_energy_multiplier = 0.45
+	water_mat.emission = Color(0.09, 0.46, 0.58)
+	water_mat.emission_energy_multiplier = 0.55
 	ocean_mesh_instance.material_override = water_mat
 	add_child(ocean_mesh_instance)
+
+	# Stylized turquoise shoreline lagoon foam ring around the island coast
+	var foam_ring := MeshInstance3D.new()
+	foam_ring.name = "ShorelineLagoonHalo"
+	var foam_torus := TorusMesh.new()
+	foam_torus.inner_radius = ISLAND_RADIUS * 0.82
+	foam_torus.outer_radius = ISLAND_RADIUS * 0.98
+	foam_torus.rings = 64
+	foam_torus.ring_segments = 8
+	foam_ring.mesh = foam_torus
+	foam_ring.scale = Vector3(1.0, 0.05, 1.0)
+	foam_ring.position = Vector3(0.0, WATER_LEVEL + 0.08, 0.0)
+	foam_ring.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	var foam_mat := StandardMaterial3D.new()
+	foam_mat.albedo_color = Color(0.45, 0.94, 0.95, 0.42)
+	foam_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	foam_mat.roughness = 0.22
+	foam_mat.emission_enabled = true
+	foam_mat.emission = Color(0.24, 0.86, 0.88)
+	foam_mat.emission_energy_multiplier = 0.65
+	foam_ring.material_override = foam_mat
+	add_child(foam_ring)
 
 
 ## Builds the Central Bastion Sanctuary (`bastion_sanctuary.glb`), runic aura ring, and Solar Aegis Shield Dome.
