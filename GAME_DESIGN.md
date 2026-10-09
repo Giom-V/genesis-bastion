@@ -183,3 +183,34 @@ Pour que le Héros évolue lui aussi en symbiose avec l'écosystème darwinien, 
      - **❄️ Sang Calorigène (Givre)** : `+9%` de réduction par rang (**jusqu'à 45%**).
      - **🛡️ Endurcissement Ostéo-Dermique (Physique)** : `+6%` de réduction par rang (**jusqu'à 30%**).
 
+---
+
+## 9. Architecture 3D du Bastion & Arbre d'Amélioration des 5 Bâtiments (Niv. 0 → 3)
+
+Défini dans [`src/ecosystem/BaseAndQuestsDesign.js`](file:///usr/local/google/home/giom/.gemini/jetski/scratch/genesis-bastion/src/ecosystem/BaseAndQuestsDesign.js) (`BASTION_BUILDINGS_CATALOG`), le développement du Bastion est à la fois **physique en 3D** (5 socles de chantier autour du feu de camp central où le joueur peut marcher et appuyer sur **`[E] Construire / Améliorer`**) et **accessible à tout moment** via le panneau gauche ou la modale d'Architecte **`[H]`** :
+
+| Bâtiment (`id`) | Emplacement 3D & Raccourci | Niveau 1 (Coût & Effet) | Niveau 2 (Coût & Effet) | Niveau 3 (Coût & Effet) |
+| :--- | :---: | :--- | :--- | :--- |
+| **🔥 Cœur du Sanctuaire** (`sanctuary_hearth`) | Centre `(0, 0)`<br>`[E]` / `[F5]` | *Départ* : `500 PV` Max, Soin Héros `+15 PV/s`, Cap. `8` Survivants. | `35 Bois • 15 Cristal • 10 Biomasse`<br>`750 PV` Max, Soin `+28 PV/s`, `+15%` vitesse autour du camp. | `60 Bois • 35 Cristal • 25 Biomasse`<br>`1050 PV` Max, Soin `+45 PV/s`, Aura sacrée (`12 DPS` feu). |
+| **🏹 Tour de Guet** (`watchtower`) | Nord-Est `(8.5, -7.5)`<br>`[E]` / `[F1]` | `25 Bois • 10 Cristal`<br>*Tour d'Archer* (`18` dég. / `1.35s`, portée `34m`). | `40 Bois • 20 Cristal • 10 Biomasse`<br>*Baliste Double Cryo* (`2` traits `30` dég., ralentit de `35%`). | `65 Bois • 35 Cristal • 25 Biomasse`<br>*Tour Pyrophage* (`3` traits `48` dég., **+100% dégâts vs Mutants**). |
+| **🦅 Guilde des Éclaireurs** (`scout_guild`) | Nord-Ouest `(-8.5, -7.5)`<br>`[E]` / `[F2]` | `20 Bois • 15 Cristal`<br>*Poste de Fauconnerie* (`+30%` vision, `+25%` vitesse, `+1` Éclaireur). | `35 Bois • 25 Cristal • 12 Biomasse`<br>*Observatoire* (`+60%` vision, **Balise Ralentissante `-35%` sur Patient Zéro**). | `55 Bois • 40 Cristal • 25 Biomasse`<br>*Réseau Omniscient* (`+95%` vision, marquage auto des naissances mutantes). |
+| **🛡️ Atelier & Remparts** (`lumber_forge` / `palisade`) | Sud-Est `(8.5, 7.5)`<br>`[E]` / `[F3]` | `30 Bois • 5 Cristal`<br>`+180 PV` Bastion, `10` dégâts d'épines, `+2 Bois / +1 Cristal` par `5s`. | `45 Bois • 20 Cristal • 10 Biomasse`<br>`+380 PV` Bastion, `22` épines, `+4 Bois / +3 Cristal` par `5s`. | `70 Bois • 35 Cristal • 20 Biomasse`<br>`+650 PV` Bastion, `38` épines, `+7 Bois / +5 Cristal / +2 Biomasse` par `5s`. |
+| **🧬 Bio-Laboratoire** (`biolab`) | Sud-Ouest `(-8.5, 7.5)`<br>`[E]` / `[F4]` | `20 Bois • 20 Cristal`<br>`+15%` dégâts Héros vs Mutants, **ralentit de 20% la maturation des Bébés mutants**. | `35 Bois • 30 Cristal • 15 Biomasse`<br>`+30%` dégâts vs Mutants, **ralentit de 40% la maturation des Bébés mutants**. | `55 Bois • 45 Cristal • 30 Biomasse`<br>`+50%` dégâts vs Mutants, **ralentit de 60% la maturation des Bébés** & `+50%` XP/Biomasse. |
+
+---
+
+## 10. Ordres de Mission d'Éclaireurs & Quêtes Dynamiques d'Éradication (`DynamicQuestSystem`)
+
+### 10.1. Les 4 Ordres de Mission Assignables aux Éclaireurs (`SCOUT_MISSIONS_CATALOG`)
+Le joueur n'est plus spectateur passif des déplacements de ses Éclaireurs : il peut leur donner un **Ordre de Mission actif** en un clic :
+1. **🔍 Traquer une Lignée Mutante (`track_lineage`)** : Vos Éclaireurs filent à `+45%` vitesse droit vers tous les porteurs non repérés (Bébés et Adultes) de la mutation sélectionnée (ex. *Trolls de Feu*), allument leur faisceau céleste 3D et maintiennent le compteur **`Repérés : X / Y porteurs`** à jour !
+2. **⛓️ Secourir les Survivants (`find_cages`)** : Vos Éclaireurs localisent en priorité les Cages de Prisonniers restantes et les marquent d'un faisceau doré sur la Minimap.
+3. **🌋 Explorer la Caldeira & Terres Sauvages (`scout_volcano`)** : Patrouille profonde (`50m` à `108m`) dans les biomes à forte activité mutagène.
+4. **🛡️ Vigilance Frontière (`perimeter_alert`)** : Patrouille défensive autour du Bastion pour intercepter les hordes en famine.
+
+### 10.2. Quêtes Dynamiques en 2 Phases (`DynamicQuestSystem`)
+La classe `DynamicQuestSystem` génère et suit en temps réel des opérations structurées :
+- **Quête Signature : « 📜 Opération : Éradication — Trolls de Feu (Glande Pyroclastique) »** :
+  - **Phase 1 (Renseignement Éclaireurs)** : *« Ordonnez à vos Éclaireurs de [🔍 Traquer : Pyro / Feu] pour localiser tous les porteurs sur l'île (`Repérés : X / Y`). »*
+  - **Phase 2 (Extermination & Purge Juvénile)** : *« Éliminez tous les porteurs repérés (`Restants : Y → 0`, dont les Bébés avant qu'ils ne deviennent adultes !). »*
+  - **Récompense d'Opération** : `+45 Bois, +35 Cristal, +30 Biomasse, +120 XP` (déclenchant un Level-Up immédiat) et génération automatique de la prochaine opération dès qu'une nouvelle mutation apparaît sur l'île !

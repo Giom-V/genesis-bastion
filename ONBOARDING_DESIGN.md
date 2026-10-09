@@ -74,37 +74,40 @@ L'implémentation de référence se trouve dans [`src/ecosystem/OnboardingSteps.
 * **Moment « Eurêka » UX** : Dès que le survivant est libéré, il court vers le Bastion en tant que **Récolteur**, et **le Panneau Gauche (Bastion & Survivants) s'illumine et se déverrouille** !
 * **Action finale de l'Acte 3** : Le joueur s'approche d'un arbre ou d'un cristal proche et appuie sur **`[E]`** (ou observe son Récolteur) pour engranger du Bois et du Cristal.
 
-### Acte 4 — Construire son 1er Bâtiment : La Tour de Guet (4:00 – 5:15)
-* **Déverrouillage UI** : La section **Bâtiments** du panneau gauche se débloque, et le bouton **`🏹 Tour de Guet`** pulse d'un halo doré.
+### Acte 4 — Construire son 1er Bâtiment : La Tour de Guet sur son Chantier 3D (4:00 – 5:15)
+* **Chantiers 3D au Sol & Modale d'Architecte `[H]`** : Autour du feu de camp `(0, 0)`, 4 socles de chantiers 3D dorés (`Tour de Guet`, `Guilde des Éclaireurs`, `Atelier & Remparts`, `Bio-Laboratoire`) et le `Cœur du Sanctuaire` deviennent interactifs.
 * **Action & Validation par le Spectacle** :
-  - Dès que le joueur clique sur **`Tour de Guet`** (ou appuie sur **`[F1]`**), la tour de bois et de cristal s'élève en 3D au Bastion.
-  - Immédiatement, **2 Gobelins Pilleurs** attaquent depuis l'Ouest `(-22, 16)` : la Tour de Guet leur décoche automatiquement des traits lumineux, prouvant au joueur que son Bastion peut désormais se défendre pendant qu'il partira en expédition.
+  - Le joueur peut soit **marcher sur le socle 3D de la Tour de Guet `(8.5, -7.5)` et appuyer sur `[E]`**, soit cliquer sur **`🏹 Construire : Tour de Guet`** dans le panneau gauche / modale **`[H]`** (ou appuyer sur **`[F1]`**).
+  - La tour s'élève en 3D au Bastion (et pourra ensuite être améliorée aux **Niveaux 2 et 3** !).
+  - Immédiatement, **2 Gobelins Pilleurs** attaquent depuis l'Ouest `(-22, 16)` : la Tour de Guet leur décoche automatiquement des traits lumineux.
 
-### Acte 5 — Le Tournant du Jeu : 2e Survivant & Recrutement d'un Éclaireur (5:15 – 6:45)
+### Acte 5 — Le Tournant du Jeu : 2e Survivant, Éclaireur & Ordres de Mission (5:15 – 6:45)
 * **Mise en scène** : Une **2e Cage de Survivant** est signalée à $38\text{m}$ au Nord `(0, -38)`.
-* **Déverrouillage UI** : Dès que le joueur libère ce 2e survivant avec **`[E]`**, **la Minimap Radar (en bas à droite)** et le bouton de rôle **`+ Éclaireur (Scout)`** s'illuminent !
+* **Déverrouillage UI** : Dès que le joueur libère ce 2e survivant avec **`[E]`**, **la Minimap Radar (en bas à droite)**, le bouton **`+ Éclaireur (Scout)`** et le **Sélecteur d'Ordres de Mission des Éclaireurs** s'illuminent !
 * **Texte Pédagogique** :
-  > *« Les Éclaireurs sont vos yeux sur l'île : trop fragiles pour combattre, ils fuient automatiquement les monstres mais partent en expédition lointaine au-delà de la frontière pour débusquer les mutations ! Cliquez sur **[+ Éclaireur]** dans le panneau gauche. »*
+  > *« Les Éclaireurs sont vos yeux sur l'île : assignez un survivant en **[+ Éclaireur]** et donnez-lui l'ordre de mission **[🔍 Traquer la Lignée Mutante]** pour qu'il file localiser tous les Trolls de Feu cachés au-delà de la frontière ! »*
 * **Action** : Le joueur clique sur **`+ Éclaireur`**. Sur le terrain 3D et sur la Minimap, l'Éclaireur s'élance aussitôt vers le Nord-Est avec son cercle de vision cyan.
 
-### Acte 6 — L'Alarme Génétique : Traquer le Bébé « Patient Zéro » avant l'Âge Adulte (6:45 – 8:30)
-* **Le Climax de l'Onboarding** : L'Éclaireur parti au Nord-Est repère à `(46, -46)` un **Bébé Troll de Feu (`Patient Zéro Juvénile`, porteur de `Glande Pyroclastique`)** !
-* **Déverrouillage UI & Alerte** :
+### Acte 6 — L'Alarme Génétique & Quête d'Éradication : Traquer le Bébé « Patient Zéro » (6:45 – 8:30)
+* **Le Climax de l'Onboarding** : L'Éclaireur en mission `🔍 Traquer la Lignée` repère à `(46, -46)` un **Bébé Troll de Feu (`Patient Zéro Juvénile`, porteur de `Glande Pyroclastique`)** !
+* **Déverrouillage UI & Journal de Quêtes Dynamiques** :
   - La **Bannière d'Alerte Éclaireur Prioritaire** retentit en haut de l'écran.
-  - Le **Panneau Droit (Radar Génétique & Lignées Mutantes)** se déverrouille.
+  - Le **Panneau Droit (Radar Génétique, Missions d'Éclaireurs & Quête d'Éradication Active)** se déverrouille, affichant :
+    - `1. Mission Éclaireurs : Localiser tous les Trolls de Feu (1/1 repéré ✅)`
+    - `2. Extermination : Éliminer tous les Trolls de Feu (1 Bébé restant)`
   - Une **colonne de lumière rouge 3D** s'élève dans le ciel au-dessus du Bébé Troll de Feu.
 * **Enseignement de la Règle Bébé → Adulte** :
   > *« 🦅 ALERTE ÉCLAIREUR ! Ce Troll de Feu vient de naître : c'est encore un **BÉBÉ** (taille `0.5x`, stats réduites, **incapable de se reproduire**). Si vous le laissez devenir **ADULTE**, sa mutation dominante (`78%` de transmission) contaminera toute son espèce ! Foncez l'éliminer maintenant ! »*
   - *(Sécurité pédagogique : tant que l'Acte 6 est en cours, la barre de croissance du Bébé Troll de Feu ralentit et plafonne à `80%` afin que le joueur ait la garantie de comprendre la mécanique et de l'abattre avant sa maturité).*
-* **Célébration, Maîtrise Anti-Pyro & Codex** :
-  - À la mort du Bébé Troll de Feu, la bannière **« 🏆 LIGNÉE MUTANTE ÉRADIQUÉE À TEMPS ! »** s'affiche ET le Héros acquiert **`🧬 Adaptation Génétique : Chasseur [Pyro / Feu] (Rang 1 : +15% Dégâts)`**.
+* **Célébration, Récompense de Quête, Maîtrise Anti-Pyro & Codex** :
+  - À la mort du Bébé Troll de Feu, la bannière **« 🏆 LIGNÉE MUTANTE ÉRADIQUÉE À TEMPS ! »** s'affiche, la quête d'éradication octroie son butin (`+45 Bois, +35 Cristal, +30 Biomasse, +120 XP`) ET le Héros acquiert **`🧬 Adaptation Génétique : Chasseur [Pyro / Feu] (Rang 1 : +15% Dégâts)`**.
   - Le tutoriel invite le joueur à appuyer sur **`[Tab]`** (en pause sécurisée) pour admirer l'**Arbre Phylogénétique interactif** et le schéma des lois de densité de Conway.
 
 ### Acte 7 — L'Éveil de l'Écosystème (8:30+ → Boucle de Survie Infinie)
 * **Ouverture Totale** :
   - La **Barre Supérieure d'Eco-Tick** et les **Outils de Laboratoire** se déverrouillent (`FULL_UNLOCKED_HUD`).
   - L'écosystème sort de pause (`ecoPaused = false`) et génère les meutes sauvages sur toute l'île (`spawnInitialPopulation(42)`).
-  - Le joueur entre dans la vraie boucle de survie de *Genesis Bastion* en maîtrisant 100% de ses armes, de ses 4 sorts (`[1][2][3][4]` ou `Auto`), de ses constructions (`[F1][F2][F3]`), de ses Éclaireurs et des lois de l'évolution darwinienne.
+  - Le joueur entre dans la vraie boucle de survie de *Genesis Bastion* en maîtrisant 100% de ses armes, de ses 4 sorts (`[1][2][3][4]` ou `Auto`), de ses 5 chantiers de bâtiments améliorables (`[E]` au camp ou `[H]` / `[F1..F5]`), des missions de ses Éclaireurs (`🔍 Traquer Lignée`, `⛓️ Chercher Cages`, `🌋 Caldeira`) et de ses Quêtes Dynamiques d'Éradication.
 
 ---
 
