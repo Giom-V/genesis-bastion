@@ -55,6 +55,14 @@ import {
 } from './CharacterPortraitsConfig.js';
 import { logger } from '../utils/logger.js';
 import { getCardinalLabelFR, dist2D } from '../utils/math.js';
+import {
+  tr,
+  getLanguage,
+  setLanguage,
+  onLanguageChange,
+  translateDOMTree,
+  translateString,
+} from '../utils/i18n.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
@@ -69,7 +77,8 @@ export function el(tag, className = '', text = '') {
   const node = document.createElement(tag);
   if (className) node.className = className;
   if (text !== undefined && text !== null && text !== '') {
-    node.textContent = String(text);
+    const raw = String(text);
+    node.textContent = typeof translateString === 'function' ? translateString(raw) : raw;
   }
   return node;
 }
@@ -89,7 +98,8 @@ function svgEl(tag, attrs = {}, text = '') {
     }
   }
   if (text) {
-    node.textContent = String(text);
+    const raw = String(text);
+    node.textContent = typeof translateString === 'function' ? translateString(raw) : raw;
   }
   return node;
 }
@@ -323,6 +333,8 @@ export class HUDManager {
     this.callbacks = callbacks;
     /** @type {HTMLElement} */
     this.root = document.getElementById('hud-root') || document.body;
+    /** @type {Record<string, HTMLElement>} */
+    this.els = {};
 
     /** @type {string|null} */
     this.selectedLineageId = null;
@@ -341,7 +353,20 @@ export class HUDManager {
     /** @type {boolean} */
     this.isGameOverModalOpen = false;
     /** @type {boolean} */
+    this.isSettingsModalOpen = false;
+    /** @type {boolean} */
     this.isBlenderMode = true;
+    /** @type {boolean} */
+    this.isBloomEnabled = false;
+    /** @type {boolean} */
+    this.isConwayGridEnabled = true;
+    /** @type {{muted: boolean, musicVolume: number, voiceVolume: number, sfxVolume: number}} */
+    this.audioSettings = {
+      muted: false,
+      musicVolume: 0.75,
+      voiceVolume: 1.0,
+      sfxVolume: 0.75,
+    };
     /** @type {'vampire_survivors'|'diablo_action'} */
     this.combatMode = 'vampire_survivors';
     /** @type {number} */
@@ -384,6 +409,15 @@ export class HUDManager {
     this._buildWeaponForgeModal();
     this._buildIslandVictoryModal();
     this._buildGameOverModal();
+    this._buildSettingsModal();
+
+    if (typeof translateDOMTree === 'function') {
+      translateDOMTree(this.root);
+    }
+
+    this._unsubscribeLang = onLanguageChange((lang) => {
+      this.refreshLanguage(lang);
+    });
 
     // Abonnement temps réel au logger pour le fil d'évolution
     this._unsubscribeLogger = logger.subscribe(() => {
@@ -395,7 +429,7 @@ export class HUDManager {
   /**
    * Indique si le jeu doit être mis en pause totale (`true` dès que la modale de Montée de Niveau,
    * la modale de Choix du Mode de Combat, l'Architecte du Bastion `[H]`, l'Armurerie des Artefacts `[K]`,
-   * la Victoire du Bouclier d'Éden `[V]`, l'écran Game Over `[X]` ou le Codex Phylogénétique `[Tab]` est ouvert).
+   * la Victoire du Bouclier d'Éden `[V]`, l'écran Game Over `[X]`, les Options `[O]` ou le Codex Phylogénétique `[Tab]` est ouvert).
    * @returns {boolean}
    */
   get isModalPaused() {
@@ -406,7 +440,8 @@ export class HUDManager {
         this.isBastionModalOpen ||
         this.isWeaponModalOpen ||
         this.isIslandModalOpen ||
-        this.isGameOverModalOpen
+        this.isGameOverModalOpen ||
+        this.isSettingsModalOpen
     );
   }
 
@@ -436,14 +471,18 @@ export class HUDManager {
 
     if (this.combatModeSwitchBtn) {
       this.combatModeSwitchBtn.textContent = isVS
-        ? '⚡ Mode : Auto (Vampire Survivors) [C]'
-        : '⚔️ Mode : Actif [1-4] (Diablo) [C]';
+        ? tr('⚡ Mode: Auto (Vampire Survivors) [C]', '⚡ Mode : Auto (Vampire Survivors) [C]')
+        : tr('⚔️ Mode: Active [1-4] (Diablo) [C]', '⚔️ Mode : Actif [1-4] (Diablo) [C]');
       this.combatModeSwitchBtn.classList.toggle('is-vs-mode', isVS);
     }
 
     if (this.vsModeCardEl && this.diabloModeCardEl) {
       this.vsModeCardEl.classList.toggle('is-active-mode', isVS);
       this.diabloModeCardEl.classList.toggle('is-active-mode', !isVS);
+    }
+
+    if (this.isSettingsModalOpen) {
+      this.renderSettingsModalContent();
     }
 
     if (notify && typeof this.callbacks.onChangeCombatMode === 'function') {
@@ -475,8 +514,8 @@ export class HUDManager {
   setBlenderModeUI(enabled) {
     this.isBlenderMode = Boolean(enabled);
     const label = this.isBlenderMode
-      ? '🎨 Modèles 3D : Blender (.glb) [J]'
-      : '🎨 Modèles 3D : Procéduraux (v0.9) [J]';
+      ? tr('🎨 3D Models: Blender (.glb) [J]', '🎨 Modèles 3D : Blender (.glb) [J]')
+      : tr('🎨 3D Models: Procedural (v0.9) [J]', '🎨 Modèles 3D : Procéduraux (v0.9) [J]');
 
     if (this.topBlenderSwitchBtn) {
       this.topBlenderSwitchBtn.textContent = label;
@@ -485,6 +524,9 @@ export class HUDManager {
     if (this.toggleBlenderModelsBtn) {
       this.toggleBlenderModelsBtn.textContent = label;
       this.toggleBlenderModelsBtn.classList.toggle('is-blender-mode', this.isBlenderMode);
+    }
+    if (this.isSettingsModalOpen) {
+      this.renderSettingsModalContent();
     }
   }
 
@@ -577,16 +619,22 @@ export class HUDManager {
     // Marque + Horloge Jour/Nuit + Bouton Switch Mode [C] + Bande-Son Lyria Live
     const brandGroup = el('div', 'hud-brand-group');
     const brandTitle = el('h1', 'hud-brand-title', 'Genesis Bastion');
-    this.clockBadge = el('div', 'hud-clock-badge', '☀️ Jour 1 — 08h00 (Jour)');
+    this.clockBadge = el(
+      'div',
+      'hud-clock-badge',
+      tr('☀️ Day 1 — 08:00 (Day)', '☀️ Jour 1 — 08h00 (Jour)')
+    );
 
     this.combatModeSwitchBtn = el(
       'button',
       'hud-mode-switch-btn is-vs-mode',
-      '⚡ Mode : Auto (Vampire Survivors) [C]'
+      tr('⚡ Mode: Auto (Vampire Survivors) [C]', '⚡ Mode : Auto (Vampire Survivors) [C]')
     );
     this.combatModeSwitchBtn.type = 'button';
-    this.combatModeSwitchBtn.title =
-      'Basculer entre le mode Auto-Cast (Vampire Survivors) et le mode Sorts Actifs [1-4] (Diablo) [Raccourci : C]';
+    this.combatModeSwitchBtn.title = tr(
+      'Switch between Auto-Cast mode (Vampire Survivors) and Active Spells [1-4] mode (Diablo) [Shortcut: C]',
+      'Basculer entre le mode Auto-Cast (Vampire Survivors) et le mode Sorts Actifs [1-4] (Diablo) [Raccourci : C]'
+    );
     this.combatModeSwitchBtn.addEventListener('click', () => {
       this.toggleCombatMode();
     });
@@ -594,15 +642,24 @@ export class HUDManager {
     // Pilule Télémétrie Musicale Adaptative Lyria & Bouton Mute/Unmute
     this.audioStatusGroup = el('div', 'hud-audio-status-group');
     this.lyriaStatusPill = el('div', 'hud-lyria-pill state-tutorial');
-    this.lyriaStatusPill.title =
-      'Bande-son adaptative Lyria Realtime + Multi-Stem (réagit aux PV, à l’état Combat/Paix/Dialogue, à l’espèce ennemie et aux éléments Feu/Glace/Venin/Foudre)';
+    this.lyriaStatusPill.title = tr(
+      'Adaptive Lyria Realtime + Multi-Stem soundtrack (reacts to HP, Combat/Peace/Dialogue state, enemy species, and Fire/Ice/Venom/Lightning elements)',
+      'Bande-son adaptative Lyria Realtime + Multi-Stem (réagit aux PV, à l’état Combat/Paix/Dialogue, à l’espèce ennemie et aux éléments Feu/Glace/Venin/Foudre)'
+    );
     this.lyriaStateDot = el('span', 'hud-lyria-state-dot');
-    this.lyriaStatusLabel = el('span', 'hud-lyria-label', '🎵 Lyria : Dialogue Tutoriel (85 BPM)');
+    this.lyriaStatusLabel = el(
+      'span',
+      'hud-lyria-label',
+      tr('🎵 Lyria: Tutorial Dialogue (85 BPM)', '🎵 Lyria : Dialogue Tutoriel (85 BPM)')
+    );
     this.lyriaStatusPill.append(this.lyriaStateDot, this.lyriaStatusLabel);
 
     this.muteToggleBtn = el('button', 'hud-mute-btn', '🔊 Audio');
     this.muteToggleBtn.type = 'button';
-    this.muteToggleBtn.title = 'Couper / Réactiver la musique adaptative Lyria, les voix TTS et les effets sonores';
+    this.muteToggleBtn.title = tr(
+      'Mute / Unmute adaptive Lyria music, TTS voiceovers, and sound effects [M]',
+      'Couper / Réactiver la musique adaptative Lyria, les voix TTS et les effets sonores [M]'
+    );
     this.muteToggleBtn.addEventListener('click', () => {
       if (typeof this.callbacks.onToggleAudioMute === 'function') {
         const isMuted = this.callbacks.onToggleAudioMute();
@@ -610,15 +667,33 @@ export class HUDManager {
       }
     });
 
+    // Bouton Settings / Options & Langue (EN/FR) [O]
+    this.settingsBtn = el(
+      'button',
+      'hud-settings-btn',
+      tr('⚙️ Settings [O]', '⚙️ Options [O]')
+    );
+    this.settingsBtn.type = 'button';
+    this.settingsBtn.title = tr(
+      'Open Settings: Language (EN/FR), Voices, Audio Mixer & 3D Graphics [Shortcut: O]',
+      'Ouvrir les Options : Langue (EN/FR), Voix, Mixeur Audio & Graphismes 3D [Raccourci : O]'
+    );
+    this.settingsBtn.addEventListener('click', () => {
+      this.toggleSettingsModal();
+    });
+    this.els.settingsBtn = this.settingsBtn;
+
     // Bouton de bascule Modèles 3D Blender 5.0 (.glb) vs Procéduraux Classiques [J] & Lien Version Classique (Port 5174)
     this.topBlenderSwitchBtn = el(
       'button',
       'hud-blender-switch-btn is-blender-mode',
-      '🎨 Modèles 3D : Blender (.glb) [J]'
+      tr('🎨 3D Models: Blender (.glb) [J]', '🎨 Modèles 3D : Blender (.glb) [J]')
     );
     this.topBlenderSwitchBtn.type = 'button';
-    this.topBlenderSwitchBtn.title =
-      'Basculer en temps réel entre les 14 Modèles 3D Blender 5.0 (.glb) et les Modèles Procéduraux Classiques [Raccourci : J]';
+    this.topBlenderSwitchBtn.title = tr(
+      'Switch in real time between the 14 Blender 5.0 (.glb) 3D models and Classic Procedural models [Shortcut: J]',
+      'Basculer en temps réel entre les 14 Modèles 3D Blender 5.0 (.glb) et les Modèles Procéduraux Classiques [Raccourci : J]'
+    );
     this.topBlenderSwitchBtn.addEventListener('click', () => {
       this._triggerBlenderModelsToggle();
     });
@@ -626,17 +701,20 @@ export class HUDManager {
     this.classicVersionLink = el(
       'a',
       'hud-classic-version-link',
-      '⏪ Ouvrir Version Classique (Port 5174)'
+      tr('⏪ Classic Version (Port 5174)', '⏪ Ouvrir Version Classique (Port 5174)')
     );
     this.classicVersionLink.href = 'http://giom-us.c.googlers.com:5174/';
     this.classicVersionLink.target = '_blank';
     this.classicVersionLink.rel = 'noopener noreferrer';
-    this.classicVersionLink.title =
-      'Ouvrir la version précédente figée (v0.9.0 Modèles Procéduraux Classiques) qui tourne en parallèle sur http://giom-us.c.googlers.com:5174/';
+    this.classicVersionLink.title = tr(
+      'Open the frozen Classic Procedural version (v0.9.0) running in parallel on http://giom-us.c.googlers.com:5174/',
+      'Ouvrir la version précédente figée (v0.9.0 Modèles Procéduraux Classiques) qui tourne en parallèle sur http://giom-us.c.googlers.com:5174/'
+    );
 
     this.audioStatusGroup.append(
       this.lyriaStatusPill,
       this.muteToggleBtn,
+      this.settingsBtn,
       this.topBlenderSwitchBtn,
       this.classicVersionLink
     );
@@ -1317,12 +1395,18 @@ export class HUDManager {
    * @param {boolean} isMuted
    */
   setAudioMuteUI(isMuted) {
+    this.audioSettings.muted = Boolean(isMuted);
     if (this.muteToggleBtn) {
       this.muteToggleBtn.classList.toggle('is-muted', Boolean(isMuted));
-      this.muteToggleBtn.textContent = isMuted ? '🔇 Muet' : '🔊 Audio';
+      this.muteToggleBtn.textContent = isMuted
+        ? tr('🔇 Muted', '🔇 Muet')
+        : tr('🔊 Audio', '🔊 Audio');
     }
     if (this.lyriaStatusPill) {
       this.lyriaStatusPill.classList.toggle('is-muted', Boolean(isMuted));
+    }
+    if (this.isSettingsModalOpen) {
+      this.renderSettingsModalContent();
     }
   }
 
@@ -1355,15 +1439,18 @@ export class HUDManager {
     this.onboardingCard.classList.remove('is-hidden');
     const actNum = state.actNumber || 1;
     this._currentOnboardingActNum = actNum;
+    this._lastOnboardingState = state;
     const total = state.totalActs || 7;
-    this.onboardingStepBadge.textContent = state.stepLabel || `ACTE ${actNum} / ${total}`;
+    this.onboardingStepBadge.textContent =
+      state.stepLabel || tr(`ACT ${actNum} / ${total}`, `ACTE ${actNum} / ${total}`);
     const pct = Math.min(100, Math.max(8, Math.round((actNum / total) * 100)));
     this.onboardingProgressFill.style.width = `${pct}%`;
 
     // Mise à jour du portrait Nano Banana & Simagrée d'Aldric / Kaelen
     const pres = getTutorialDialoguePresentation(actNum, state.subStep ?? null);
     if (pres) {
-      const portraitSig = `${pres.actNumber}|${pres.subStep || ''}|${pres.portraitUrl}|${pres.simagreeClass}`;
+      const lang = typeof getLanguage === 'function' ? getLanguage() : 'en';
+      const portraitSig = `${lang}|${pres.actNumber}|${pres.subStep || ''}|${pres.portraitUrl}|${pres.simagreeClass}`;
       if (this._lastPortraitSig !== portraitSig) {
         this._lastPortraitSig = portraitSig;
         this._currentPortraitPrimaryUrl = pres.portraitUrl;
@@ -1604,7 +1691,7 @@ export class HUDManager {
       discovery.speciesName ||
       genome.speciesName ||
       CONFIG.SPECIES?.[genome.speciesId]?.name ||
-      'Créature';
+      tr('Creature', 'Créature');
 
     const ex = enemy.x ?? enemy.pos?.x ?? enemy.mesh?.position?.x ?? 0;
     const ez = enemy.z ?? enemy.pos?.z ?? enemy.mesh?.position?.z ?? 0;
@@ -1617,8 +1704,8 @@ export class HUDManager {
     const traitLabel = mutDef
       ? mutDef.name
       : isHybrid
-        ? `Hybride Fertile (${speciesName})`
-        : 'Mutation Dominante';
+        ? tr(`Fertile Hybrid (${speciesName})`, `Hybride Fertile (${speciesName})`)
+        : tr('Dominant Mutation', 'Mutation Dominante');
 
     this.currentAlertTarget = {
       x: ex,
@@ -1630,16 +1717,28 @@ export class HUDManager {
     this._resetAlertBannerVariantClasses();
     this.alertIconWrap.textContent = '🦅';
     this.trackPatientZeroBtn.className = 'hud-btn hud-btn-threat';
-    this.trackPatientZeroBtn.textContent = '🎯 TRAQUER LE PATIENT ZÉRO';
+    this.trackPatientZeroBtn.textContent = tr(
+      '🎯 TRACK PATIENT ZERO',
+      '🎯 TRAQUER LE PATIENT ZÉRO'
+    );
     this.trackPatientZeroBtn.style.display = 'inline-flex';
 
-    const babyTag = isBaby ? '🐣 BÉBÉ JUVÉNILE — ' : '';
-    this.alertTitleEl.textContent = `🦅 ALERTE ÉCLAIREUR : ${babyTag}${speciesName.toUpperCase()} [${traitLabel}]`;
+    const babyTag = isBaby ? tr('🐣 JUVENILE BABY — ', '🐣 BÉBÉ JUVÉNILE — ') : '';
+    this.alertTitleEl.textContent = tr(
+      `🦅 SCOUT ALERT: ${babyTag}${speciesName.toUpperCase()} [${traitLabel}]`,
+      `🦅 ALERTE ÉCLAIREUR : ${babyTag}${speciesName.toUpperCase()} [${traitLabel}]`
+    );
 
     if (isBaby) {
-      this.alertDescEl.textContent = `Nouveau [${speciesName} — ${traitLabel}] repéré au ${sector} (${distFromBastion}m) ! Il est encore Juvénile (non reproducteur) : éliminez ce Patient Zéro avant son passage à l’âge adulte !`;
+      this.alertDescEl.textContent = tr(
+        `New [${speciesName} — ${traitLabel}] spotted in the ${sector} (${distFromBastion}m)! Still a Juvenile (cannot breed yet): eliminate this Patient Zero before it matures!`,
+        `Nouveau [${speciesName} — ${traitLabel}] repéré au ${sector} (${distFromBastion}m) ! Il est encore Juvénile (non reproducteur) : éliminez ce Patient Zéro avant son passage à l’âge adulte !`
+      );
     } else {
-      this.alertDescEl.textContent = `Nouveau [${speciesName} — ${traitLabel}] repéré au ${sector} (${distFromBastion}m) ! Éliminez le Patient Zéro avant le prochain cycle de reproduction !`;
+      this.alertDescEl.textContent = tr(
+        `New [${speciesName} — ${traitLabel}] spotted in the ${sector} (${distFromBastion}m)! Eliminate this Patient Zero before the next breeding cycle!`,
+        `Nouveau [${speciesName} — ${traitLabel}] repéré au ${sector} (${distFromBastion}m) ! Éliminez le Patient Zéro avant le prochain cycle de reproduction !`
+      );
     }
 
     if (this.alertTimeoutId) {
@@ -1657,8 +1756,8 @@ export class HUDManager {
    */
   showEradicationBanner(mutationId, lastEnemy = null) {
     const mutDef = CONFIG.MUTATIONS?.[mutationId];
-    const mutName = mutDef ? mutDef.name : mutationId || 'Lignée Mutante';
-    const speciesName = lastEnemy?.genome?.speciesName || 'Porteur';
+    const mutName = mutDef ? mutDef.name : mutationId || tr('Mutant Lineage', 'Lignée Mutante');
+    const speciesName = lastEnemy?.genome?.speciesName || tr('Carrier', 'Porteur');
 
     this._applyAlertBannerPortrait('eradicated');
     this._resetAlertBannerVariantClasses();
@@ -1666,8 +1765,14 @@ export class HUDManager {
     this.alertIconWrap.textContent = '✨';
     this.trackPatientZeroBtn.style.display = 'none';
 
-    this.alertTitleEl.textContent = `🏆 LIGNÉE MUTANTE ÉRADIQUÉE : ${mutName.toUpperCase()}`;
-    this.alertDescEl.textContent = `Le dernier porteur (${speciesName}) a été neutralisé ! La mutation dominante [${mutName}] ne peut plus se propager dans l'écosystème.`;
+    this.alertTitleEl.textContent = tr(
+      `🏆 MUTANT LINEAGE ERADICATED: ${mutName.toUpperCase()}`,
+      `🏆 LIGNÉE MUTANTE ÉRADIQUÉE : ${mutName.toUpperCase()}`
+    );
+    this.alertDescEl.textContent = tr(
+      `The last carrier (${speciesName}) has been neutralized! Dominant mutation [${mutName}] can no longer spread across the ecosystem.`,
+      `Le dernier porteur (${speciesName}) a été neutralisé ! La mutation dominante [${mutName}] ne peut plus se propager dans l'écosystème.`
+    );
 
     if (this.alertTimeoutId) {
       clearTimeout(this.alertTimeoutId);
@@ -1699,11 +1804,20 @@ export class HUDManager {
     this.alertBanner.classList.add('is-dragon-wrath');
     this.alertIconWrap.textContent = '🐉';
     this.trackPatientZeroBtn.className = 'hud-btn hud-btn-threat';
-    this.trackPatientZeroBtn.textContent = '🏰 DÉFENDRE LE BASTION';
+    this.trackPatientZeroBtn.textContent = tr(
+      '🏰 DEFEND THE BASTION',
+      '🏰 DÉFENDRE LE BASTION'
+    );
     this.trackPatientZeroBtn.style.display = 'inline-flex';
 
-    this.alertTitleEl.textContent = `🐉 COURROUX DRACONIQUE ! TOUS LES ${spName.toUpperCase()}S ATTAQUENT VOTRE BASTION !`;
-    this.alertDescEl.textContent = `Vous avez provoqué un ${spName} Souverain (${Math.round(ex)}m, ${Math.round(ez)}m) : toute l’espèce entre en rage collective (Agressivité 100%, Vitesse ×1.25) et fond sur votre Bastion ("notre villa") pour le raser !`;
+    this.alertTitleEl.textContent = tr(
+      `🐉 DRACONIC WRATH! ALL ${spName.toUpperCase()}S ARE ATTACKING YOUR BASTION!`,
+      `🐉 COURROUX DRACONIQUE ! TOUS LES ${spName.toUpperCase()}S ATTAQUENT VOTRE BASTION !`
+    );
+    this.alertDescEl.textContent = tr(
+      `You provoked a Sovereign ${spName} (${Math.round(ex)}m, ${Math.round(ez)}m): the entire species enters collective rage (100% Aggression, ×1.25 Speed) and charges your Bastion to raze it!`,
+      `Vous avez provoqué un ${spName} Souverain (${Math.round(ex)}m, ${Math.round(ez)}m) : toute l’espèce entre en rage collective (Agressivité 100%, Vitesse ×1.25) et fond sur votre Bastion ("notre villa") pour le raser !`
+    );
 
     if (this.alertTimeoutId) {
       clearTimeout(this.alertTimeoutId);
@@ -1739,11 +1853,20 @@ export class HUDManager {
     this.alertBanner.classList.add('is-shark-landing');
     this.alertIconWrap.textContent = '🦈';
     this.trackPatientZeroBtn.className = 'hud-btn hud-btn-abyss';
-    this.trackPatientZeroBtn.textContent = '🦈 CIBLER LA PLAGE';
+    this.trackPatientZeroBtn.textContent = tr(
+      '🦈 TARGET THE BEACH',
+      '🦈 CIBLER LA PLAGE'
+    );
     this.trackPatientZeroBtn.style.display = 'inline-flex';
 
-    this.alertTitleEl.textContent = `🦈 ÉMERGENCE ABYSSALE : ${count > 1 ? `${count} REQUINS MARCHEURS DÉBARQUENT` : 'UN REQUIN MARCHEUR DÉBARQUE'} AU ${sector.toUpperCase()} !`;
-    this.alertDescEl.textContent = `Les squales de l’océan (${dist}m) ont muté [Pattes & Branchies Amphibies] : ils sortent des vagues sur leurs pattes griffues, marchent sur la plage et peuvent s’hybrider avec les Loups ("Squale-Garou") !`;
+    this.alertTitleEl.textContent = tr(
+      `🦈 ABYSSAL EMERGENCE: ${count > 1 ? `${count} WALKING SHARKS LANDING` : 'A WALKING SHARK LANDS'} IN THE ${sector.toUpperCase()}!`,
+      `🦈 ÉMERGENCE ABYSSALE : ${count > 1 ? `${count} REQUINS MARCHEURS DÉBARQUENT` : 'UN REQUIN MARCHEUR DÉBARQUE'} AU ${sector.toUpperCase()} !`
+    );
+    this.alertDescEl.textContent = tr(
+      `Ocean sharks (${dist}m) have mutated [Amphibious Legs & Gills]: they crawl out of the waves onto the beach and can hybridize with Wolves ("Shark-Wolf")!`,
+      `Les squales de l’océan (${dist}m) ont muté [Pattes & Branchies Amphibies] : ils sortent des vagues sur leurs pattes griffues, marchent sur la plage et peuvent s’hybrider avec les Loups ("Squale-Garou") !`
+    );
 
     if (this.alertTimeoutId) {
       clearTimeout(this.alertTimeoutId);
@@ -1778,11 +1901,20 @@ export class HUDManager {
     this.alertBanner.classList.add('is-mole-eruption');
     this.alertIconWrap.textContent = '🕳️';
     this.trackPatientZeroBtn.className = 'hud-btn hud-btn-earth';
-    this.trackPatientZeroBtn.textContent = '🕳️ CIBLER LA GALERIE';
+    this.trackPatientZeroBtn.textContent = tr(
+      '🕳️ TARGET THE TUNNEL',
+      '🕳️ CIBLER LA GALERIE'
+    );
     this.trackPatientZeroBtn.style.display = 'inline-flex';
 
-    this.alertTitleEl.textContent = `🕳️ ÉRUPTION SOUTERRAINE : ${count > 1 ? `${count} TAUPES GÉANTES FOUISSEUSES` : 'TAUPE GÉANTE FOUISSEUSE'} AU ${sector.toUpperCase()} !`;
-    this.alertDescEl.textContent = `Une galerie tellurique vient de s’ouvrir (${dist}m) ! Ces colosses souterrains aux griffes métalliques peuvent s’hybrider avec les Trolls ("Taupe-Colosse") : interceptez-les !`;
+    this.alertTitleEl.textContent = tr(
+      `🕳️ SUBTERRANEAN ERUPTION: ${count > 1 ? `${count} GIANT BURROWING MOLES` : 'GIANT BURROWING MOLE'} IN THE ${sector.toUpperCase()}!`,
+      `🕳️ ÉRUPTION SOUTERRAINE : ${count > 1 ? `${count} TAUPES GÉANTES FOUISSEUSES` : 'TAUPE GÉANTE FOUISSEUSE'} AU ${sector.toUpperCase()} !`
+    );
+    this.alertDescEl.textContent = tr(
+      `A subterranean tunnel just opened (${dist}m)! These metal-clawed colossi can hybridize with Trolls ("Mole-Colossus"): intercept them!`,
+      `Une galerie tellurique vient de s’ouvrir (${dist}m) ! Ces colosses souterrains aux griffes métalliques peuvent s’hybrider avec les Trolls ("Taupe-Colosse") : interceptez-les !`
+    );
 
     if (this.alertTimeoutId) {
       clearTimeout(this.alertTimeoutId);
@@ -1807,10 +1939,10 @@ export class HUDManager {
       (typeof crisisData.deer === 'number' && crisisData.deer < 2 ? 'deer' : 'rabbit');
     const spName =
       speciesId === 'rabbit'
-        ? 'Lapins des Plaines'
+        ? tr('Plains Rabbits', 'Lapins des Plaines')
         : speciesId === 'deer'
-          ? 'Biches Sylvestres'
-          : 'Troupeaux de Gibier';
+          ? tr('Sylvan Deer', 'Biches Sylvestres')
+          : tr('Herbivore Prey Herds', 'Troupeaux de Gibier');
     const remaining =
       crisisData.remainingPrey ??
       crisisData.remainingCount ??
@@ -1829,13 +1961,24 @@ export class HUDManager {
     this.alertBanner.classList.add('is-prey-crisis');
     this.alertIconWrap.textContent = '🦌';
     this.trackPatientZeroBtn.className = 'hud-btn hud-btn-prey is-urgent-reintroduce';
-    this.trackPatientZeroBtn.textContent = '🌿 RÉINTRODUIRE GIBIER (25 BIO)';
+    this.trackPatientZeroBtn.textContent = tr(
+      '🌿 REINTRODUCE PREY (25 BIO)',
+      '🌿 RÉINTRODUIRE GIBIER (25 BIO)'
+    );
     this.trackPatientZeroBtn.style.display = 'inline-flex';
 
     const causeText =
-      isSpellDamage || crisisData.isSpellDamage ? 'DÉCIMÉS PAR VOS SORTS' : 'EN VOIE D’EXTINCTION';
-    this.alertTitleEl.textContent = `⚠️ ALERTE ÉCOLOGIQUE : ${spName.toUpperCase()} ${causeText} (${remaining} RESTANT) !`;
-    this.alertDescEl.textContent = `Contrairement aux monstres, les Biches et Lapins ne réapparaissent PAS tout seuls (<2 = Extinction) ! Sans gibier, vos Rations (🍖) tombent à zéro et tous les prédateurs affamés fondent sur le Bastion !`;
+      isSpellDamage || crisisData.isSpellDamage
+        ? tr('DECIMATED BY YOUR SPELLS', 'DÉCIMÉS PAR VOS SORTS')
+        : tr('NEAR EXTINCTION', 'EN VOIE D’EXTINCTION');
+    this.alertTitleEl.textContent = tr(
+      `⚠️ ECOLOGICAL CRISIS: ${spName.toUpperCase()} ${causeText} (${remaining} REMAINING)!`,
+      `⚠️ ALERTE ÉCOLOGIQUE : ${spName.toUpperCase()} ${causeText} (${remaining} RESTANT) !`
+    );
+    this.alertDescEl.textContent = tr(
+      'Unlike monsters, Deer and Rabbits DO NOT respawn on their own (<2 = Extinction)! Without prey, your Rations (🍖) drop to zero and starving predators charge the Bastion!',
+      'Contrairement aux monstres, les Biches et Lapins ne réapparaissent PAS tout seuls (<2 = Extinction) ! Sans gibier, vos Rations (🍖) tombent à zéro et tous les prédateurs affamés fondent sur le Bastion !'
+    );
 
     if (this.alertTimeoutId) {
       clearTimeout(this.alertTimeoutId);
@@ -1853,7 +1996,10 @@ export class HUDManager {
     if (!this.alertBanner) return;
     const collected = relicData.collectedCount ?? relicData.collected ?? 1;
     const required = relicData.requiredCount ?? RELIC_FRAGMENTS_SPEC.requiredCount ?? 3;
-    const relicName = relicData.name || relicData.shrine?.name || `Fragment d’Éden #${collected}`;
+    const relicName =
+      relicData.name ||
+      relicData.shrine?.name ||
+      tr(`Eden Fragment #${collected}`, `Fragment d’Éden #${collected}`);
     const isComplete = collected >= required;
 
     this.currentAlertTarget = {
@@ -1868,16 +2014,28 @@ export class HUDManager {
     this.alertIconWrap.textContent = isComplete ? '🛡️' : '🧩';
     this.trackPatientZeroBtn.className = `hud-btn hud-btn-shield${isComplete ? ' is-shield-ready' : ''}`;
     this.trackPatientZeroBtn.textContent = isComplete
-      ? '🛡️ ÉRIGER LE BOUCLIER DE L’ÎLE [V]'
-      : `🧩 ${collected}/${required} RELIQUES (VOIR BOUCLIER)`;
+      ? tr('🛡️ RAISE ISLAND SHIELD [V]', '🛡️ ÉRIGER LE BOUCLIER DE L’ÎLE [V]')
+      : tr(`🧩 ${collected}/${required} RELICS (VIEW SHIELD)`, `🧩 ${collected}/${required} RELIQUES (VOIR BOUCLIER)`);
     this.trackPatientZeroBtn.style.display = 'inline-flex';
 
     this.alertTitleEl.textContent = isComplete
-      ? `🛡️ LES ${required} RELIQUES D’ÉDEN SONT RÉUNIES (${collected}/${required}) !`
-      : `🧩 RELIQUE D’ÉDEN ASSEMBLÉE : ${relicName.toUpperCase()} (${collected}/${required})`;
+      ? tr(
+          `🛡️ ALL ${required} EDEN RELICS ASSEMBLED (${collected}/${required})!`,
+          `🛡️ LES ${required} RELIQUES D’ÉDEN SONT RÉUNIES (${collected}/${required}) !`
+        )
+      : tr(
+          `🧩 EDEN RELIC ASSEMBLED: ${relicName.toUpperCase()} (${collected}/${required})`,
+          `🧩 RELIQUE D’ÉDEN ASSEMBLÉE : ${relicName.toUpperCase()} (${collected}/${required})`
+        );
     this.alertDescEl.textContent = isComplete
-      ? 'L’Artefact Solaire est complet ! Appuyez sur [V] ou cliquez sur le bouton pour déployer le Dôme-Bouclier Planétaire sur toute l’île et valider la zone !'
-      : `+50 XP & +15 Cristal ! Retrouvez les ${required - collected} monolithe(s) runique(s) restant(s) sur l’île pour débloquer le Dôme-Bouclier Planétaire !`;
+      ? tr(
+          'The Solar Artifact is complete! Press [V] or click the button to deploy the Planetary Shield Dome across the island and clear the zone!',
+          'L’Artefact Solaire est complet ! Appuyez sur [V] ou cliquez sur le bouton pour déployer le Dôme-Bouclier Planétaire sur toute l’île et valider la zone !'
+        )
+      : tr(
+          `+50 XP & +15 Crystal! Find the remaining ${required - collected} runic monolith(s) on the island to unlock the Planetary Shield Dome!`,
+          `+50 XP & +15 Cristal ! Retrouvez les ${required - collected} monolithe(s) runique(s) restant(s) sur l’île pour débloquer le Dôme-Bouclier Planétaire !`
+        );
 
     if (this.alertTimeoutId) {
       clearTimeout(this.alertTimeoutId);
@@ -2209,7 +2367,10 @@ export class HUDManager {
     // Mise à jour du compteur global dans la barre supérieure
     const activeLineagesCount = lineages.filter((l) => l.count > 0).length;
     if (this.mutCountValueEl) {
-      this.mutCountValueEl.textContent = `${activeLineagesCount} Active${activeLineagesCount > 1 ? 's' : ''}`;
+      this.mutCountValueEl.textContent = tr(
+        `${activeLineagesCount} Active`,
+        `${activeLineagesCount} Active${activeLineagesCount > 1 ? 's' : ''}`
+      );
     }
     if (this.mutPill) {
       this.mutPill.classList.toggle('threat-active', activeLineagesCount > 0);
@@ -2221,7 +2382,7 @@ export class HUDManager {
       return b.count - a.count;
     });
 
-    const sig = lineages
+    const sig = `${getLanguage()}|` + lineages
       .map(
         (l) =>
           `${l.id}:${l.count}:${l.adultCount}:${l.babyCount}:${l.spottedCount}:${Math.round(l.minMaturationRem || 0)}:${this.selectedLineageId === l.id ? 1 : 0}`
@@ -2262,21 +2423,24 @@ export class HUDManager {
       const topRow = el('div', 'hud-lineage-top');
       const hostPrefix =
         item.speciesNames && item.speciesNames.size > 0
-          ? `${Array.from(item.speciesNames).join('/')} — `
+          ? `${Array.from(item.speciesNames).map((s) => translateString(s)).join('/')} — `
           : '';
-      const nameSpan = el('span', 'hud-lineage-name', `${hostPrefix}${item.name}`);
+      const nameSpan = el('span', 'hud-lineage-name', `${hostPrefix}${translateString(item.name)}`);
 
-      let badgeText = 'ÉRADIQUÉ';
+      let badgeText = tr('ERADICATED', 'ÉRADIQUÉ');
       let badgeClass = 'badge-eradicated';
       if (!isEradicated) {
         if (isPatientZeroSingle) {
-          badgeText = item.babyCount === 1 ? '🐣 PATIENT ZÉRO BÉBÉ' : 'PATIENT ZÉRO (1)';
+          badgeText =
+            item.babyCount === 1
+              ? tr('🐣 BABY PATIENT ZERO', '🐣 PATIENT ZÉRO BÉBÉ')
+              : tr('PATIENT ZERO (1)', 'PATIENT ZÉRO (1)');
           badgeClass = 'badge-pz';
         } else if (item.count >= 5 || item.status === 'dominant') {
           badgeText = `DOMINANT (${item.count})`;
           badgeClass = 'badge-pz';
         } else {
-          badgeText = `EN EXPANSION (${item.count})`;
+          badgeText = tr(`SPREADING (${item.count})`, `EN EXPANSION (${item.count})`);
           badgeClass = 'badge-spread';
         }
       }
@@ -2286,9 +2450,15 @@ export class HUDManager {
 
       const metaRow = el('div', 'hud-lineage-meta');
       const stageDetail = isEradicated
-        ? '0 porteur survivant'
-        : `${item.adultCount} Ad. / ${item.babyCount} Bébé${item.babyCount > 1 ? 's' : ''} 🐣 · Repérés: ${item.spottedCount || 0}/${item.count}`;
-      const genFitnessText = `Gén. ${item.generationMax} · Fit ${item.maxFitness ? item.maxFitness.toFixed(2) : '1.45'}`;
+        ? tr('0 surviving carriers', '0 porteur survivant')
+        : tr(
+            `${item.adultCount} Ad. / ${item.babyCount} ${item.babyCount > 1 ? 'Babies' : 'Baby'} 🐣 · Spotted: ${item.spottedCount || 0}/${item.count}`,
+            `${item.adultCount} Ad. / ${item.babyCount} Bébé${item.babyCount > 1 ? 's' : ''} 🐣 · Repérés: ${item.spottedCount || 0}/${item.count}`
+          );
+      const genFitnessText = tr(
+        `Gen. ${item.generationMax} · Fit ${item.maxFitness ? item.maxFitness.toFixed(2) : '1.45'}`,
+        `Gén. ${item.generationMax} · Fit ${item.maxFitness ? item.maxFitness.toFixed(2) : '1.45'}`
+      );
       metaRow.append(el('span', '', stageDetail), el('span', '', genFitnessText));
 
       card.append(topRow, metaRow);
@@ -2300,11 +2470,18 @@ export class HUDManager {
         const traitsBar = el('div', 'hud-lineage-traits-bar');
         traitsBar.append(
           el('span', 'hud-lineage-trait-pill', `⏱️ Gestation ~${avgGest}s`),
-          el('span', 'hud-lineage-trait-pill', `💢 Agressivité ${avgAggroPct}%`),
           el(
             'span',
             'hud-lineage-trait-pill',
-            `🧬 PV max ${Math.round(item.maxHpVal)} · Force ${Math.round(item.maxStrengthVal)} · Vit ${item.maxSpeedVal.toFixed(1)}`
+            tr(`💢 Aggression ${avgAggroPct}%`, `💢 Agressivité ${avgAggroPct}%`)
+          ),
+          el(
+            'span',
+            'hud-lineage-trait-pill',
+            tr(
+              `🧬 Max HP ${Math.round(item.maxHpVal)} · Str ${Math.round(item.maxStrengthVal)} · Spd ${item.maxSpeedVal.toFixed(1)}`,
+              `🧬 PV max ${Math.round(item.maxHpVal)} · Force ${Math.round(item.maxStrengthVal)} · Vit ${item.maxSpeedVal.toFixed(1)}`
+            )
           )
         );
         card.appendChild(traitsBar);
@@ -2316,13 +2493,25 @@ export class HUDManager {
         if (item.adultCount === 0 && item.babyCount > 0) {
           const remStr =
             item.minMaturationRem !== null ? ` (${Math.ceil(item.minMaturationRem)}s)` : '';
-          warnMsg = `⏳ Fenêtre tactique : tous les porteurs sont encore Juvéniles${remStr} et ne peuvent pas se reproduire !`;
+          warnMsg = tr(
+            `⏳ Tactical window: all carriers are still Juveniles${remStr} and cannot breed!`,
+            `⏳ Fenêtre tactique : tous les porteurs sont encore Juvéniles${remStr} et ne peuvent pas se reproduire !`
+          );
         } else if (isPatientZeroSingle) {
           warnMsg = item.discoveredByScout
-            ? '🎯 Repéré par Éclaireur -> Éliminez-le avant le prochain Eco-Tick !'
-            : '⚠️ Porteur actif en territoire sauvage -> Risque de dominance !';
+            ? tr(
+                '🎯 Spotted by Scout -> Eliminate before the next Eco-Tick!',
+                '🎯 Repéré par Éclaireur -> Éliminez-le avant le prochain Eco-Tick !'
+              )
+            : tr(
+                '⚠️ Active carrier in the wild -> Risk of genetic dominance!',
+                '⚠️ Porteur actif en territoire sauvage -> Risque de dominance !'
+              );
         } else {
-          warnMsg = `🔥 Transmission dominante (78%) en cours -> Chassez les ${item.adultCount} adulte(s) reproducteur(s) !`;
+          warnMsg = tr(
+            `🔥 Dominant inheritance (78%) in progress -> Hunt the ${item.adultCount} breeding adult(s)!`,
+            `🔥 Transmission dominante (78%) en cours -> Chassez les ${item.adultCount} adulte(s) reproducteur(s) !`
+          );
         }
         card.appendChild(el('div', 'hud-lineage-warning', warnMsg));
 
@@ -2332,8 +2521,14 @@ export class HUDManager {
           'button',
           `hud-btn hud-btn-sm ${allSpotted ? 'hud-btn-amber' : 'hud-btn-scout'} hud-lineage-track-btn`,
           allSpotted
-            ? `🎯 Tous repérés (${item.spottedCount}/${item.count}) — Cibler & Éradiquer`
-            : `🦅 Ordonner aux Éclaireurs : Traquer (${item.spottedCount || 0}/${item.count} repérés)`
+            ? tr(
+                `🎯 All spotted (${item.spottedCount}/${item.count}) — Target & Eradicate`,
+                `🎯 Tous repérés (${item.spottedCount}/${item.count}) — Cibler & Éradiquer`
+              )
+            : tr(
+                `🦅 Order Scouts: Track (${item.spottedCount || 0}/${item.count} spotted)`,
+                `🦅 Ordonner aux Éclaireurs : Traquer (${item.spottedCount || 0}/${item.count} repérés)`
+              )
         );
         trackBtn.type = 'button';
         trackBtn.addEventListener('click', (evt) => {
@@ -2428,62 +2623,86 @@ export class HUDManager {
 
     // 1. Maîtrises d'Espèce (<= 1% par monstre avec rendement décroissant rapide, max +15%)
     for (const sp of summary.speciesMasteries || []) {
+      const spName = translateString(sp.name);
       if (sp.rank > 0) {
         pills.push({
           cls: 'mastery-species',
-          text: `🗡️ Chasseur ${sp.name} Rg.${sp.rank}`,
-          val: `+${sp.bonusPct}% Dégâts (${sp.kills} tué${sp.kills > 1 ? 's' : ''})`,
+          text: tr(`🗡️ ${spName} Slayer Rk.${sp.rank}`, `🗡️ Chasseur ${spName} Rg.${sp.rank}`),
+          val: tr(
+            `+${sp.bonusPct}% Dmg (${sp.kills} slain)`,
+            `+${sp.bonusPct}% Dégâts (${sp.kills} tué${sp.kills > 1 ? 's' : ''})`
+          ),
         });
       } else if (sp.kills > 0) {
         pills.push({
           cls: 'mastery-species',
-          text: `🎯 Traque ${sp.name}`,
-          val: `+${sp.bonusPct ?? sp.kills}% Dégâts (${sp.kills}/${sp.nextThreshold || 1} tués)`,
+          text: tr(`🎯 Hunting ${spName}`, `🎯 Traque ${spName}`),
+          val: tr(
+            `+${sp.bonusPct ?? sp.kills}% Dmg (${sp.kills}/${sp.nextThreshold || 1} slain)`,
+            `+${sp.bonusPct ?? sp.kills}% Dégâts (${sp.kills}/${sp.nextThreshold || 1} tués)`
+          ),
         });
       }
     }
 
     // 2. Maîtrises Anti-Mutation (<= 1% par mutant avec rendement décroissant rapide, max +15%)
     for (const mut of summary.mutationMasteries || []) {
+      const mutName = translateString(mut.name);
       if (mut.rank > 0) {
         pills.push({
           cls: 'mastery-mutation',
-          text: `🧬 Purge ${mut.name} Rg.${mut.rank}`,
-          val: `+${mut.bonusPct}% Dégâts (${mut.kills || 1} tué${(mut.kills || 1) > 1 ? 's' : ''})`,
+          text: tr(`🧬 ${mutName} Purge Rk.${mut.rank}`, `🧬 Purge ${mutName} Rg.${mut.rank}`),
+          val: tr(
+            `+${mut.bonusPct}% Dmg (${mut.kills || 1} slain)`,
+            `+${mut.bonusPct}% Dégâts (${mut.kills || 1} tué${(mut.kills || 1) > 1 ? 's' : ''})`
+          ),
         });
       } else if (mut.kills > 0) {
         pills.push({
           cls: 'mastery-mutation',
-          text: `🧬 Étude ${mut.name}`,
-          val: `+${mut.bonusPct ?? mut.kills}% Dégâts (${mut.kills}/${mut.nextThreshold || 1} tués)`,
+          text: tr(`🧬 Studying ${mutName}`, `🧬 Étude ${mutName}`),
+          val: tr(
+            `+${mut.bonusPct ?? mut.kills}% Dmg (${mut.kills}/${mut.nextThreshold || 1} slain)`,
+            `+${mut.bonusPct ?? mut.kills}% Dégâts (${mut.kills}/${mut.nextThreshold || 1} tués)`
+          ),
         });
       }
     }
 
     // 3. Résistances Élémentaires & Physiques (-0.5%/coup avec rendement décroissant, max -10%)
     for (const res of summary.resistances || []) {
+      const resName = translateString(res.name);
       if (res.rank > 0) {
         pills.push({
           cls: 'mastery-resist',
-          text: `${res.icon || '🛡️'} Rés. ${res.name} Rg.${res.rank}`,
-          val: `-${res.reductionPct}% Dégâts reçus`,
+          text: tr(
+            `${res.icon || '🛡️'} ${resName} Res. Rk.${res.rank}`,
+            `${res.icon || '🛡️'} Rés. ${resName} Rg.${res.rank}`
+          ),
+          val: tr(`-${res.reductionPct}% Dmg taken`, `-${res.reductionPct}% Dégâts reçus`),
         });
       } else if (res.hits > 0) {
         pills.push({
           cls: 'mastery-resist',
-          text: `${res.icon || '🛡️'} Immunité ${res.name}`,
-          val: `-${res.reductionPct ?? 0.5}% (${res.hits}/${res.nextThreshold || 2} coups)`,
+          text: tr(`${res.icon || '🛡️'} ${resName} Immunity`, `${res.icon || '🛡️'} Immunité ${resName}`),
+          val: tr(
+            `-${res.reductionPct ?? 0.5}% (${res.hits}/${res.nextThreshold || 2} hits)`,
+            `-${res.reductionPct ?? 0.5}% (${res.hits}/${res.nextThreshold || 2} coups)`
+          ),
         });
       }
     }
 
     const activeRanks = summary.totalAdaptationsCount || 0;
     if (this.masteryCountBadgeEl) {
-      this.masteryCountBadgeEl.textContent = `${activeRanks} rang${activeRanks > 1 ? 's' : ''} actif${activeRanks > 1 ? 's' : ''}`;
+      this.masteryCountBadgeEl.textContent = tr(
+        `${activeRanks} active rank${activeRanks > 1 ? 's' : ''}`,
+        `${activeRanks} rang${activeRanks > 1 ? 's' : ''} actif${activeRanks > 1 ? 's' : ''}`
+      );
     }
 
     // Éviter de reconstruire le DOM si la signature n'a pas changé
-    const sig = JSON.stringify(pills);
+    const sig = `${getLanguage()}|` + JSON.stringify(pills);
     if (this._lastMasterySig === sig) return;
     this._lastMasterySig = sig;
 
@@ -2583,6 +2802,7 @@ export class HUDManager {
       { key: 'K', label: 'Armes Élémentaires' },
       { key: 'V', label: 'Bouclier Île' },
       { key: 'Tab', label: 'Codex Génétique' },
+      { key: 'O', label: tr('Settings / Language', 'Paramètres / Langue') },
       { key: 'T', label: 'Eco-Tick' },
       { key: 'J', label: 'Modèles Blender (.glb)' },
       { key: 'X', label: 'Test Game Over' },
@@ -2644,7 +2864,7 @@ export class HUDManager {
       if (!spellId || !meta) {
         ui.slotBtn.className = 'hud-skill-slot is-empty';
         ui.iconEl.textContent = '🔒';
-        ui.nameEl.textContent = 'Niveau Sup.';
+        ui.nameEl.textContent = tr('Level Up', 'Niveau Sup.');
         ui.lvlEl.textContent = '';
         ui.cdFillEl.style.height = '0%';
         ui.cdTextEl.textContent = '';
@@ -2669,13 +2889,18 @@ export class HUDManager {
       const onCd = remCd > 0.05 && maxCd > 0;
       const cdPct = onCd ? Math.min(100, Math.round((remCd / maxCd) * 100)) : 0;
 
+      const spellName = translateString(meta.name || spellId);
+      const spellDesc = translateString(meta.description || '');
       ui.slotBtn.className = `hud-skill-slot${isAuto ? ' is-auto-mode' : ' is-ready'}`;
       ui.iconEl.textContent = meta.icon || '⚡';
-      ui.nameEl.textContent = meta.name || spellId;
-      ui.lvlEl.textContent = `Niv.${level}`;
+      ui.nameEl.textContent = spellName;
+      ui.lvlEl.textContent = tr(`Lv.${level}`, `Niv.${level}`);
       ui.cdFillEl.style.height = `${cdPct}%`;
       ui.cdTextEl.textContent = onCd ? `${remCd.toFixed(1)}s` : '';
-      ui.slotBtn.title = `${meta.name} (Niv. ${level}) — ${meta.description || ''}`;
+      ui.slotBtn.title = tr(
+        `${spellName} (Lv. ${level}) — ${spellDesc}`,
+        `${spellName} (Niv. ${level}) — ${spellDesc}`
+      );
     }
   }
 
@@ -2825,7 +3050,10 @@ export class HUDManager {
       el(
         'div',
         'hud-section-label',
-        `Arbre Phylogénétique & Matrice d'Hybridation (Seuil de compatibilité <= ${graphData.maxHybridDistance})`
+        tr(
+          `Phylogenetic Tree & Hybridization Matrix (Compatibility threshold <= ${graphData.maxHybridDistance})`,
+          `Arbre Phylogénétique & Matrice d'Hybridation (Seuil de compatibilité <= ${graphData.maxHybridDistance})`
+        )
       ),
       this._buildPhylogenySvg(graphData, speciesCounts)
     );
@@ -2872,7 +3100,10 @@ export class HUDManager {
     const speciesTitle = el(
       'div',
       'hud-section-label',
-      `Cycles de Gestation, Agressivité, Émergence & Gibier (${orderedSpeciesIds.length} Espèces)`
+      tr(
+        `Gestation Cycles, Aggression, Emergence & Prey (${orderedSpeciesIds.length} Species)`,
+        `Cycles de Gestation, Agressivité, Émergence & Gibier (${orderedSpeciesIds.length} Espèces)`
+      )
     );
     const speciesGrid = el('div', 'codex-species-grid');
 
@@ -2881,7 +3112,7 @@ export class HUDManager {
       const spDef = SPECIES_CYCLE_AND_AGGRO_DEFAULTS[spId] || {};
       const sc = speciesScope[spId] || null;
 
-      const name = spConf.name || spId;
+      const name = translateString(spConf.name || spId);
       const baseGest = spConf.baseGestationTime ?? spDef.baseGestationTime ?? 18;
       const baseMat = spConf.baseMaturationTime ?? spDef.baseMaturationTime ?? 20;
       const baseAggro = spConf.baseAggressiveness ?? spDef.baseAggressiveness ?? 0.7;
@@ -2894,8 +3125,9 @@ export class HUDManager {
             : true;
       const foodYield = spConf.foodYield ?? spDef.foodYield ?? 0;
       const repopCd = spConf.repopulationCooldown ?? spDef.repopulationCooldown ?? 15;
-      const habitat =
-        spConf.repopulationHabitatLabel || spDef.repopulationHabitatLabel || 'Terres sauvages';
+      const habitat = translateString(
+        spConf.repopulationHabitatLabel || spDef.repopulationHabitatLabel || 'Terres sauvages'
+      );
       const baseHp = spConf.baseHp ?? spDef.baseHp ?? 60;
       const baseDmg = spConf.baseDamage ?? spDef.baseDamage ?? 10;
       const baseSpd = spConf.baseSpeed ?? spDef.baseSpeed ?? 7.0;
@@ -2907,16 +3139,25 @@ export class HUDManager {
           : Math.round(baseAggro * 100);
       const isWrath = Boolean(sc && sc.enraged > 0);
 
-      let stanceLabel = `⚔️ Hostile à vue (${avgAggroPct}%)`;
+      let stanceLabel = tr(
+        `⚔️ Hostile on Sight (${avgAggroPct}%)`,
+        `⚔️ Hostile à vue (${avgAggroPct}%)`
+      );
       let stanceCls = 'stance-hostile';
       if (isWrath) {
-        stanceLabel = '🔥 COURROUX DRACONIQUE (100%)';
+        stanceLabel = tr('🔥 DRACONIC WRATH (100%)', '🔥 COURROUX DRACONIQUE (100%)');
         stanceCls = 'stance-wrath';
       } else if (stance === 'prey_pacifist' || spConf.clade === 'herbivore') {
-        stanceLabel = `🦌 Gibier Pacifique (+${foodYield || 25} 🍖)`;
+        stanceLabel = tr(
+          `🦌 Peaceful Prey (+${foodYield || 25} 🍖)`,
+          `🦌 Gibier Pacifique (+${foodYield || 25} 🍖)`
+        );
         stanceCls = 'stance-prey_pacifist';
       } else if (stance === 'pacifist_apex') {
-        stanceLabel = `👑 Souverain Pacifique (${avgAggroPct}%)`;
+        stanceLabel = tr(
+          `👑 Peaceful Sovereign (${avgAggroPct}%)`,
+          `👑 Souverain Pacifique (${avgAggroPct}%)`
+        );
         stanceCls = 'stance-pacifist_apex';
       } else if (stance === 'territorial') {
         stanceLabel = `🛡️ Territorial (${avgAggroPct}%)`;
@@ -2947,7 +3188,7 @@ export class HUDManager {
         el(
           'span',
           'codex-item-title',
-          `${spIcon}${name} (${sc ? `${sc.adults} Ad. / ${sc.babies} 🐣` : '0 en vie'})`
+          `${spIcon}${name} (${sc ? `${sc.adults} Ad. / ${sc.babies} 🐣` : tr('0 alive', '0 en vie')})`
         ),
         el('span', `codex-stance-badge ${stanceCls}`, stanceLabel)
       );
@@ -2955,7 +3196,10 @@ export class HUDManager {
       const cycleLine = el(
         'div',
         'codex-item-desc',
-        `⏱️ Cycle Reproduction : Gestation ~${avgGest}s (Base ${baseGest}s) · Maturation Bébé ${baseMat}s`
+        tr(
+          `⏱️ Breeding Cycle: Gestation ~${avgGest}s (Base ${baseGest}s) · Baby Maturation ${baseMat}s`,
+          `⏱️ Cycle Reproduction : Gestation ~${avgGest}s (Base ${baseGest}s) · Maturation Bébé ${baseMat}s`
+        )
       );
 
       const hpRange =
@@ -2978,12 +3222,21 @@ export class HUDManager {
       const scopeBox = el(
         'div',
         'codex-scope-box',
-        `🧬 Étendue [Papa,Maman]±10% : PV ${hpRange} · Force ${dmgRange} · Vit ${spdRange} · Gest. ${gestRange}`
+        tr(
+          `🧬 Range [Dad,Mom]±10%: HP ${hpRange} · Str ${dmgRange} · Spd ${spdRange} · Gest. ${gestRange}`,
+          `🧬 Étendue [Papa,Maman]±10% : PV ${hpRange} · Force ${dmgRange} · Vit ${spdRange} · Gest. ${gestRange}`
+        )
       );
 
       const repopText = !autoRepop
-        ? `⚠️ PAS DE REPEUPLEMENT AUTO (<2 indiv. = EXTINCTION ! Réintroduction Bio-Labo : 25 🌿 Biomasse)`
-        : `🕳️ Repeuplement auto (<2 indiv., ${repopCd}s) : ${habitat}`;
+        ? tr(
+            `⚠️ NO AUTO-REPOPULATION (<2 indiv. = EXTINCTION! Bio-Lab Reintroduction: 25 🌿 Biomass)`,
+            `⚠️ PAS DE REPEUPLEMENT AUTO (<2 indiv. = EXTINCTION ! Réintroduction Bio-Labo : 25 🌿 Biomasse)`
+          )
+        : tr(
+            `🕳️ Auto-repopulation (<2 indiv., ${repopCd}s): ${habitat}`,
+            `🕳️ Repeuplement auto (<2 indiv., ${repopCd}s) : ${habitat}`
+          );
       const repopLine = el('div', 'codex-repop-pill', repopText);
 
       spCard.append(spHeader, cycleLine, scopeBox, repopLine);
@@ -3004,12 +3257,18 @@ export class HUDManager {
 
       const titleRow = el('div', 'codex-item-title');
       titleRow.append(
-        el('span', '', `${hyb.name}`),
-        el('span', 'hud-lineage-badge badge-spread', `${count} en vie`)
+        el('span', '', `${translateString(hyb.name)}`),
+        el('span', 'hud-lineage-badge badge-spread', tr(`${count} alive`, `${count} en vie`))
       );
 
-      const parentsText = `Parents : ${hyb.parentSpecies.join(' × ')} (Dist. phylogénétique : ${hyb.phylogeneticDistance})`;
-      const statsText = `PV Base: ${hyb.baseHp} · Dégâts: ${hyb.baseDamage} · Vitesse: ${hyb.baseSpeed}`;
+      const parentsText = tr(
+        `Parents: ${hyb.parentSpecies.map((p) => translateString(p)).join(' × ')} (Phylogenetic dist.: ${hyb.phylogeneticDistance})`,
+        `Parents : ${hyb.parentSpecies.join(' × ')} (Dist. phylogénétique : ${hyb.phylogeneticDistance})`
+      );
+      const statsText = tr(
+        `Base HP: ${hyb.baseHp} · Damage: ${hyb.baseDamage} · Speed: ${hyb.baseSpeed}`,
+        `PV Base: ${hyb.baseHp} · Dégâts: ${hyb.baseDamage} · Vitesse: ${hyb.baseSpeed}`
+      );
       hCard.append(
         titleRow,
         el('div', 'codex-item-desc', parentsText),
@@ -3032,19 +3291,22 @@ export class HUDManager {
 
       const titleRow = el('div', 'codex-item-title');
       titleRow.append(
-        el('span', '', mut.name),
+        el('span', '', translateString(mut.name)),
         el(
           'span',
           `hud-lineage-badge ${count > 0 ? 'badge-pz' : 'badge-eradicated'}`,
-          `${count} porteur${count > 1 ? 's' : ''}`
+          tr(`${count} carrier${count > 1 ? 's' : ''}`, `${count} porteur${count > 1 ? 's' : ''}`)
         )
       );
 
       const sm = mut.statMultipliers || {};
-      const statsLine = `Fitness +${mut.fitnessBonus} · PV ×${sm.maxHp || 1} · Force ×${sm.strength || 1} · Vitesse ×${sm.speed || 1} · Métabolisme ×${mut.metabolismCost || 1}`;
+      const statsLine = tr(
+        `Fitness +${mut.fitnessBonus} · HP ×${sm.maxHp || 1} · Str ×${sm.strength || 1} · Spd ×${sm.speed || 1} · Metabolism ×${mut.metabolismCost || 1}`,
+        `Fitness +${mut.fitnessBonus} · PV ×${sm.maxHp || 1} · Force ×${sm.strength || 1} · Vitesse ×${sm.speed || 1} · Métabolisme ×${mut.metabolismCost || 1}`
+      );
       mCard.append(
         titleRow,
-        el('div', 'codex-item-desc', mut.description || ''),
+        el('div', 'codex-item-desc', translateString(mut.description || '')),
         el('div', 'codex-item-stats', statsLine)
       );
       mutGrid.appendChild(mCard);
@@ -3160,7 +3422,7 @@ export class HUDManager {
             'font-size': '9.0',
             'text-anchor': 'middle',
           },
-          `${edge.hybridName} (d=${edge.distance}, ${probPct}%)`
+          `${translateString(edge.hybridName)} (d=${edge.distance}, ${probPct}%)`
         )
       );
     }
@@ -3191,7 +3453,7 @@ export class HUDManager {
             'font-weight': '700',
             'text-anchor': 'middle',
           },
-          node.name
+          translateString(node.name)
         )
       );
 
@@ -3433,14 +3695,20 @@ export class HUDManager {
       const iconAndTitle = el(
         'div',
         'levelup-card-title',
-        `${upg.icon || '⚡'} ${upg.name}`
+        `${upg.icon || '⚡'} ${translateString(upg.name)}`
       );
 
-      let badgeLabel = upg.category || 'Adaptation';
+      let badgeLabel = translateString(upg.category || 'Adaptation');
       if (upg.isSpell) {
         badgeLabel = upg.isNewSpell
-          ? `✨ NOUVEAU SORT 3D (Niv. 1/${upg.maxLevel || 5})`
-          : `⬆️ AMÉLIORATION SORT (Niv. ${upg.currentLevel} → ${upg.nextLevel})`;
+          ? tr(
+              `✨ NEW 3D SPELL (Lv. 1/${upg.maxLevel || 5})`,
+              `✨ NOUVEAU SORT 3D (Niv. 1/${upg.maxLevel || 5})`
+            )
+          : tr(
+              `⬆️ SPELL UPGRADE (Lv. ${upg.currentLevel} → ${upg.nextLevel})`,
+              `⬆️ AMÉLIORATION SORT (Niv. ${upg.currentLevel} → ${upg.nextLevel})`
+            );
       }
 
       const categoryBadge = el(
@@ -3448,12 +3716,19 @@ export class HUDManager {
         `hud-lineage-badge ${upg.isSpell ? 'badge-pz' : 'badge-spread'}`,
         badgeLabel
       );
-      const desc = el('p', 'levelup-card-desc', upg.description || '');
+      const desc = el('p', 'levelup-card-desc', translateString(upg.description || ''));
 
       top.append(iconAndTitle, categoryBadge);
       if (upg.counterTarget) {
         top.appendChild(
-          el('div', 'codex-item-stats', `Contre-mesure : ${upg.counterTarget}`)
+          el(
+            'div',
+            'codex-item-stats',
+            tr(
+              `Countermeasure: ${translateString(upg.counterTarget)}`,
+              `Contre-mesure : ${upg.counterTarget}`
+            )
+          )
         );
       } else if (upg.statsAtNextLevel) {
         const st = upg.statsAtNextLevel;
@@ -3461,16 +3736,19 @@ export class HUDManager {
           el(
             'div',
             'codex-item-stats',
-            `Dégâts: ${st.damage} · Portée: ${st.range}m · Recharge: ${st.cooldown > 0 ? `${st.cooldown}s` : 'Permanent'}`
+            tr(
+              `Damage: ${st.damage} · Range: ${st.range}m · Cooldown: ${st.cooldown > 0 ? `${st.cooldown}s` : 'Permanent'}`,
+              `Dégâts: ${st.damage} · Portée: ${st.range}m · Recharge: ${st.cooldown > 0 ? `${st.cooldown}s` : 'Permanent'}`
+            )
           )
         );
       }
 
       const btnLabel = upg.isSpell
         ? upg.isNewSpell
-          ? '✨ Débloquer ce Sort 3D'
-          : `⬆️ Améliorer au Niv. ${upg.nextLevel}`
-        : '🛡️ Choisir cette Adaptation';
+          ? tr('✨ Unlock 3D Spell', '✨ Débloquer ce Sort 3D')
+          : tr(`⬆️ Upgrade to Lv. ${upg.nextLevel}`, `⬆️ Améliorer au Niv. ${upg.nextLevel}`)
+        : tr('🛡️ Choose Adaptation', '🛡️ Choisir cette Adaptation');
       const chooseBtn = el('button', 'hud-btn hud-btn-amber', btnLabel);
       chooseBtn.type = 'button';
 
@@ -3596,16 +3874,29 @@ export class HUDManager {
 
     if (this.bastionArchitectResBar) {
       this.bastionArchitectResBar.replaceChildren(
-        el('div', 'hud-resource-badge res-wood', `🪵 Bois dispo: ${Math.floor(res.wood ?? 0)}`),
+        el(
+          'div',
+          'hud-resource-badge res-wood',
+          tr(
+            `🪵 Available Wood: ${Math.floor(res.wood ?? 0)}`,
+            `🪵 Bois dispo: ${Math.floor(res.wood ?? 0)}`
+          )
+        ),
         el(
           'div',
           'hud-resource-badge res-crystal',
-          `💎 Cristal dispo: ${Math.floor(res.crystal ?? 0)}`
+          tr(
+            `💎 Available Crystal: ${Math.floor(res.crystal ?? 0)}`,
+            `💎 Cristal dispo: ${Math.floor(res.crystal ?? 0)}`
+          )
         ),
         el(
           'div',
           'hud-resource-badge res-biomass',
-          `🌿 Biomasse dispo: ${Math.floor(res.biomass ?? 0)}`
+          tr(
+            `🌿 Available Biomass: ${Math.floor(res.biomass ?? 0)}`,
+            `🌿 Biomasse dispo: ${Math.floor(res.biomass ?? 0)}`
+          )
         )
       );
     }
@@ -3629,16 +3920,18 @@ export class HUDManager {
       const titleGroup = el('div', 'bastion-architect-title-group');
       titleGroup.append(
         el('span', 'bastion-architect-icon', spec.icon),
-        el('div', 'bastion-architect-name', `${spec.name} [${spec.hotkey}]`)
+        el('div', 'bastion-architect-name', `${translateString(spec.name)} [${spec.hotkey}]`)
       );
       const lvlBadge = el(
         'span',
         `hud-building-lvl-badge${currentLevel === 0 ? ' lvl-0' : spec.isMaxLevel ? ' lvl-max' : ''}`,
-        spec.isMaxLevel ? 'NIV. 3 MAX' : `Niv. ${currentLevel} / ${spec.maxLevel}`
+        spec.isMaxLevel
+          ? tr('LV. 3 MAX', 'NIV. 3 MAX')
+          : tr(`Lv. ${currentLevel} / ${spec.maxLevel}`, `Niv. ${currentLevel} / ${spec.maxLevel}`)
       );
       header.append(titleGroup, lvlBadge);
 
-      const summary = el('p', 'bastion-architect-summary', bDef.summary);
+      const summary = el('p', 'bastion-architect-summary', translateString(bDef.summary));
 
       const tiersWrap = el('div', 'bastion-architect-tiers');
       for (const tier of bDef.levels || []) {
@@ -3651,9 +3944,12 @@ export class HUDManager {
           el(
             'div',
             'bastion-tier-title',
-            `${tier.level <= currentLevel ? '✅' : '🔒'} Niv. ${tier.level} — ${tier.label}`
+            tr(
+              `${tier.level <= currentLevel ? '✅' : '🔒'} Lv. ${tier.level} — ${translateString(tier.label)}`,
+              `${tier.level <= currentLevel ? '✅' : '🔒'} Niv. ${tier.level} — ${tier.label}`
+            )
           ),
-          el('div', '', tier.effectText)
+          el('div', '', translateString(tier.effectText))
         );
         tiersWrap.appendChild(tierRow);
       }
@@ -3662,15 +3958,23 @@ export class HUDManager {
       const costSpan = el(
         'span',
         `hud-building-cost${spec.isMaxLevel ? '' : affordable ? ' is-affordable' : ' is-missing'}`,
-        spec.isMaxLevel ? '✨ Niveau Maximum Atteint' : `Coût Niv. ${spec.nextLevel}: ${spec.costText}`
+        spec.isMaxLevel
+          ? tr('✨ Maximum Level Reached', '✨ Niveau Maximum Atteint')
+          : tr(
+              `Cost Lv. ${spec.nextLevel}: ${translateString(spec.costText)}`,
+              `Coût Niv. ${spec.nextLevel}: ${spec.costText}`
+            )
       );
 
       const actBtn = el(
         'button',
         `hud-btn hud-building-upgrade-btn${!spec.isMaxLevel && affordable ? ' is-ready-glow' : ''}`,
         spec.isMaxLevel
-          ? '✅ Niv. 3 Max'
-          : `⬆️ ${spec.actionVerb} → Niv. ${spec.nextLevel} [${spec.hotkey}]`
+          ? tr('✅ Lv. 3 Max', '✅ Niv. 3 Max')
+          : tr(
+              `⬆️ ${translateString(spec.actionVerb)} → Lv. ${spec.nextLevel} [${spec.hotkey}]`,
+              `⬆️ ${spec.actionVerb} → Niv. ${spec.nextLevel} [${spec.hotkey}]`
+            )
       );
       actBtn.type = 'button';
       actBtn.disabled = spec.isMaxLevel || !affordable;
@@ -3780,20 +4084,26 @@ export class HUDManager {
       const equippedSpec = getElementalWeaponSpec(equippedId);
       const stats = [
         {
-          val: `${equippedSpec.icon} ${equippedSpec.shortName}`,
-          lbl: 'Arme Équipée Active',
+          val: `${equippedSpec.icon} ${translateString(equippedSpec.shortName)}`,
+          lbl: tr('Active Equipped Weapon', 'Arme Équipée Active'),
         },
         {
-          val: `+${Math.round(((equippedSpec.damageMultiplier || 1) - 1) * 100)}% Dégâts`,
-          lbl: 'Puissance Élémentaire',
+          val: tr(
+            `+${Math.round(((equippedSpec.damageMultiplier || 1) - 1) * 100)}% Damage`,
+            `+${Math.round(((equippedSpec.damageMultiplier || 1) - 1) * 100)}% Dégâts`
+          ),
+          lbl: tr('Elemental Power', 'Puissance Élémentaire'),
         },
         {
-          val: `${relicCount} / ${maxRelics} Reliques`,
-          lbl: 'Fragments de Relique d’Éden',
+          val: tr(`${relicCount} / ${maxRelics} Relics`, `${relicCount} / ${maxRelics} Reliques`),
+          lbl: tr('Eden Relic Fragments', 'Fragments de Relique d’Éden'),
         },
         {
-          val: relicCount >= maxRelics ? '🛡️ PRÊT [V]' : '🧭 En Exploration',
-          lbl: 'Dôme-Bouclier Planétaire',
+          val:
+            relicCount >= maxRelics
+              ? tr('🛡️ READY [V]', '🛡️ PRÊT [V]')
+              : tr('🧭 Exploring', '🧭 En Exploration'),
+          lbl: tr('Planetary Shield Dome', 'Dôme-Bouclier Planétaire'),
         },
       ];
       for (const s of stats) {
@@ -3817,20 +4127,20 @@ export class HUDManager {
       const iconBox = el('div', 'weapon-forge-icon', wSpec.icon);
       const titleGroup = el('div', '');
       titleGroup.append(
-        el('h4', 'weapon-forge-title', wSpec.name),
-        el('span', 'weapon-forge-element-tag', wSpec.badgeText || wSpec.element)
+        el('h4', 'weapon-forge-title', translateString(wSpec.name)),
+        el('span', 'weapon-forge-element-tag', translateString(wSpec.badgeText || wSpec.element))
       );
       head.append(iconBox, titleGroup);
 
-      const desc = el('p', 'weapon-forge-desc', wSpec.description);
-      const passive = el('div', 'weapon-forge-passive', wSpec.passiveDesc);
+      const desc = el('p', 'weapon-forge-desc', translateString(wSpec.description));
+      const passive = el('div', 'weapon-forge-passive', translateString(wSpec.passiveDesc));
 
       const equipBtn = el(
         'button',
         `weapon-forge-equip-btn${isEquipped ? ' is-equipped' : ''}`,
         isEquipped
-          ? '✅ Arme Actuellement Équipée'
-          : `⚔️ Équiper ${wSpec.shortName}`
+          ? tr('✅ Weapon Currently Equipped', '✅ Arme Actuellement Équipée')
+          : tr(`⚔️ Equip ${translateString(wSpec.shortName)}`, `⚔️ Équiper ${wSpec.shortName}`)
       );
       equipBtn.type = 'button';
       equipBtn.addEventListener('click', () => {
@@ -3946,6 +4256,7 @@ export class HUDManager {
    * @param {Object} [islandData]
    */
   showIslandVictoryModal(islandData = {}) {
+    this._lastIslandVictoryData = islandData;
     const currentIsland = islandData.islandNumber || 1;
     const nextIsland = currentIsland + 1;
     const currentTier = getIslandTierSpec(currentIsland);
@@ -3957,21 +4268,38 @@ export class HUDManager {
 
     this._applyAlertBannerPortrait('island_victory');
 
+    const curName = translateString(currentTier.name);
+    const curSub = translateString(currentTier.subtitle);
+    const nextName = translateString(nextTier.name);
+    const nextSub = translateString(nextTier.subtitle);
+
     if (this.islandVictoryHeadlineEl) {
-      this.islandVictoryHeadlineEl.textContent = `🛡️ ${currentTier.name} Sanctuarisée — Dôme-Bouclier Planétaire Actif !`;
+      this.islandVictoryHeadlineEl.textContent = tr(
+        `🛡️ ${curName} Sanctuarized — Planetary Shield Dome Active!`,
+        `🛡️ ${currentTier.name} Sanctuarisée — Dôme-Bouclier Planétaire Actif !`
+      );
     }
     if (this.islandVictoryLoreEl) {
-      this.islandVictoryLoreEl.textContent = `Grâce aux ${relicCount}/3 Reliques d'Éden, le Dôme-Bouclier Planétaire protège désormais ${currentTier.name} (${currentTier.subtitle}). Prochaine destination : ${nextTier.name} (${nextTier.subtitle}) — Multiplicateur de menace x${nextTier.enemyStatMultiplier.toFixed(2)}, bonus de mutation +${Math.round(nextTier.mutationRateBonus * 100)}%.`;
+      this.islandVictoryLoreEl.textContent = tr(
+        `Thanks to the ${relicCount}/3 Eden Relics, the Planetary Shield Dome now protects ${curName} (${curSub}). Next destination: ${nextName} (${nextSub}) — Threat multiplier x${nextTier.enemyStatMultiplier.toFixed(2)}, mutation bonus +${Math.round(nextTier.mutationRateBonus * 100)}%.`,
+        `Grâce aux ${relicCount}/3 Reliques d'Éden, le Dôme-Bouclier Planétaire protège désormais ${currentTier.name} (${currentTier.subtitle}). Prochaine destination : ${nextTier.name} (${nextTier.subtitle}) — Multiplicateur de menace x${nextTier.enemyStatMultiplier.toFixed(2)}, bonus de mutation +${Math.round(nextTier.mutationRateBonus * 100)}%.`
+      );
     }
 
     if (this.islandVictoryStatsGrid) {
       this.islandVictoryStatsGrid.replaceChildren();
       const stats = [
-        { val: `Île #${currentIsland} → #${nextIsland}`, lbl: 'Campagne Archipel' },
-        { val: `${relicCount} / 3 🧩`, lbl: 'Reliques d’Éden Assemblées' },
         {
-          val: `${equippedWeapon.icon} ${equippedWeapon.shortName}`,
-          lbl: 'Arme Élémentaire Conservée',
+          val: tr(`Island #${currentIsland} → #${nextIsland}`, `Île #${currentIsland} → #${nextIsland}`),
+          lbl: tr('Archipelago Campaign', 'Campagne Archipel'),
+        },
+        {
+          val: `${relicCount} / 3 🧩`,
+          lbl: tr('Assembled Eden Relics', 'Reliques d’Éden Assemblées'),
+        },
+        {
+          val: `${equippedWeapon.icon} ${translateString(equippedWeapon.shortName)}`,
+          lbl: tr('Retained Elemental Weapon', 'Arme Élémentaire Conservée'),
         },
       ];
       for (const s of stats) {
@@ -3985,7 +4313,10 @@ export class HUDManager {
     }
 
     if (this.advanceNextIslandBtn) {
-      this.advanceNextIslandBtn.textContent = `⛵ CAP SUR L’ÎLE SUIVANTE (${nextTier.name}) →`;
+      this.advanceNextIslandBtn.textContent = tr(
+        `⛵ SET SAIL FOR NEXT ISLAND (${nextName}) →`,
+        `⛵ CAP SUR L’ÎLE SUIVANTE (${nextTier.name}) →`
+      );
     }
 
     this.isIslandModalOpen = true;
@@ -4153,21 +4484,10 @@ export class HUDManager {
    * Met immédiatement la simulation 3D en pause (`this.isGameOverModalOpen = true`).
    *
    * @param {Object} [summary={}] - Bilan de la run roguelike et circonstances de la mort.
-   * @param {string} [summary.killerName] - Nom de l'ennemi ou de la cause ayant terrassé le Gardien.
-   * @param {string} [summary.reason] - `'player_dead'` / `'hero_slain'` ou `'bastion_destroyed'` / `'bastion_fallen'`.
-   * @param {number} [summary.islandNumber] - Numéro de l'île atteinte.
-   * @param {number} [summary.playerLevel] - Niveau atteint par le Gardien.
-   * @param {string} [summary.combatMode] - Mode de combat actif.
-   * @param {string} [summary.equippedWeaponId] - Identifiant de l'arme élémentaire équipée.
-   * @param {number} [summary.spellsCount] - Nombre de Sorts 3D débloqués.
-   * @param {number} [summary.masteryRanks] - Nombre total de rangs de maîtrise adaptative.
-   * @param {number} [summary.totalKilled] - Nombre total de monstres éliminés.
-   * @param {number} [summary.mutantsKilled] - Nombre de mutants éliminés.
-   * @param {number} [summary.relicCount] - Fragments de Relique d'Éden collectés (`0..3`).
-   * @param {number} [summary.generation] - Génération darwinienne maximale atteinte.
    */
   showGameOverModal(summary = {}) {
     if (!this.gameOverBackdrop) return;
+    this._lastGameOverSummary = summary;
 
     const p = summary.player || this.lastPlayerRef || {};
     const b = summary.bastionAndNpcs || this.lastBastionRef || {};
@@ -4177,19 +4497,26 @@ export class HUDManager {
     const isBastionFallen =
       summary.reason === 'bastion_destroyed' || summary.reason === 'bastion_fallen';
 
-    const killerName =
+    const rawKillerName =
       summary.killerName ||
       p.lastKillerName ||
       p.lastDamageSource ||
       (isBastionFallen
-        ? 'Destruction du Cœur du Sanctuaire'
-        : 'Prédateur Mutant de l’Archipel');
+        ? tr('Destruction of the Sanctuary Core', 'Destruction du Cœur du Sanctuaire')
+        : tr('Mutant Archipelago Predator', 'Prédateur Mutant de l’Archipel'));
+    const killerName = translateString(rawKillerName);
 
     if (this.gameOverSubtitleEl) {
       if (isBastionFallen) {
-        this.gameOverSubtitleEl.textContent = `⚔️ Le Cœur du Sanctuaire a été détruit (${killerName}) — L’expédition s’achève ici`;
+        this.gameOverSubtitleEl.textContent = tr(
+          `⚔️ The Sanctuary Core was destroyed (${killerName}) — The expedition ends here`,
+          `⚔️ Le Cœur du Sanctuaire a été détruit (${killerName}) — L’expédition s’achève ici`
+        );
       } else {
-        this.gameOverSubtitleEl.textContent = `⚔️ Tombé au combat sous les coups de : ${killerName}`;
+        this.gameOverSubtitleEl.textContent = tr(
+          `⚔️ Fallen in battle under the blows of: ${killerName}`,
+          `⚔️ Tombé au combat sous les coups de : ${killerName}`
+        );
       }
     }
 
@@ -4204,7 +4531,9 @@ export class HUDManager {
     const playerLevel = summary.playerLevel || p.level || 1;
     const modeId = summary.combatMode || p.combatMode || this.combatMode || 'vampire_survivors';
     const modeLabel =
-      modeId === 'diablo_action' ? 'Mode Diablo [1-4]' : 'Mode Vampire Survivors (Auto)';
+      modeId === 'diablo_action'
+        ? tr('Diablo Mode [1-4]', 'Mode Diablo [1-4]')
+        : tr('Vampire Survivors Mode (Auto)', 'Mode Vampire Survivors (Auto)');
 
     const weaponId = summary.equippedWeaponId || p.equippedWeaponId || 'runic_steel';
     const weaponSpec = getElementalWeaponSpec(weaponId);
@@ -4250,34 +4579,43 @@ export class HUDManager {
       this.gameOverStatsGrid.replaceChildren();
       const cards = [
         {
-          label: '🏝️ Île Atteinte',
-          value: `Île #${islandNum}`,
-          sub: `${islandSpec.name} (${islandSpec.subtitle})`,
+          label: tr('🏝️ Island Reached', '🏝️ Île Atteinte'),
+          value: tr(`Island #${islandNum}`, `Île #${islandNum}`),
+          sub: `${translateString(islandSpec.name)} (${translateString(islandSpec.subtitle)})`,
         },
         {
-          label: '⭐ Niveau du Gardien',
-          value: `Niveau ${playerLevel}`,
+          label: tr('⭐ Guardian Level', '⭐ Niveau du Gardien'),
+          value: tr(`Level ${playerLevel}`, `Niveau ${playerLevel}`),
           sub: modeLabel,
         },
         {
-          label: '⚔️ Arme Élémentaire',
-          value: `${weaponSpec.icon} ${weaponSpec.shortName}`,
-          sub: weaponSpec.badgeText || 'Acier Runique',
+          label: tr('⚔️ Elemental Weapon', '⚔️ Arme Élémentaire'),
+          value: `${weaponSpec.icon} ${translateString(weaponSpec.shortName)}`,
+          sub: translateString(weaponSpec.badgeText || 'Acier Runique'),
         },
         {
-          label: '✨ Sorts & Maîtrises',
-          value: `${spellsCount} Sort${spellsCount > 1 ? 's' : ''} 3D`,
-          sub: `${masteryRanks} Rang${masteryRanks > 1 ? 's' : ''} de Maîtrise Adaptative`,
+          label: tr('✨ Spells & Masteries', '✨ Sorts & Maîtrises'),
+          value: tr(
+            `${spellsCount} 3D Spell${spellsCount > 1 ? 's' : ''}`,
+            `${spellsCount} Sort${spellsCount > 1 ? 's' : ''} 3D`
+          ),
+          sub: tr(
+            `${masteryRanks} Adaptive Mastery Rank${masteryRanks > 1 ? 's' : ''}`,
+            `${masteryRanks} Rang${masteryRanks > 1 ? 's' : ''} de Maîtrise Adaptative`
+          ),
         },
         {
-          label: '💀 Monstres Éliminés',
-          value: `${totalKilled} Vaincu${totalKilled > 1 ? 's' : ''}`,
-          sub: `dont ${mutantsKilled} Mutant${mutantsKilled > 1 ? 's' : ''} / Patient Zéro`,
+          label: tr('💀 Monsters Slain', '💀 Monstres Éliminés'),
+          value: tr(`${totalKilled} Slain`, `${totalKilled} Vaincu${totalKilled > 1 ? 's' : ''}`),
+          sub: tr(
+            `incl. ${mutantsKilled} Mutant${mutantsKilled > 1 ? 's' : ''} / Patient Zero`,
+            `dont ${mutantsKilled} Mutant${mutantsKilled > 1 ? 's' : ''} / Patient Zéro`
+          ),
         },
         {
-          label: '🧩 Reliques & Génétique',
-          value: `${relicCount} / ${maxRelics} Reliques`,
-          sub: `Génération Darwinienne #${generation}`,
+          label: tr('🧩 Relics & Genetics', '🧩 Reliques & Génétique'),
+          value: tr(`${relicCount} / ${maxRelics} Relics`, `${relicCount} / ${maxRelics} Reliques`),
+          sub: tr(`Darwinian Generation #${generation}`, `Génération Darwinienne #${generation}`),
         },
       ];
 
@@ -4306,6 +4644,640 @@ export class HUDManager {
     }
   }
 
+  /* ==========================================================================
+     7F. MODALE PARAMÈTRES, LANGUE (EN/FR), VOIX GEMINI TTS & AUDIO MIXER [O] (PHASE 13)
+     ========================================================================== */
+  _buildSettingsModal() {
+    this.settingsModalBackdrop = el('div', 'modal-backdrop hud-interactive');
+
+    const card = el('div', 'modal-card settings-modal-card');
+
+    const header = el('div', 'modal-header');
+    const titleWrap = el('div', 'modal-title-wrap');
+    this.settingsModalTitleEl = el(
+      'h2',
+      'modal-title',
+      tr(
+        '⚙️ Settings — Language, Voices, Audio & 3D Graphics [O]',
+        '⚙️ Paramètres — Langue, Voix, Audio & Graphismes 3D [O]'
+      )
+    );
+    this.settingsModalSubtitleEl = el(
+      'p',
+      'modal-subtitle',
+      tr(
+        'Switch UI & Gemini TTS voice language (English default, French 2nd), adjust Lyria 3 / Voice / SFX volumes, or toggle gameplay & 3D options.',
+        'Changez la langue de l’interface et des voix Gemini TTS (Anglais par défaut, Français en 2e), ajustez le mixeur audio ou basculez les options 3D.'
+      )
+    );
+    titleWrap.append(this.settingsModalTitleEl, this.settingsModalSubtitleEl);
+
+    this.settingsCloseBtn = el(
+      'button',
+      'modal-close-btn',
+      tr('✕ [O] / [Esc] Close Settings', '✕ [O] / [Échap] Fermer Paramètres')
+    );
+    this.settingsCloseBtn.type = 'button';
+    this.settingsCloseBtn.addEventListener('click', () => this.hideSettingsModal());
+
+    header.append(titleWrap, this.settingsCloseBtn);
+
+    this.settingsModalBody = el('div', 'modal-body');
+    card.append(header, this.settingsModalBody);
+    this.settingsModalBackdrop.appendChild(card);
+
+    this.settingsModalBackdrop.addEventListener('click', (evt) => {
+      if (evt.target === this.settingsModalBackdrop) {
+        this.hideSettingsModal();
+      }
+    });
+
+    this.root.appendChild(this.settingsModalBackdrop);
+    this.renderSettingsModalContent();
+  }
+
+  /**
+   * Ouvre la modale des Paramètres (`[O]`) et met le jeu en pause (`this.isSettingsModalOpen = true`).
+   */
+  showSettingsModal() {
+    if (!this.settingsModalBackdrop) return;
+    this.isSettingsModalOpen = true;
+    this.renderSettingsModalContent();
+    this.settingsModalBackdrop.classList.add('is-open');
+  }
+
+  /**
+   * Ferme la modale des Paramètres (`[O]`) et reprend la simulation (`this.isSettingsModalOpen = false`).
+   */
+  hideSettingsModal() {
+    this.isSettingsModalOpen = false;
+    if (this.settingsModalBackdrop) {
+      this.settingsModalBackdrop.classList.remove('is-open');
+    }
+  }
+
+  /**
+   * Bascule l'ouverture/fermeture de la modale des Paramètres (`[O]`).
+   * @param {boolean} [forceState]
+   * @returns {boolean}
+   */
+  toggleSettingsModal(forceState) {
+    const next = typeof forceState === 'boolean' ? forceState : !this.isSettingsModalOpen;
+    if (next) {
+      this.showSettingsModal();
+    } else {
+      this.hideSettingsModal();
+    }
+    return this.isSettingsModalOpen;
+  }
+
+  /**
+   * Construit le contenu interactif de la modale Paramètres :
+   * 1. Langue de l'interface & des voix Gemini TTS (`🇬🇧 English (Default)` vs `🇫🇷 Français (2nd)`) + Bouton Tester la Voix
+   * 2. Mixeur Audio (`Mute [M]`, `Musique Lyria 3`, `Voix Gemini TTS`, `Effets SFX Combat` : 0% / 25% / 50% / 75% / 100%)
+   * 3. Gameplay & Graphismes 3D (`Mode de Combat [C]`, `Modèles Blender 5.0 [J]`, `Post-Processing Bloom`, `Grille Conway [G]`)
+   * 4. Bouton Fermer (`[O] / [Esc] Close Settings`)
+   */
+  renderSettingsModalContent() {
+    if (!this.settingsModalBody) return;
+    this.settingsModalBody.replaceChildren();
+
+    const currentLang = getLanguage();
+
+    if (this.settingsModalTitleEl) {
+      this.settingsModalTitleEl.textContent = tr(
+        '⚙️ Settings — Language, Voices, Audio & 3D Graphics [O]',
+        '⚙️ Paramètres — Langue, Voix, Audio & Graphismes 3D [O]'
+      );
+    }
+    if (this.settingsModalSubtitleEl) {
+      this.settingsModalSubtitleEl.textContent = tr(
+        'Switch UI & Gemini TTS voice language (English default, French 2nd), adjust Lyria 3 / Voice / SFX volumes, or toggle gameplay & 3D options.',
+        'Changez la langue de l’interface et des voix Gemini TTS (Anglais par défaut, Français en 2e), ajustez le mixeur audio ou basculez les options 3D.'
+      );
+    }
+    if (this.settingsCloseBtn) {
+      this.settingsCloseBtn.textContent = tr(
+        '✕ [O] / [Esc] Close Settings',
+        '✕ [O] / [Échap] Fermer Paramètres'
+      );
+    }
+
+    // Bannière de pause
+    const pauseBanner = el('div', 'hud-pause-banner');
+    pauseBanner.append(
+      el('span', 'hud-pause-banner-icon', '⏸️'),
+      el(
+        'span',
+        '',
+        tr(
+          'GAME PAUSED — Changes to language, voices, audio mixer, and 3D graphics apply immediately.',
+          'JEU EN PAUSE — Les changements de langue, de voix, de mixeur audio et de graphismes 3D s’appliquent immédiatement.'
+        )
+      )
+    );
+    this.settingsModalBody.appendChild(pauseBanner);
+
+    // =========================================================================
+    // SECTION 1 : LANGUE DE L'INTERFACE & DES VOIX GEMINI TTS (EN DEFAULT / FR 2ND)
+    // =========================================================================
+    const langSection = el('div', 'settings-section');
+    const langHeader = el('div', 'settings-section-header');
+    langHeader.append(
+      el(
+        'h3',
+        'settings-section-title',
+        tr(
+          '🌐 Interface & Voice Language / Langue UI & Voix',
+          '🌐 Langue UI & Voix / Interface & Voice Language'
+        )
+      ),
+      el(
+        'span',
+        'hud-panel-subtitle',
+        tr('English Default • French 2nd', 'Anglais par défaut • Français en 2e')
+      )
+    );
+    langSection.appendChild(langHeader);
+
+    const langGrid = el('div', 'settings-lang-grid');
+
+    // Carte 1 : English (Default)
+    const enCard = el(
+      'button',
+      `settings-lang-card${currentLang === 'en' ? ' is-active' : ''}`
+    );
+    enCard.type = 'button';
+    const enTop = el('div', 'settings-lang-card-top');
+    const enNameWrap = el('div', '');
+    enNameWrap.append(
+      el('span', 'settings-lang-flag', '🇬🇧 '),
+      el('span', 'settings-lang-name', 'English (Default)')
+    );
+    const enBadge = el(
+      'span',
+      'settings-lang-badge',
+      currentLang === 'en' ? tr('ACTIVE • DEFAULT', 'ACTIF • DÉFAUT') : 'DEFAULT (1st)'
+    );
+    enTop.append(enNameWrap, enBadge);
+    const enDesc = el(
+      'div',
+      'settings-lang-desc',
+      'Full English interface, codex, quests & 15 English Gemini TTS voiceovers (Commander Aldric & Scout Chief Kaelen).'
+    );
+    enCard.append(enTop, enDesc);
+    enCard.addEventListener('click', () => {
+      setLanguage('en');
+      if (typeof this.callbacks.onChangeLanguage === 'function') {
+        this.callbacks.onChangeLanguage('en');
+      }
+      this.refreshLanguage('en');
+    });
+
+    // Carte 2 : Français (2nd)
+    const frCard = el(
+      'button',
+      `settings-lang-card${currentLang === 'fr' ? ' is-active' : ''}`
+    );
+    frCard.type = 'button';
+    const frTop = el('div', 'settings-lang-card-top');
+    const frNameWrap = el('div', '');
+    frNameWrap.append(
+      el('span', 'settings-lang-flag', '🇫🇷 '),
+      el('span', 'settings-lang-name', 'Français (2nd)')
+    );
+    const frBadge = el(
+      'span',
+      'settings-lang-badge',
+      currentLang === 'fr' ? tr('ACTIVE • 2ND', 'ACTIF • 2E CHOIX') : '2E LANGUE (2nd)'
+    );
+    frTop.append(frNameWrap, frBadge);
+    const frDesc = el(
+      'div',
+      'settings-lang-desc',
+      'Interface intégrale en français, codex génétique, quêtes & 15 doublages vocaux Gemini TTS en français (Commandant Aldric & Cheffe Kaelen).'
+    );
+    frCard.append(frTop, frDesc);
+    frCard.addEventListener('click', () => {
+      setLanguage('fr');
+      if (typeof this.callbacks.onChangeLanguage === 'function') {
+        this.callbacks.onChangeLanguage('fr');
+      }
+      this.refreshLanguage('fr');
+    });
+
+    langGrid.append(enCard, frCard);
+    langSection.appendChild(langGrid);
+
+    const langVoiceRow = el('div', 'settings-lang-voice-row');
+    langVoiceRow.append(
+      el(
+        'span',
+        'codex-item-desc',
+        currentLang === 'en'
+          ? '🎙️ Active Voice Pack: English Gemini TTS (Fenrir & Kore — 24kHz WAV)'
+          : '🎙️ Pack Vocal Actif : Gemini TTS Français (Fenrir & Kore — 24kHz WAV)'
+      )
+    );
+    const previewVoiceBtn = el(
+      'button',
+      'hud-btn hud-btn-amber',
+      tr(
+        '🔈 Preview Voice / Tester la Voix (Aldric & Kaelen)',
+        '🔈 Tester la Voix / Preview Voice (Aldric & Kaelen)'
+      )
+    );
+    previewVoiceBtn.type = 'button';
+    previewVoiceBtn.addEventListener('click', () => {
+      if (typeof this.callbacks.onTestVoice === 'function') {
+        this.callbacks.onTestVoice(currentLang);
+      } else if (typeof this.callbacks.onReplayTutorialVoice === 'function') {
+        this.callbacks.onReplayTutorialVoice(this._currentOnboardingActNum || 1);
+      }
+    });
+    langVoiceRow.appendChild(previewVoiceBtn);
+    langSection.appendChild(langVoiceRow);
+
+    this.settingsModalBody.appendChild(langSection);
+
+    // =========================================================================
+    // SECTION 2 : MIXEUR AUDIO (LYRIA 3, VOIX GEMINI TTS & EFFETS SFX COMBAT)
+    // =========================================================================
+    const audioSection = el('div', 'settings-section');
+    const audioHeader = el('div', 'settings-section-header');
+    audioHeader.append(
+      el(
+        'h3',
+        'settings-section-title',
+        tr(
+          '🔊 Audio Mixer & Lyria 3 / Gemini TTS',
+          '🔊 Mixeur Audio & Lyria 3 / Gemini TTS'
+        )
+      )
+    );
+
+    const muteBtn = el(
+      'button',
+      `hud-btn ${this.isAudioMuted ? 'hud-btn-amber' : 'hud-btn-biomass'}`,
+      this.isAudioMuted
+        ? tr('🔇 Audio Muted — Click to Unmute [M]', '🔇 Audio Muet — Cliquer pour Réactiver [M]')
+        : tr('🔊 Audio Active — Click to Mute [M]', '🔊 Audio Actif — Cliquer pour Couper [M]')
+    );
+    muteBtn.type = 'button';
+    muteBtn.addEventListener('click', () => {
+      if (typeof this.callbacks.onToggleAudioMute === 'function') {
+        const nextMuted = this.callbacks.onToggleAudioMute();
+        if (typeof nextMuted === 'boolean') {
+          this.setAudioMuteUI(nextMuted);
+        } else {
+          this.setAudioMuteUI(!this.isAudioMuted);
+        }
+      } else {
+        this.setAudioMuteUI(!this.isAudioMuted);
+      }
+      this.renderSettingsModalContent();
+    });
+    audioHeader.appendChild(muteBtn);
+    audioSection.appendChild(audioHeader);
+
+    // Synchroniser les volumes depuis SoundManager si disponible
+    if (typeof this.callbacks.onGetAudioSettings === 'function') {
+      const liveAudio = this.callbacks.onGetAudioSettings();
+      if (liveAudio) {
+        if (typeof liveAudio.musicVolume === 'number') this.audioSettings.musicVolume = liveAudio.musicVolume;
+        if (typeof liveAudio.voiceVolume === 'number') this.audioSettings.voiceVolume = liveAudio.voiceVolume;
+        if (typeof liveAudio.sfxVolume === 'number') this.audioSettings.sfxVolume = liveAudio.sfxVolume;
+      }
+    }
+
+    const audioRowsWrap = el('div', 'settings-audio-rows');
+    const volumeSteps = [0, 0.25, 0.5, 0.75, 1.0];
+    const channels = [
+      {
+        key: 'musicVolume',
+        label: tr('🎵 Music Volume (Lyria 3 Adaptive Stems)', '🎵 Volume Musique (Stems Adaptatifs Lyria 3)'),
+        cbName: 'onSetMusicVolume',
+      },
+      {
+        key: 'voiceVolume',
+        label: tr('🎙️ Voiceover Volume (Gemini TTS Aldric & Kaelen)', '🎙️ Volume Voix (Gemini TTS Aldric & Kaelen)'),
+        cbName: 'onSetVoiceVolume',
+      },
+      {
+        key: 'sfxVolume',
+        label: tr('⚔️ Combat & Ecosystem SFX Volume', '⚔️ Volume Effets Sonores (Combat & Écosystème)'),
+        cbName: 'onSetSfxVolume',
+      },
+    ];
+
+    for (const ch of channels) {
+      const row = el('div', 'settings-audio-row');
+      const lbl = el('span', 'settings-audio-label', ch.label);
+      const pillGroup = el('div', 'settings-vol-pills');
+      const curVal = Number(this.audioSettings[ch.key] ?? 0.85);
+
+      // Trouver le palier le plus proche parmi [0, 0.25, 0.5, 0.75, 1.0]
+      let closestStep = volumeSteps[0];
+      for (const st of volumeSteps) {
+        if (Math.abs(curVal - st) < Math.abs(curVal - closestStep)) {
+          closestStep = st;
+        }
+      }
+
+      for (const step of volumeSteps) {
+        const pct = Math.round(step * 100);
+        const btn = el(
+          'button',
+          `settings-vol-btn${step === closestStep ? ' is-active' : ''}`,
+          `${pct}%`
+        );
+        btn.type = 'button';
+        btn.addEventListener('click', () => {
+          this.audioSettings[ch.key] = step;
+          if (typeof this.callbacks[ch.cbName] === 'function') {
+            this.callbacks[ch.cbName](step);
+          }
+          if (typeof this.callbacks.onChangeAudioSettings === 'function') {
+            this.callbacks.onChangeAudioSettings({ ...this.audioSettings });
+          }
+          this.renderSettingsModalContent();
+        });
+        pillGroup.appendChild(btn);
+      }
+
+      row.append(lbl, pillGroup);
+      audioRowsWrap.appendChild(row);
+    }
+
+    audioSection.appendChild(audioRowsWrap);
+    this.settingsModalBody.appendChild(audioSection);
+
+    // =========================================================================
+    // SECTION 3 : GAMEPLAY & GRAPHISMES 3D (COMBAT, BLENDER 5.0, BLOOM, CONWAY)
+    // =========================================================================
+    const gfxSection = el('div', 'settings-section');
+    const gfxHeader = el('div', 'settings-section-header');
+    gfxHeader.append(
+      el(
+        'h3',
+        'settings-section-title',
+        tr('🎮 Gameplay & 3D Graphics', '🎮 Gameplay & Graphismes 3D')
+      ),
+      el(
+        'span',
+        'hud-panel-subtitle',
+        tr('Real-time switches & hotkeys', 'Bascules temps réel & raccourcis')
+      )
+    );
+    gfxSection.appendChild(gfxHeader);
+
+    const togglesGrid = el('div', 'settings-toggles-grid');
+
+    // 3A. Mode de Combat [C]
+    const isAutoCombat = this.combatMode === 'vampire_survivors';
+    const combatCard = el('div', 'settings-toggle-card');
+    combatCard.append(
+      el('div', 'settings-toggle-title', tr('⚔️ Combat Mode [C]', '⚔️ Mode de Combat [C]')),
+      el(
+        'div',
+        'settings-toggle-desc',
+        isAutoCombat
+          ? tr(
+              'Auto-Attack & Auto-Cast 3D Spells as soon as cooldowns finish.',
+              'Frappe et lance automatiquement vos Sorts 3D dès qu’ils sont rechargés.'
+            )
+          : tr(
+              'Manual Sword Cleave (Click/Space) & Active 3D Spells on [1-4].',
+              'Frappe manuelle (Clic/Espace) et Sorts 3D lancés avec [1-4].'
+            )
+      )
+    );
+    const combatToggleBtn = el(
+      'button',
+      `hud-btn ${isAutoCombat ? 'hud-btn-biomass' : 'hud-btn-amber'}`,
+      isAutoCombat
+        ? tr('⚡ Auto (Vampire Survivors) [C]', '⚡ Auto (Vampire Survivors) [C]')
+        : tr('⚔️ Active (Diablo [1-4]) [C]', '⚔️ Actif (Diablo [1-4]) [C]')
+    );
+    combatToggleBtn.type = 'button';
+    combatToggleBtn.addEventListener('click', () => {
+      const nextMode = isAutoCombat ? 'diablo_action' : 'vampire_survivors';
+      this.setCombatMode(nextMode, true);
+      this.renderSettingsModalContent();
+    });
+    combatCard.appendChild(combatToggleBtn);
+
+    // 3B. Modèles 3D Blender 5.0 (.glb) vs Procédural Classique [J]
+    const blenderCard = el('div', 'settings-toggle-card');
+    blenderCard.append(
+      el(
+        'div',
+        'settings-toggle-title',
+        tr('🎨 3D Models Pipeline [J]', '🎨 Pipeline Modèles 3D [J]')
+      ),
+      el(
+        'div',
+        'settings-toggle-desc',
+        this.isBlenderMode
+          ? tr(
+              'Using 15 low-poly PBR Blender 5.0 (.glb) assets with vertex-color shaders.',
+              'Utilise les 15 modèles PBR low-poly Blender 5.0 (.glb) avec shaders vertex-color.'
+            )
+          : tr(
+              'Using classic procedural Three.js geometric primitives.',
+              'Utilise les géométries procédurales Three.js classiques.'
+            )
+      )
+    );
+    const blenderToggleBtn = el(
+      'button',
+      `hud-btn ${this.isBlenderMode ? 'hud-btn-amber' : ''}`,
+      this.isBlenderMode
+        ? tr('🎨 Blender 5.0 (.glb) [J]', '🎨 Blender 5.0 (.glb) [J]')
+        : tr('📐 Procedural Classic [J]', '📐 Procédural Classique [J]')
+    );
+    blenderToggleBtn.type = 'button';
+    blenderToggleBtn.addEventListener('click', () => {
+      const next = !this.isBlenderMode;
+      this.setBlenderModeUI(next);
+      if (typeof this.callbacks.onToggleBlenderModels === 'function') {
+        this.callbacks.onToggleBlenderModels(next);
+      }
+      this.renderSettingsModalContent();
+    });
+    blenderCard.appendChild(blenderToggleBtn);
+
+    // 3C. Post-Processing Bloom vs Direct 60FPS
+    const bloomCard = el('div', 'settings-toggle-card');
+    bloomCard.append(
+      el(
+        'div',
+        'settings-toggle-title',
+        tr('✨ Post-Processing Bloom', '✨ Post-Processing Bloom')
+      ),
+      el(
+        'div',
+        'settings-toggle-desc',
+        this.isBloomEnabled
+          ? tr(
+              'UnrealBloomPass active for glowing runes and bioluminescent mutations.',
+              'UnrealBloomPass actif pour le halo lumineux des runes et mutations.'
+            )
+          : tr(
+              'Direct single-pass WebGL rendering for ultra-stable 60 FPS performance.',
+              'Rendu WebGL direct en une passe pour 60 FPS ultra-fluide.'
+            )
+      )
+    );
+    const bloomToggleBtn = el(
+      'button',
+      `hud-btn ${this.isBloomEnabled ? 'hud-btn-amber' : 'hud-btn-biomass'}`,
+      this.isBloomEnabled
+        ? tr('✨ Bloom ON', '✨ Bloom ACTIVÉ')
+        : tr('⚡ Direct 60FPS (Bloom OFF)', '⚡ Direct 60FPS (Bloom DÉSACTIVÉ)')
+    );
+    bloomToggleBtn.type = 'button';
+    bloomToggleBtn.addEventListener('click', () => {
+      this.isBloomEnabled = !this.isBloomEnabled;
+      if (typeof this.callbacks.onToggleBloom === 'function') {
+        this.callbacks.onToggleBloom(this.isBloomEnabled);
+      }
+      this.renderSettingsModalContent();
+    });
+    bloomCard.appendChild(bloomToggleBtn);
+
+    // 3D. Grille Automate Cellulaire de Conway [G]
+    const conwayCard = el('div', 'settings-toggle-card');
+    conwayCard.append(
+      el(
+        'div',
+        'settings-toggle-title',
+        tr('🧬 Conway Automaton Grid [G]', '🧬 Grille Automate de Conway [G]')
+      ),
+      el(
+        'div',
+        'settings-toggle-desc',
+        this.isConwayGridVisible
+          ? tr(
+              '3D Conway cellular automaton biomass overlay visible on terrain.',
+              'Surcouche 3D de biomasse de l’automate cellulaire de Conway visible au sol.'
+            )
+          : tr(
+              'Conway cellular automaton overlay hidden on terrain.',
+              'Surcouche 3D de l’automate de Conway masquée sur le terrain.'
+            )
+      )
+    );
+    const conwayToggleBtn = el(
+      'button',
+      `hud-btn ${this.isConwayGridVisible ? 'hud-btn-biomass' : ''}`,
+      this.isConwayGridVisible
+        ? tr('🧬 Grid ON [G]', '🧬 Grille ACTIVÉE [G]')
+        : tr('Grid OFF [G]', 'Grille DÉSACTIVÉE [G]')
+    );
+    conwayToggleBtn.type = 'button';
+    conwayToggleBtn.addEventListener('click', () => {
+      this.isConwayGridVisible = !this.isConwayGridVisible;
+      if (typeof this.callbacks.onToggleConwayGrid === 'function') {
+        this.callbacks.onToggleConwayGrid(this.isConwayGridVisible);
+      }
+      this.renderSettingsModalContent();
+    });
+    conwayCard.appendChild(conwayToggleBtn);
+
+    togglesGrid.append(combatCard, blenderCard, bloomCard, conwayCard);
+    gfxSection.appendChild(togglesGrid);
+    this.settingsModalBody.appendChild(gfxSection);
+
+    // Pied de modale avec bouton Fermer
+    const footer = el('div', 'settings-footer-actions');
+    const closeFooterBtn = el(
+      'button',
+      'hud-btn hud-btn-amber',
+      tr('✅ [O] / [Esc] Close Settings & Resume', '✅ [O] / [Échap] Fermer & Reprendre')
+    );
+    closeFooterBtn.type = 'button';
+    closeFooterBtn.addEventListener('click', () => this.hideSettingsModal());
+    footer.appendChild(closeFooterBtn);
+    this.settingsModalBody.appendChild(footer);
+  }
+
+  /**
+   * Rafraîchit instantanément toute l'interface HUD, les bannières, les quêtes,
+   * les info-bulles et les modales ouvertes lors d'un changement de langue (`'en'` / `'fr'`).
+   * @param {'en'|'fr'} [lang]
+   */
+  refreshLanguage(lang = getLanguage()) {
+    // 1. Traduire l'arbre DOM existant (tous les nœuds statiques avec data-i18n-fr)
+    translateDOMTree(this.root);
+
+    // 2. Mettre à jour les boutons de la barre supérieure
+    this._refreshCombatModeSwitchLabel();
+    this.setBlenderModeUI(this.isBlenderMode);
+    this.setAudioMuteUI(this.isAudioMuted);
+    if (this.settingsBtn) {
+      this.settingsBtn.textContent = tr('⚙️ Settings [O]', '⚙️ Paramètres [O]');
+      this.settingsBtn.title = tr(
+        'Open Settings: Language (EN/FR), Voices, Audio Mixer & 3D Graphics [O]',
+        'Ouvrir les Paramètres : Langue (EN/FR), Voix, Mixeur Audio & Graphismes 3D [O]'
+      );
+    }
+
+    // 3. Rafraîchir les boutons d'ordres d'éclaireurs (panneau gauche)
+    for (const [id, ui] of Object.entries(this.scoutMissionBtns || {})) {
+      const spec = getScoutMissionSpec(id, this.selectedLineageId);
+      if (ui.titleRow) ui.titleRow.textContent = `${spec.icon} ${translateString(spec.shortLabel)}`;
+      if (ui.descRow) ui.descRow.textContent = translateString(spec.description);
+    }
+
+    // 4. Forcer le rafraîchissement des panneaux à signature cachée
+    this._lastLineageListSig = null;
+    this._lastMasterySig = null;
+
+    if (this.lastBastionRef || this.lastPlayerRef) {
+      this._updateBastionBuildingsUI(this.lastBastionRef, this.lastPlayerRef);
+    }
+    if (this.lastPlayerRef) {
+      this._updateSkillBar(this.lastPlayerRef);
+      this._updateMasteryPanel(this.lastPlayerRef);
+    }
+    const enemies =
+      this.lastEnemyManagerRef && typeof this.lastEnemyManagerRef.getEnemies === 'function'
+        ? this.lastEnemyManagerRef.getEnemies()
+        : this.lastEnemyManagerRef?.enemies || [];
+    this._updateLineagesPanel(this.lastEcoSimRef, enemies);
+    this._updateQuestAndScoutMissionUI(this.lastBastionRef, enemies, this.lastQuestSystemRef);
+
+    // 5. Rafraîchir le bandeau d'onboarding si visible
+    if (
+      this.onboardingBannerEl &&
+      !this.onboardingBannerEl.classList.contains('is-hidden') &&
+      this._lastOnboardingState
+    ) {
+      this.updateOnboardingBanner(this._lastOnboardingState);
+    }
+
+    // 6. Rafraîchir les modales ouvertes
+    if (this.isSettingsModalOpen) {
+      this.renderSettingsModalContent();
+    }
+    if (this.isCodexOpen) {
+      this.renderCodexContent(enemies);
+    }
+    if (this.isBastionModalOpen) {
+      this.renderBastionArchitectContent(this.lastBastionRef, this.lastPlayerRef);
+    }
+    if (this.isWeaponModalOpen) {
+      this.renderWeaponForgeContent(this.lastPlayerRef, this.lastBastionRef);
+    }
+    if (this.isIslandModalOpen && this._lastIslandVictoryData) {
+      this.showIslandVictoryModal(this._lastIslandVictoryData);
+    }
+    if (this.isGameOverModalOpen && this._lastGameOverSummary) {
+      this.showGameOverModal(this._lastGameOverSummary);
+    }
+  }
+
   /**
    * Met à jour les 5 lignes de bâtiments du Bastion dans le panneau gauche.
    * @param {Object} bastionAndNpcs
@@ -4327,26 +5299,30 @@ export class HUDManager {
       const affordable = canAffordBuildingUpgrade(bDef.id, currentLevel, res);
 
       ui.row.className = `hud-building-row${currentLevel > 0 ? ' is-built' : ''}${spec.isMaxLevel ? ' is-max' : ''}`;
-      ui.nameEl.textContent = `${spec.icon} ${spec.shortName}`;
+      ui.nameEl.textContent = `${spec.icon} ${translateString(spec.shortName)}`;
       ui.lvlBadge.className = `hud-building-lvl-badge${currentLevel === 0 ? ' lvl-0' : spec.isMaxLevel ? ' lvl-max' : ''}`;
       ui.lvlBadge.textContent = spec.isMaxLevel
-        ? 'NIV. MAX (3/3)'
-        : `Niv. ${currentLevel}/${spec.maxLevel}`;
+        ? tr('MAX LV. (3/3)', 'NIV. MAX (3/3)')
+        : tr(`Lv. ${currentLevel}/${spec.maxLevel}`, `Niv. ${currentLevel}/${spec.maxLevel}`);
 
+      const curEff = translateString(spec.currentEffectDesc);
+      const nextEff = translateString(spec.nextEffectDesc);
       ui.effectEl.textContent = spec.isMaxLevel
-        ? `Actif : ${spec.currentEffectDesc}`
+        ? tr(`Active: ${curEff}`, `Actif : ${spec.currentEffectDesc}`)
         : currentLevel > 0
-          ? `Actif : ${spec.currentEffectDesc} → Prochain : ${spec.nextEffectDesc}`
-          : `Effet Niv. 1 : ${spec.nextEffectDesc}`;
+          ? tr(`Active: ${curEff} → Next: ${nextEff}`, `Actif : ${spec.currentEffectDesc} → Prochain : ${spec.nextEffectDesc}`)
+          : tr(`Lv. 1 Effect: ${nextEff}`, `Effet Niv. 1 : ${spec.nextEffectDesc}`);
 
       ui.costEl.className = `hud-building-cost${spec.isMaxLevel ? '' : affordable ? ' is-affordable' : ' is-missing'}`;
-      ui.costEl.textContent = spec.isMaxLevel ? '✨ Maximisé' : `Coût: ${spec.costText}`;
+      ui.costEl.textContent = spec.isMaxLevel
+        ? tr('✨ Maxed Out', '✨ Maximisé')
+        : tr(`Cost: ${translateString(spec.costText)}`, `Coût: ${spec.costText}`);
 
       ui.upgBtn.disabled = spec.isMaxLevel || !affordable;
       ui.upgBtn.classList.toggle('is-ready-glow', !spec.isMaxLevel && affordable);
       ui.upgBtn.textContent = spec.isMaxLevel
         ? '✅ Max'
-        : `⬆️ ${spec.actionVerb} [${spec.hotkey}]`;
+        : `⬆️ ${translateString(spec.actionVerb)} [${spec.hotkey}]`;
     }
   }
 
@@ -4380,13 +5356,23 @@ export class HUDManager {
                 totalCarriers: 0,
                 allSpotted: false,
               };
+        const tLbl = translateString(prog.targetLabel);
         this.scoutMissionStatusEl.textContent =
           prog.totalCarriers > 0
-            ? `🔍 Mission Active : Traquer [${prog.targetLabel}] (Repérés : ${prog.spottedCarriers} / ${prog.totalCarriers})`
-            : `✅ Mission Active : Traquer [${prog.targetLabel}] (Aucun porteur survivant)`;
+            ? tr(
+                `🔍 Active Mission: Track [${tLbl}] (Spotted: ${prog.spottedCarriers} / ${prog.totalCarriers})`,
+                `🔍 Mission Active : Traquer [${prog.targetLabel}] (Repérés : ${prog.spottedCarriers} / ${prog.totalCarriers})`
+              )
+            : tr(
+                `✅ Active Mission: Track [${tLbl}] (No surviving carriers)`,
+                `✅ Mission Active : Traquer [${prog.targetLabel}] (Aucun porteur survivant)`
+              );
       } else {
         const spec = getScoutMissionSpec(mType, targetMutId);
-        this.scoutMissionStatusEl.textContent = `${spec.icon} Mission Active : ${spec.label}`;
+        this.scoutMissionStatusEl.textContent = tr(
+          `${spec.icon} Active Mission: ${translateString(spec.label)}`,
+          `${spec.icon} Mission Active : ${spec.label}`
+        );
       }
 
       for (const [id, ui] of Object.entries(this.scoutMissionBtns || {})) {
@@ -4412,27 +5398,42 @@ export class HUDManager {
     this._currentPrimaryQuest = primaryQuest;
     const isPhase2 = primaryQuest.phase === 2;
     this.questCardEl.classList.toggle('is-phase-2', isPhase2);
-    this.questTitleEl.textContent = primaryQuest.title || '📜 Opération Prioritaire';
-    this.questPhaseBadgeEl.textContent =
-      primaryQuest.phaseBadge || (isPhase2 ? 'PHASE 2/2' : 'PHASE 1/2');
+    this.questTitleEl.textContent = translateString(
+      primaryQuest.title || '📜 Opération Prioritaire'
+    );
+    this.questPhaseBadgeEl.textContent = translateString(
+      primaryQuest.phaseBadge || (isPhase2 ? 'PHASE 2/2' : 'PHASE 1/2')
+    );
     this.questPhaseBadgeEl.className = `hud-lineage-badge ${isPhase2 ? 'badge-spread' : 'badge-pz'}`;
 
     if (this.questStep1El) {
       this.questStep1El.className = `hud-quest-step ${isPhase2 ? 'is-done' : 'is-active'}`;
-      this.questStep1El.textContent = primaryQuest.step1Text || primaryQuest.step1Label || '';
+      this.questStep1El.textContent = translateString(
+        primaryQuest.step1Text || primaryQuest.step1Label || ''
+      );
     }
     if (this.questStep2El) {
       this.questStep2El.className = `hud-quest-step ${isPhase2 ? 'is-active' : ''}`;
-      this.questStep2El.textContent = primaryQuest.step2Text || primaryQuest.step2Label || '';
+      this.questStep2El.textContent = translateString(
+        primaryQuest.step2Text || primaryQuest.step2Label || ''
+      );
     }
     if (this.questHintEl && (primaryQuest.actionHint || primaryQuest.objectiveText)) {
-      this.questHintEl.textContent = primaryQuest.actionHint || primaryQuest.objectiveText;
+      this.questHintEl.textContent = translateString(
+        primaryQuest.actionHint || primaryQuest.objectiveText
+      );
     }
     if (this.questRewardEl) {
       const rw = primaryQuest.rewards;
       this.questRewardEl.textContent = rw
-        ? `🎁 +${rw.wood || 0} Bois · +${rw.crystal || 0} Cristal · +${rw.biomass || 0} Bio · +${rw.xp || 0} XP`
-        : `🎁 Récompense : ${primaryQuest.rewardText || ''}`;
+        ? tr(
+            `🎁 +${rw.wood || 0} Wood · +${rw.crystal || 0} Crystal · +${rw.biomass || 0} Bio · +${rw.xp || 0} XP`,
+            `🎁 +${rw.wood || 0} Bois · +${rw.crystal || 0} Cristal · +${rw.biomass || 0} Bio · +${rw.xp || 0} XP`
+          )
+        : tr(
+            `🎁 Reward: ${translateString(primaryQuest.rewardText || '')}`,
+            `🎁 Récompense : ${primaryQuest.rewardText || ''}`
+          );
     }
     if (this.questActionBtn) {
       if (
@@ -4440,14 +5441,23 @@ export class HUDManager {
           primaryQuest.type === 'track_and_eradicate') &&
         !isPhase2
       ) {
-        this.questActionBtn.textContent = `🦅 Lancer Traque Éclaireurs (${primaryQuest.spottedCarriers || 0}/${Math.max(1, primaryQuest.totalCarriers || 1)})`;
+        this.questActionBtn.textContent = tr(
+          `🦅 Launch Scout Tracking (${primaryQuest.spottedCarriers || 0}/${Math.max(1, primaryQuest.totalCarriers || 1)})`,
+          `🦅 Lancer Traque Éclaireurs (${primaryQuest.spottedCarriers || 0}/${Math.max(1, primaryQuest.totalCarriers || 1)})`
+        );
       } else if (
         primaryQuest.type === 'eradicate_lineage' ||
         primaryQuest.type === 'track_and_eradicate'
       ) {
-        this.questActionBtn.textContent = `🎯 Cibler la Lignée (${primaryQuest.totalCarriers || 0} restant${(primaryQuest.totalCarriers || 0) > 1 ? 's' : ''})`;
+        this.questActionBtn.textContent = tr(
+          `🎯 Target Lineage (${primaryQuest.totalCarriers || 0} remaining)`,
+          `🎯 Cibler la Lignée (${primaryQuest.totalCarriers || 0} restant${(primaryQuest.totalCarriers || 0) > 1 ? 's' : ''})`
+        );
       } else {
-        this.questActionBtn.textContent = '🏰 Ouvrir l’Architecte du Bastion [H]';
+        this.questActionBtn.textContent = tr(
+          '🏰 Open Bastion Architect [H]',
+          '🏰 Ouvrir l’Architecte du Bastion [H]'
+        );
       }
     }
   }
@@ -4506,7 +5516,11 @@ export class HUDManager {
         this.setAudioMuteUI(Boolean(tel.muted));
         if (this.lyriaStatusLabel) {
           this.lyriaStatusLabel.textContent =
-            tel.shortStatusFR || `🎵 Lyria : ${tel.modeLabelFR || 'Sanctuaire'}`;
+            getLanguage() === 'en'
+              ? tel.shortStatusEN ||
+                tel.shortStatus ||
+                translateString(tel.shortStatusFR || `🎵 Lyria: ${tel.modeLabelEN || 'Sanctuary'}`)
+              : tel.shortStatusFR || `🎵 Lyria : ${tel.modeLabelFR || 'Sanctuaire'}`;
         }
         if (this.lyriaStatusPill) {
           this.lyriaStatusPill.classList.remove(
@@ -4536,7 +5550,12 @@ export class HUDManager {
       const tod = sceneManager.getTimeOfDay();
       const icon = tod.isNight ? '🌙' : tod.phase === 'dawn' || tod.phase === 'dusk' ? '🌅' : '☀️';
       const timeStr = tod.formattedTime ? ` — ${tod.formattedTime}` : '';
-      this.clockBadge.textContent = `${icon} Jour ${tod.dayNumber || 1}${timeStr} (${tod.label || 'Jour'})`;
+      const rawPhaseLbl = tod.label || 'Jour';
+      const phaseLbl = translateString(rawPhaseLbl);
+      this.clockBadge.textContent = tr(
+        `${icon} Day ${tod.dayNumber || 1}${timeStr} (${phaseLbl})`,
+        `${icon} Jour ${tod.dayNumber || 1}${timeStr} (${rawPhaseLbl})`
+      );
       this.clockBadge.classList.toggle('is-night', Boolean(tod.isNight));
     }
 
@@ -4547,8 +5566,10 @@ export class HUDManager {
       1;
     if (this.islandBadge) {
       const tierSpec = getIslandTierSpec(currentIslandNumber);
-      this.islandBadge.textContent = `🏝️ ${tierSpec.name}`;
-      this.islandBadge.title = `${tierSpec.name} — ${tierSpec.subtitle}`;
+      const tName = translateString(tierSpec.name);
+      const tSub = translateString(tierSpec.subtitle);
+      this.islandBadge.textContent = `🏝️ ${tName}`;
+      this.islandBadge.title = `${tName} — ${tSub}`;
     }
 
     // 2. Compte à rebours Eco-Tick & Population (Adultes vs Bébés)
@@ -4606,16 +5627,28 @@ export class HUDManager {
         this.preyHealthBadge.classList.remove('is-healthy', 'is-warning', 'is-extinct');
         if (isTutorialReserve) {
           this.preyHealthBadge.classList.add('is-healthy');
-          this.preyHealthBadge.textContent = '🦌 Gibier: 11 (5 Biches / 6 Lapins)';
+          this.preyHealthBadge.textContent = tr(
+            '🦌 Prey: 11 (5 Deer / 6 Rabbits)',
+            '🦌 Gibier: 11 (5 Biches / 6 Lapins)'
+          );
         } else if (totalPrey === 0 || (deerCount < 2 && rabbitCount < 2)) {
           this.preyHealthBadge.classList.add('is-extinct');
-          this.preyHealthBadge.textContent = `🚨 Gibier: ${totalPrey} (EXTINCTION !)`;
+          this.preyHealthBadge.textContent = tr(
+            `🚨 Prey: ${totalPrey} (EXTINCTION!)`,
+            `🚨 Gibier: ${totalPrey} (EXTINCTION !)`
+          );
         } else if (deerCount < 2 || rabbitCount < 2) {
           this.preyHealthBadge.classList.add('is-warning');
-          this.preyHealthBadge.textContent = `⚠️ Gibier: ${totalPrey} (${deerCount} Biches / ${rabbitCount} Lapins)`;
+          this.preyHealthBadge.textContent = tr(
+            `⚠️ Prey: ${totalPrey} (${deerCount} Deer / ${rabbitCount} Rabbits)`,
+            `⚠️ Gibier: ${totalPrey} (${deerCount} Biches / ${rabbitCount} Lapins)`
+          );
         } else {
           this.preyHealthBadge.classList.add('is-healthy');
-          this.preyHealthBadge.textContent = `🦌 Gibier: ${totalPrey} (${deerCount} Biches / ${rabbitCount} Lapins)`;
+          this.preyHealthBadge.textContent = tr(
+            `🦌 Prey: ${totalPrey} (${deerCount} Deer / ${rabbitCount} Rabbits)`,
+            `🦌 Gibier: ${totalPrey} (${deerCount} Biches / ${rabbitCount} Lapins)`
+          );
         }
       }
 
@@ -4635,7 +5668,7 @@ export class HUDManager {
       const lvl = player.level || 1;
       const xp = Math.floor(player.xp || 0);
       const nextXp = Math.max(1, Math.floor(player.nextLevelXp || 100));
-      this.playerLevelText.textContent = `⭐ Niv. ${lvl}`;
+      this.playerLevelText.textContent = tr(`⭐ Lv. ${lvl}`, `⭐ Niv. ${lvl}`);
       this.playerXpText.textContent = `${xp} / ${nextXp} XP`;
       this.playerXpFill.style.width = `${Math.min(100, Math.round((xp / nextXp) * 100))}%`;
 
@@ -4650,9 +5683,18 @@ export class HUDManager {
       }
 
       const res = player.resources || {};
-      this.woodBadge.textContent = `🪵 Bois: ${Math.floor(res.wood ?? 0)}`;
-      this.crystalBadge.textContent = `💎 Cristal: ${Math.floor(res.crystal ?? 0)}`;
-      this.biomassBadge.textContent = `🌿 Biomasse: ${Math.floor(res.biomass ?? 0)}`;
+      this.woodBadge.textContent = tr(
+        `🪵 Wood: ${Math.floor(res.wood ?? 0)}`,
+        `🪵 Bois: ${Math.floor(res.wood ?? 0)}`
+      );
+      this.crystalBadge.textContent = tr(
+        `💎 Crystal: ${Math.floor(res.crystal ?? 0)}`,
+        `💎 Cristal: ${Math.floor(res.crystal ?? 0)}`
+      );
+      this.biomassBadge.textContent = tr(
+        `🌿 Biomass: ${Math.floor(res.biomass ?? 0)}`,
+        `🌿 Biomasse: ${Math.floor(res.biomass ?? 0)}`
+      );
 
       if (this.foodBadge) {
         const foodVal = Math.max(
@@ -4663,7 +5705,10 @@ export class HUDManager {
         this.foodBadge.classList.remove('is-well-fed', 'is-famine');
         if (foodVal <= 0) {
           this.foodBadge.classList.add('is-famine');
-          this.foodBadge.textContent = `⚠️ Rations: 0/${maxFood} (FAMINE !)`;
+          this.foodBadge.textContent = tr(
+            `⚠️ Rations: 0/${maxFood} (FAMINE!)`,
+            `⚠️ Rations: 0/${maxFood} (FAMINE !)`
+          );
         } else if (foodVal > 25) {
           this.foodBadge.classList.add('is-well-fed');
           this.foodBadge.textContent = `🍖 Rations: ${foodVal}/${maxFood}`;
@@ -4675,7 +5720,10 @@ export class HUDManager {
       if (this.weaponBadgeBtn) {
         const wSpec = getElementalWeaponSpec(player.equippedWeaponId || 'runic_steel');
         this.weaponBadgeBtn.className = `hud-weapon-badge-btn elem-${wSpec.element || 'steel'}`;
-        this.weaponBadgeBtn.textContent = `${wSpec.icon} Arme: ${wSpec.shortName} [K]`;
+        this.weaponBadgeBtn.textContent = tr(
+          `${wSpec.icon} Weapon: ${translateString(wSpec.shortName)} [K]`,
+          `${wSpec.icon} Arme: ${wSpec.shortName} [K]`
+        );
       }
 
       // Mise à jour de la Barre de Compétences Roguelike (4 Sorts 3D) et du Panneau des Maîtrises Adaptatives
@@ -4706,16 +5754,28 @@ export class HUDManager {
         if (this.relicBadge) {
           this.relicBadge.classList.toggle('is-complete', shieldReady);
           this.relicBadge.textContent = bastionAndNpcs.islandShieldActive
-            ? `🛡️ Reliques: ${relicCount}/${maxRelics} (DÔME ACTIF [V])`
-            : `🧩 Reliques: ${relicCount}/${maxRelics}${shieldReady ? ' (PRÊT [V] !)' : ''}`;
+            ? tr(
+                `🛡️ Relics: ${relicCount}/${maxRelics} (DOME ACTIVE [V])`,
+                `🛡️ Reliques: ${relicCount}/${maxRelics} (DÔME ACTIF [V])`
+              )
+            : tr(
+                `🧩 Relics: ${relicCount}/${maxRelics}${shieldReady ? ' (READY [V]!)' : ''}`,
+                `🧩 Reliques: ${relicCount}/${maxRelics}${shieldReady ? ' (PRÊT [V] !)' : ''}`
+              );
         }
         if (this.activateIslandShieldBtn) {
           this.activateIslandShieldBtn.classList.toggle('is-ready-glow', shieldReady);
           this.activateIslandShieldBtn.textContent = bastionAndNpcs.islandShieldActive
-            ? `⛵ Cap sur Île #${currentIslandNumber + 1} [V]`
+            ? tr(
+                `⛵ Sail to Island #${currentIslandNumber + 1} [V]`,
+                `⛵ Cap sur Île #${currentIslandNumber + 1} [V]`
+              )
             : shieldReady
-              ? '🛡️ Activer Dôme & Île Suiv. [V] !'
-              : `🛡️ Bouclier & Île (${relicCount}/${maxRelics}) [V]`;
+              ? tr('🛡️ Activate Dome & Next Island [V]!', '🛡️ Activer Dôme & Île Suiv. [V] !')
+              : tr(
+                  `🛡️ Shield & Island (${relicCount}/${maxRelics}) [V]`,
+                  `🛡️ Bouclier & Île (${relicCount}/${maxRelics}) [V]`
+                );
         }
 
         const counts =
@@ -4738,17 +5798,26 @@ export class HUDManager {
           if (npc.state === 'fleeing') scoutsFleeing++;
         }
         if (scoutsFleeing > 0) {
-          this.scoutMetaEl.textContent = `⚠️ ${scoutsFleeing} en fuite d'urgence ! (${scoutsDeepWilderness} hors-frontière)`;
+          this.scoutMetaEl.textContent = tr(
+            `⚠️ ${scoutsFleeing} fleeing in emergency! (${scoutsDeepWilderness} beyond frontier)`,
+            `⚠️ ${scoutsFleeing} en fuite d'urgence ! (${scoutsDeepWilderness} hors-frontière)`
+          );
           this.scoutMetaEl.style.color = '#ffa502';
         } else {
-          this.scoutMetaEl.textContent = `🧭 ${scoutsDeepWilderness}/${counts.scout || 0} en expédition lointaine (>42m)`;
+          this.scoutMetaEl.textContent = tr(
+            `🧭 ${scoutsDeepWilderness}/${counts.scout || 0} on deep expedition (>42m)`,
+            `🧭 ${scoutsDeepWilderness}/${counts.scout || 0} en expédition lointaine (>42m)`
+          );
           this.scoutMetaEl.style.color = '';
         }
 
         const cages = bastionAndNpcs.cages || [];
         const totalCages = cages.length || 6;
         const rescuedCages = cages.filter((c) => c && (c.rescued || c.isRescued)).length;
-        this.rescueCounterEl.textContent = `PNJ: ${counts.total || 0} (${rescuedCages}/${totalCages} cages)`;
+        this.rescueCounterEl.textContent = tr(
+          `NPCs: ${counts.total || 0} (${rescuedCages}/${totalCages} cages)`,
+          `PNJ: ${counts.total || 0} (${rescuedCages}/${totalCages} cages)`
+        );
 
         // Mise à jour des 5 Bâtiments du Bastion (Niv. 0 -> 3)
         this._updateBastionBuildingsUI(bastionAndNpcs, player);
