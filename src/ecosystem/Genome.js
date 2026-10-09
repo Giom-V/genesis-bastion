@@ -23,6 +23,7 @@
 
 import { CONFIG } from '../config.js';
 import { canHybridize, getHybridProbability, createHybridSpec } from './Phylogeny.js';
+import { computeDetailedFitness, getMaturationProfile } from './BalanceAndPacing.js';
 import { clamp, lerp } from '../utils/math.js';
 import { logger } from '../utils/logger.js';
 
@@ -282,70 +283,24 @@ export class Genome {
   /**
    * Computes the Darwinian fitness score of this genome from the weighted combination of
    * normalized genetic stats (`strength`, `maxHp`, `speed`, `size`, `fertility`, `aggroRadius`
-   * relative to `metabolism` cost) PLUS the adaptive bonuses of each mutation carried by the creature.
-   * Also populates `this.fitnessBreakdown = { statsScore, mutationsScore, hybridBonus, total }`
-   * for UI Codex and Inspector display.
+   * relative to `metabolism` cost), biome adaptation, and the adaptive bonuses of each mutation.
+   * Also populates `this.fitnessBreakdown` (`{ statsScore, mutationsScore, biomeBonus, hybridBonus, total, ... }`)
+   * and `this.maturationProfile` via `BalanceAndPacing.js`.
    *
-   * @returns {number} Fitness score (typically `~1.0` for wild-type Gen-1, `1.5–2.8+` for adapted mutants).
+   * @param {string|null} [currentBiome=null] - Optional current biome for ecological adaptation bonus.
+   * @returns {number} Fitness score (typically `~1.0` for wild-type Gen-1, `1.5–3.2+` for adapted mutants).
    */
-  computeFitness() {
-    const baseline = resolveSpeciesBaseline(this.speciesId, this.hybridParents);
-    const refHp = baseline.baseHp || 80;
-    const refStr = baseline.baseDamage || 12;
-    const refSpd = baseline.baseSpeed || 7.5;
-    const refSize = baseline.baseSize || 1.0;
-    const refFert = baseline.fertility || 1.0;
-    const refAggro = baseline.aggroRadius || 20;
-    const refMetab = baseline.metabolism || 4.0;
-
-    // Normalized expressed genetic traits relative to species baseline
-    const g = this.genes || this.baseGenes;
-    const strRatio = g.strength / refStr;
-    const hpRatio = g.maxHp / refHp;
-    const spdRatio = g.speed / refSpd;
-    const sizeRatio = g.size / refSize;
-    const fertRatio = g.fertility / refFert;
-    const aggroRatio = g.aggroRadius / refAggro;
-
-    // Weighted combat & reproductive output tempered by metabolic cost ratio
-    const rawTraitOutput =
-      strRatio * 0.26 +
-      hpRatio * 0.24 +
-      spdRatio * 0.18 +
-      clamp(fertRatio, 0.4, 2.2) * 0.14 +
-      sizeRatio * 0.10 +
-      aggroRatio * 0.08;
-
-    const metabCostFactor = clamp(
-      Math.pow(refMetab / Math.max(0.5, g.metabolism), 0.22),
-      0.78,
-      1.25
+  computeFitness(currentBiome = null) {
+    const detailed = computeDetailedFitness(
+      this.genes || this.baseGenes,
+      this.mutations,
+      this.speciesId,
+      currentBiome
     );
-    const statsScore = Number((rawTraitOutput * metabCostFactor).toFixed(3));
 
-    // Mendelian dominant mutation fitness bonuses
-    let mutationsScore = 0;
-    const catalog = CONFIG?.MUTATIONS || {};
-    for (const mutId of this.mutations) {
-      const mut = catalog[mutId];
-      if (mut) {
-        mutationsScore += mut.fitnessBonus ?? 0.35;
-      }
-    }
-    mutationsScore = Number(mutationsScore.toFixed(3));
-
-    // Hybrid vigor bonus ("hétérosis")
-    const hybridBonus = this.isHybrid ? 0.18 : 0.0;
-
-    const total = Number(Math.max(0.25, statsScore + mutationsScore + hybridBonus).toFixed(3));
-
-    this.fitnessBreakdown = {
-      statsScore,
-      mutationsScore,
-      hybridBonus,
-      total,
-    };
-    this.fitnessScore = total;
+    this.fitnessBreakdown = detailed;
+    this.fitnessScore = detailed.total;
+    this.maturationProfile = getMaturationProfile(this.speciesId, this.mutations);
     return this.fitnessScore;
   }
 

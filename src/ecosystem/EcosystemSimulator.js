@@ -30,6 +30,7 @@
 import { CONFIG } from '../config.js';
 import { Genome } from './Genome.js';
 import { canHybridize, getHybridProbability, createHybridSpec } from './Phylogeny.js';
+import { getMaturationProfile, evaluateCreatureLifeStage } from './BalanceAndPacing.js';
 import { dist2D, clamp } from '../utils/math.js';
 import { logger } from '../utils/logger.js';
 
@@ -671,6 +672,8 @@ export class EcosystemSimulator {
         isPatientZero = true;
       }
 
+      const matProfile = getMaturationProfile(childGenome.speciesId, childGenome.mutations);
+
       const birthRecord = {
         id: `birth_t${this.tickNumber}_${births.length + 1}`,
         genome: childGenome,
@@ -686,13 +689,16 @@ export class EcosystemSimulator {
         newMutationId,
         mutations: [...childGenome.mutations],
         isPatientZero,
-        // Juvenile / Baby lifecycle attributes (Directive #8)
-        lifeStage: 'baby',
-        isAdult: false,
+        // Juvenile / Baby lifecycle attributes (Directive #8 & BalanceAndPacing)
+        lifeStage: matProfile.lifeStage,
+        isAdult: matProfile.isAdult,
+        canReproduce: matProfile.canReproduce,
         age: 0,
-        maturationTime: CONFIG?.ECO?.MATURATION_TIME ?? 20,
-        scaleMultiplier: CONFIG?.ECO?.BABY_SCALE ?? 0.5,
-        statMultiplier: CONFIG?.ECO?.BABY_STAT_MULT ?? 0.55,
+        maturationTime: matProfile.maturationTime,
+        scaleMultiplier: matProfile.babyScale,
+        statMultiplier: matProfile.babyStatMult,
+        metabolismMultiplier: matProfile.babyMetabolismMult,
+        estimatedPlayerInterceptWindowSec: matProfile.estimatedPlayerInterceptWindowSec,
       };
 
       this._ensureLineageTracked(birthRecord, isPatientZero);
