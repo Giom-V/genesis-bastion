@@ -161,3 +161,19 @@ Pour garantir une fluidité constante à **60 FPS** (y compris sous WebGL Cloudt
 3. **Cache Bilinéaire $O(1)$ de Hauteur & Biome (`Terrain.js`)** : Précalcul d'une grille `257x257` (`Float32Array`) pour `getHeightAt(x, z)` et `129x129` pour `getBiomeAt(x, z)`, éliminant des centaines d'évaluations FBM/Perlin par frame, avec géométrie d'île et d'océan allégée.
 4. **Modèles `.glb` Low-Poly Stylisés & Cache de Matériaux (`BlenderModelManager.js`)** : Réduction de **85 %** du nombre de sommets des 14 modèles `.glb` (`~450–1 200` sommets avec lissage de normales), mutualisation des matériaux PBR teintés (`materialCache`) et ombres portées limitées au tronc principal (`Body`).
 5. **Culling Spatial & LOD d'Animation (`EnemyManager.js`)** : Masquage et mise en veille d'animation des créatures éloignées (`> 95m` hors Patients Zéro), animation 1 frame sur 4 à moyenne distance (`> 48m`), et scan de fuite des herbivores cadencé à `4 Hz`.
+
+---
+
+## Menu des Paramètres (`⚙️ Settings [O]`) & Localisation Bilingue Intégrale (`🇬🇧 English` par défaut / `🇫🇷 Français` en 2e choix — `v0.13.0`)
+
+La version **`v0.13.0-settings-menu-and-bilingual-en-fr`** introduit un **Menu des Paramètres complet (`⚙️ Settings [O]`)** et une **architecture bilingue temps réel (`src/utils/i18n.js`)** couvrant l'intégralité de l'interface et des voix **Gemini TTS** :
+1. **Langue par Défaut (`🇬🇧 English`) & Bascule Temps Réel (`🇫🇷 Français`)** :
+   - Le jeu démarre par défaut en **Anglais (`'en'`)** avec le **Français (`'fr'`)** en second choix.
+   - Le changement de langue dans **`⚙️ Settings [O]`** met à jour instantanément (sans recharger la page) tous les panneaux du HUD, la bannière d'Onboarding en 7 Actes, les Quêtes Dynamiques, la Forge d'Armes, l'Architecte du Bastion, le Codex Phylogénétique, la Minimap et les bulles d'actions 3D $\rightarrow$ 2D.
+2. **Doublage Vocal Bilingue Gemini TTS (15 Voix EN + 15 Voix FR)** :
+   - **Commandant Aldric (`Fenrir`)** et **Archiviste Kaelen (`Kore`)** disposent chacun des **15 répliques en Anglais** (`public/assets/audio/tts/en/*.wav`) et des **15 répliques en Français** (`public/assets/audio/tts/*.wav`) couvrant les 7 Actes du tutoriel et les 8 alertes critiques (Patient Zéro, Courroux du Dragon, Requins Marcheurs, Taupes Géantes, Crise du Gibier, Reliques d'Éden, Dôme-Bouclier, Requiem de Game Over).
+   - Un bouton **`🔈 Preview Voice / Tester la Voix (Aldric & Kaelen)`** dans le menu Settings permet d'écouter immédiatement le doublage dans la langue sélectionnée.
+3. **Mixeur Audio & Contrôles Graphiques / Gameplay (`⚙️ Settings [O]`)** :
+   - Réglage indépendant du volume **Musique Lyria 3**, **Voix Gemini TTS** et **SFX de Combat** (`0%` à `100%`) + bouton Mute (`[M]`).
+   - Bascules directes pour le **Mode de Combat** (`⚡ Auto Vampire Survivors` / `⚔️ Active Diablo [1-4]`), les **Modèles 3D** (`🎨 Blender 5.0 .glb` / `📐 Procédural Classique [J]`), le **Post-Processing Bloom** (`✨ Bloom ON` / `⚡ Direct 60FPS OFF`) et la **Grille de Conway** (`[G]`).
+

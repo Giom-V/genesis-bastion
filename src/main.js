@@ -27,6 +27,7 @@ import * as THREE from 'three';
 import { CONFIG } from './config.js';
 import { logger } from './utils/logger.js';
 import { dist2D } from './utils/math.js';
+import { getLanguage, setLanguage, tr } from './utils/i18n.js';
 import { SceneManager } from './world/SceneManager.js';
 import { Terrain } from './world/Terrain.js';
 import { VFXManager } from './world/VFXManager.js';
@@ -64,7 +65,16 @@ export class GenesisBastionGame {
    * @param {boolean} [options.startWithTutorial=true] - Démarre en Acte 1 du tutoriel guidé.
    */
   constructor(options = {}) {
-    logger.info('SYSTEM', 'Initialisation de Genesis Bastion — Évolution Génétique & Survie 3D...');
+    // Initialiser la langue par défaut en Anglais ('en') au démarrage
+    setLanguage(options.language || 'en');
+    logger.info(
+      'SYSTEM',
+      tr(
+        'Initializing Genesis Bastion — 3D Genetic Evolution & Survival...',
+        'Initialisation de Genesis Bastion — Évolution Génétique & Survie 3D...'
+      ),
+      { language: getLanguage() }
+    );
 
     /** @type {HTMLElement} */
     this.appContainer = document.getElementById('app') || document.body;
@@ -89,6 +99,9 @@ export class GenesisBastionGame {
     // 1B. Moteur Audio Adaptatif Lyria Realtime + Multi-Stem, Voix Gemini TTS & SFX WebAudio
     /** @type {SoundManager} */
     this.sound = new SoundManager();
+    if (this.sound && typeof this.sound.setLanguage === 'function') {
+      this.sound.setLanguage(getLanguage(), false);
+    }
 
     // 2. Simulateur d'Écosystème (Jeu de la Vie de Conway + Algorithme Génétique) & Système de Quêtes Dynamiques
     /** @type {EcosystemSimulator} */
@@ -161,18 +174,31 @@ export class GenesisBastionGame {
       onTriggerQuestAction: (quest) => this.handleTriggerQuestAction(quest),
       onToggleAudioMute: () => this.sound.toggleMute(),
       onReplayTutorialVoice: (actNum) =>
-        this.sound.playTutorialVoice(actNum || this.tutorialAct || 1),
+        this.sound.playTutorialVoice(actNum || this.tutorialAct || 1, true),
       onReplayGameOverVoice: () => {
         if (this.sound && typeof this.sound.playGameOverRequiem === 'function') {
           this.sound.playGameOverRequiem(true);
         } else if (this.sound && typeof this.sound.playTutorialVoice === 'function') {
-          this.sound.playTutorialVoice('alert_gameover_requiem');
+          this.sound.playTutorialVoice('alert_gameover_requiem', true);
         }
       },
       onTriggerGameOverTest: () => this.triggerGameOverForTest(),
       onRestartFromZero: () => this.restartFromZero(),
       onContinueAfterGameOver: () => this.continueAfterGameOver(),
-      onToggleBlenderModels: () => this.toggleBlenderModels(),
+      onToggleBlenderModels: (forceState) => this.toggleBlenderModels(forceState),
+      onChangeLanguage: (lang) => this.setLanguage(lang),
+      onTestVoice: (_lang) => this.sound.playTutorialVoice(this.tutorialAct || 1, true),
+      onGetAudioSettings: () =>
+        typeof this.sound?.getAudioSettings === 'function' ? this.sound.getAudioSettings() : null,
+      onChangeAudioSettings: (cfg) => {
+        if (this.sound && typeof this.sound.setAudioSettings === 'function') {
+          return this.sound.setAudioSettings(cfg);
+        }
+        return null;
+      },
+      onToggleBloom: (enabled) => this.toggleBloom(enabled),
+      onToggleConwayGrid: (visible) => this.minimap?.toggleConwayOverlay?.(visible),
+      onToggleSettings: (open) => this.hud?.toggleSettingsModal?.(open),
     });
     this.hud.registerExtraUpgrades(DESIGNED_UPGRADES);
     if (typeof this.hud.setBlenderModeUI === 'function') {
@@ -1065,70 +1091,114 @@ export class GenesisBastionGame {
     if (!act) return;
 
     let objectiveText = act.objectiveLabel;
-    let progressText = 'En cours';
+    let progressText = tr('In Progress', 'En cours');
     let isCompleted = false;
 
     if (this.tutorialAct === 1) {
       const doneCount = (this.tutState.reachedBeacon ? 1 : 0) + (this.tutState.cameraAdjusted ? 1 : 0);
       objectiveText = !this.tutState.reachedBeacon
-        ? 'Marchez jusqu’à la balise dorée au Sud du Bastion (0, 12)'
-        : 'Tournez la caméra (Clic Droit / R-F) ou zoomez (Molette)';
+        ? tr(
+            'Walk to the golden beacon South of the Bastion (0, 12)',
+            'Marchez jusqu’à la balise dorée au Sud du Bastion (0, 12)'
+          )
+        : tr(
+            'Rotate camera (Right Click / R-F) or zoom (Mouse Wheel)',
+            'Tournez la caméra (Clic Droit / R-F) ou zoomez (Molette)'
+          );
       progressText = `${doneCount} / 2`;
     } else if (this.tutorialAct === 2) {
       if (this.tutorialSubStep === '2A') {
-        objectiveText = 'Éliminez le Gobelin Égaré avec votre Fente Cleave [Clic Gauche / Espace]';
-        progressText = 'Étape 1 / 3';
+        objectiveText = tr(
+          'Slay the Stray Goblin with your Cleave Strike [Left Click / Space]',
+          'Éliminez le Gobelin Égaré avec votre Fente Cleave [Clic Gauche / Espace]'
+        );
+        progressText = tr('Step 1 / 3', 'Étape 1 / 3');
       } else if (this.tutorialSubStep === '2B') {
-        objectiveText = 'Esquivez [Shift] et éliminez l’Orc Maraudeur à l’Est';
-        progressText = 'Étape 2 / 3';
+        objectiveText = tr(
+          'Dash [Shift] and eliminate the Marauder Orc to the East',
+          'Esquivez [Shift] et éliminez l’Orc Maraudeur à l’Est'
+        );
+        progressText = tr('Step 2 / 3', 'Étape 2 / 3');
       } else {
-        objectiveText = 'Choisissez votre 1re Adaptation Roguelike dans la fenêtre de Niveau 2';
-        progressText = 'Étape 3 / 3';
+        objectiveText = tr(
+          'Choose your 1st Roguelike Adaptation in the Level 2 window',
+          'Choisissez votre 1re Adaptation Roguelike dans la fenêtre de Niveau 2'
+        );
+        progressText = tr('Step 3 / 3', 'Étape 3 / 3');
       }
     } else if (this.tutorialAct === 3) {
       if (this.tutorialSubStep === '3A') {
-        objectiveText = 'Éliminez le Loup et libérez la Cage de Survivant au Sud-Est (20, 20) avec [E]';
-        progressText = '0 / 1 Survivant';
+        objectiveText = tr(
+          'Slay the Wolf and rescue the Survivor Cage in the South-East (20, 20) with [E]',
+          'Éliminez le Loup et libérez la Cage de Survivant au Sud-Est (20, 20) avec [E]'
+        );
+        progressText = tr('0 / 1 Survivor', '0 / 1 Survivant');
       } else {
-        objectiveText = 'Approchez d’un arbre ou cristal proche et appuyez sur [E] pour récolter';
-        progressText = '1 / 2 · Récolte [E]';
+        objectiveText = tr(
+          'Approach a nearby tree or crystal and press [E] to harvest',
+          'Approchez d’un arbre ou cristal proche et appuyez sur [E] pour récolter'
+        );
+        progressText = tr('1 / 2 · Harvest [E]', '1 / 2 · Récolte [E]');
       }
     } else if (this.tutorialAct === 4) {
       if (this.tutorialSubStep === '4A') {
-        objectiveText = 'Cliquez sur [🗼 Tour de Guet] dans le panneau gauche (ou touche [1])';
-        progressText = '0 / 1 Tour bâtie';
+        objectiveText = tr(
+          'Click [🗼 Watchtower] in the left panel (or press [1])',
+          'Cliquez sur [🗼 Tour de Guet] dans le panneau gauche (ou touche [1])'
+        );
+        progressText = tr('0 / 1 Tower built', '0 / 1 Tour bâtie');
       } else {
         const alive = this.tutState.spawnedEnemies.filter(
           (e) => e && e.hp > 0 && this.enemyManager.enemies.includes(e)
         ).length;
-        objectiveText = 'Repoussez les 2 Gobelins Pillards avec l’aide de votre Tour de Guet';
-        progressText = `${2 - alive} / 2 Pillards vaincus`;
+        objectiveText = tr(
+          'Repel the 2 Goblin Raiders with the help of your Watchtower',
+          'Repoussez les 2 Gobelins Pillards avec l’aide de votre Tour de Guet'
+        );
+        progressText = tr(
+          `${2 - alive} / 2 Raiders defeated`,
+          `${2 - alive} / 2 Pillards vaincus`
+        );
       }
     } else if (this.tutorialAct === 5) {
       if (this.tutorialSubStep === '5A') {
-        objectiveText = 'Libérez le second survivant de la cage au Nord (0, -38) avec [E]';
-        progressText = 'Étape 1 / 2';
+        objectiveText = tr(
+          'Rescue the second survivor from the North cage (0, -38) with [E]',
+          'Libérez le second survivant de la cage au Nord (0, -38) avec [E]'
+        );
+        progressText = tr('Step 1 / 2', 'Étape 1 / 2');
       } else {
-        objectiveText = 'Cliquez sur le bouton illuminé [+ Éclaireur] dans le panneau gauche';
-        progressText = 'Étape 2 / 2';
+        objectiveText = tr(
+          'Click the highlighted [+ Scout] button in the left panel',
+          'Cliquez sur le bouton illuminé [+ Éclaireur] dans le panneau gauche'
+        );
+        progressText = tr('Step 2 / 2', 'Étape 2 / 2');
       }
     } else if (this.tutorialAct === 6) {
       if (this.tutorialSubStep === '6A') {
-        objectiveText =
-          'Traquez et éliminez le Bébé Troll de Feu [Patient Zéro] au Nord-Est (46, -46) avant son âge adulte !';
-        progressText = 'Patient Zéro Juvénile 🐣';
+        objectiveText = tr(
+          'Track and eliminate the Juvenile Fire Troll [Patient Zero] in the North-East (46, -46) before adulthood!',
+          'Traquez et éliminez le Bébé Troll de Feu [Patient Zéro] au Nord-Est (46, -46) avant son âge adulte !'
+        );
+        progressText = tr('Juvenile Patient Zero 🐣', 'Patient Zéro Juvénile 🐣');
       } else {
-        objectiveText = 'Appuyez sur [Tab] (ou le bouton Codex) pour inspecter l’Arbre Phylogénétique';
-        progressText = 'Ouvrir Codex [Tab]';
+        objectiveText = tr(
+          'Press [Tab] (or Codex button) to inspect the Phylogenetic Tree',
+          'Appuyez sur [Tab] (ou le bouton Codex) pour inspecter l’Arbre Phylogénétique'
+        );
+        progressText = tr('Open Codex [Tab]', 'Ouvrir Codex [Tab]');
       }
     } else if (this.tutorialAct === 7) {
-      objectiveText =
-        'Écosystème Darwinien éveillé ! Protégez le Bastion et traquez les futurs Patients Zéro.';
-      progressText = 'Complété ✓';
+      objectiveText = tr(
+        'Darwinian Ecosystem awakened! Defend the Bastion and hunt future Patient Zeros.',
+        'Écosystème Darwinien éveillé ! Protégez le Bastion et traquez les futurs Patients Zéro.'
+      );
+      progressText = tr('Completed ✓', 'Complété ✓');
       isCompleted = true;
     }
 
-    const bannerSig = `${act.actNumber}|${this.tutorialSubStep}|${objectiveText}|${progressText}|${isCompleted ? 1 : 0}`;
+    const lang = getLanguage();
+    const bannerSig = `${lang}|${act.actNumber}|${this.tutorialSubStep}|${objectiveText}|${progressText}|${isCompleted ? 1 : 0}`;
     if (this._lastOnboardingBannerSig === bannerSig) {
       return;
     }
@@ -1139,7 +1209,10 @@ export class GenesisBastionGame {
       actNumber: act.actNumber,
       subStep: this.tutorialSubStep,
       totalActs: ONBOARDING_ACTS.length,
-      stepLabel: `ACTE ${act.actNumber} / ${ONBOARDING_ACTS.length} — ${act.timeWindow}`,
+      stepLabel: tr(
+        `ACT ${act.actNumber} / ${ONBOARDING_ACTS.length} — ${act.timeWindow}`,
+        `ACTE ${act.actNumber} / ${ONBOARDING_ACTS.length} — ${act.timeWindow}`
+      ),
       title: act.title,
       instructionText: act.instructionText,
       whyItMatters: act.whyItMatters,
@@ -1182,7 +1255,10 @@ export class GenesisBastionGame {
         this.hud.updateContextualPrompt(
           screenPos,
           'E',
-          `🏛️ Collecter ${relic.name} (${nextCount}/${maxCount} Reliques)`,
+          tr(
+            `🏛️ Collect ${relic.name} (${nextCount}/${maxCount} Relics)`,
+            `🏛️ Collecter ${relic.name} (${nextCount}/${maxCount} Reliques)`
+          ),
           'prompt-rescue'
         );
         return;
@@ -1201,7 +1277,10 @@ export class GenesisBastionGame {
         this.hud.updateContextualPrompt(
           screenPos,
           'E',
-          `⚔️ Forger & Équiper : ${wSpec.icon} ${wSpec.shortName}`,
+          tr(
+            `⚔️ Forge & Equip: ${wSpec.icon} ${wSpec.shortName}`,
+            `⚔️ Forger & Équiper : ${wSpec.icon} ${wSpec.shortName}`
+          ),
           'prompt-build'
         );
         return;
@@ -1218,7 +1297,12 @@ export class GenesisBastionGame {
           new THREE.Vector3(cage.x, cage.y || 0, cage.z),
           3.4
         );
-        this.hud.updateContextualPrompt(screenPos, 'E', 'Libérer le Survivant', 'prompt-rescue');
+        this.hud.updateContextualPrompt(
+          screenPos,
+          'E',
+          tr('Rescue Survivor', 'Libérer le Survivant'),
+          'prompt-rescue'
+        );
         return;
       }
     }
@@ -1251,15 +1335,21 @@ export class GenesisBastionGame {
       if (!isDragonProvoked) {
         this.hud.updateContextualPrompt(
           screenPos,
-          '⚠️ PACIFIQUE',
-          `[DRAGON SOUVERAIN — ${hpRounded} PV] Ne l'attaquez pas ou TOUTE l'espèce rasera votre Bastion !`,
+          tr('⚠️ PEACEFUL', '⚠️ PACIFIQUE'),
+          tr(
+            `[SOVEREIGN DRAGON — ${hpRounded} HP] Do not attack or the ENTIRE species will raze your Bastion!`,
+            `[DRAGON SOUVERAIN — ${hpRounded} PV] Ne l'attaquez pas ou TOUTE l'espèce rasera votre Bastion !`
+          ),
           'prompt-dragon-peaceful'
         );
       } else {
         this.hud.updateContextualPrompt(
           screenPos,
-          '🔥 COURROUX',
-          `[DRAGON ENRAGÉ — ${hpRounded} PV] Toute l'espèce converge vers le Bastion !`,
+          tr('🔥 WRATH', '🔥 COURROUX'),
+          tr(
+            `[ENRAGED DRAGON — ${hpRounded} HP] The entire species is converging on the Bastion!`,
+            `[DRAGON ENRAGÉ — ${hpRounded} PV] Toute l'espèce converge vers le Bastion !`
+          ),
           'prompt-dragon-wrath'
         );
       }
@@ -1283,12 +1373,20 @@ export class GenesisBastionGame {
         2.6
       );
       if (this.tutorialActive && this.tutorialAct === 2 && this.tutorialSubStep === '2B' && !this.tutState.usedDashInAct2) {
-        this.hud.updateContextualPrompt(screenPos, 'Shift', 'Esquiver puis Frapper', 'prompt-combat');
+        this.hud.updateContextualPrompt(
+          screenPos,
+          'Shift',
+          tr('Dash then Strike', 'Esquiver puis Frapper'),
+          'prompt-combat'
+        );
       } else {
         this.hud.updateContextualPrompt(
           screenPos,
-          'Clic Gauche / Espace',
-          `Frapper ${nearestEnemy.genome?.speciesName || 'Ennemi'}`,
+          tr('Left Click / Space', 'Clic Gauche / Espace'),
+          tr(
+            `Strike ${nearestEnemy.genome?.speciesName || 'Enemy'}`,
+            `Frapper ${nearestEnemy.genome?.speciesName || 'Ennemi'}`
+          ),
           'prompt-combat'
         );
       }
@@ -1306,7 +1404,7 @@ export class GenesisBastionGame {
         );
         const label =
           pad.worldPromptText ||
-          `${pad.actionVerb} : ${pad.shortName} → Niv. ${pad.nextLevel} (${pad.costText})`;
+          `${pad.actionVerb} : ${pad.shortName} → ${tr('Lv.', 'Niv.')} ${pad.nextLevel} (${pad.costText})`;
         this.hud.updateContextualPrompt(screenPos, 'E', label, 'prompt-build');
         return;
       }
@@ -1319,7 +1417,10 @@ export class GenesisBastionGame {
       if (node) {
         const ny = this.terrain.getHeightAt(node.x, node.z);
         const screenPos = this.sceneManager.worldToScreen(new THREE.Vector3(node.x, ny, node.z), 2.4);
-        const label = node.type === 'crystal' ? 'Récolter Cristal (+5)' : 'Récolter Bois (+6)';
+        const label =
+          node.type === 'crystal'
+            ? tr('Harvest Crystal (+5)', 'Récolter Cristal (+5)')
+            : tr('Harvest Wood (+6)', 'Récolter Bois (+6)');
         this.hud.updateContextualPrompt(screenPos, 'E', label, 'prompt-harvest');
         return;
       }
@@ -2664,6 +2765,52 @@ export class GenesisBastionGame {
   }
 
   /**
+   * Active ou désactive le post-processing Bloom en temps réel (Direct 60FPS par défaut).
+   * @param {boolean} [forceState]
+   * @returns {boolean}
+   */
+  toggleBloom(forceState) {
+    if (!this.sceneManager) return false;
+    this.sceneManager.useBloom =
+      typeof forceState === 'boolean' ? forceState : !this.sceneManager.useBloom;
+    if (this.hud) {
+      this.hud.isBloomEnabled = this.sceneManager.useBloom;
+    }
+    if (this.sound && typeof this.sound.playUiClick === 'function') {
+      this.sound.playUiClick();
+    }
+    return this.sceneManager.useBloom;
+  }
+
+  /**
+   * Change la langue active de l'interface et des voix Gemini TTS (`'en'` Anglais par défaut, `'fr'` Français en 2e choix).
+   * Met à jour immédiatement la bannière d'Onboarding, le HUD, les quêtes et le moteur vocal sans recharger la page.
+   *
+   * @param {'en' | 'fr'} lang
+   * @returns {'en' | 'fr'}
+   */
+  setLanguage(lang) {
+    const normalized = setLanguage(lang);
+    if (this.sound && typeof this.sound.setLanguage === 'function') {
+      this.sound.setLanguage(normalized, true);
+    }
+    this._lastOnboardingBannerSig = null;
+    this._refreshOnboardingBannerUI();
+    if (this.hud && typeof this.hud.refreshLanguage === 'function') {
+      this.hud.refreshLanguage(normalized);
+    }
+    logger.info(
+      'I18N',
+      normalized === 'en'
+        ? '🇬🇧 Language set to English (UI + Gemini TTS Voices)'
+        : '🇫🇷 Langue changée en Français (Interface + Voix Gemini TTS)',
+      { language: normalized }
+    );
+    this.hud?.refreshLogFeed?.();
+    return normalized;
+  }
+
+  /**
    * Configure les raccourcis clavier globaux de la session.
    * @private
    */
@@ -2678,6 +2825,11 @@ export class GenesisBastionGame {
         const isOpen = this.hud.toggleCodexModal(undefined, this.enemyManager.getEnemies());
         if (isOpen) {
           this.tutState.codexOpenedInAct6 = true;
+        }
+      } else if (evt.code === 'KeyO' && !evt.ctrlKey && !evt.metaKey) {
+        evt.preventDefault();
+        if (this.hud && typeof this.hud.toggleSettingsModal === 'function') {
+          this.hud.toggleSettingsModal();
         }
       } else if (evt.code === 'KeyH' && !evt.ctrlKey && !evt.metaKey) {
         evt.preventDefault();
@@ -2715,6 +2867,9 @@ export class GenesisBastionGame {
           this.hud.showCombatModeModal();
         }
       } else if (evt.code === 'Escape') {
+        if (this.hud.isSettingsModalOpen && typeof this.hud.hideSettingsModal === 'function') {
+          this.hud.hideSettingsModal();
+        }
         if (this.hud.isCodexOpen) {
           this.hud.toggleCodexModal(false);
         }
@@ -2792,7 +2947,7 @@ export class GenesisBastionGame {
     this.lastFrameTime = safeNow;
     const dt = Number.isFinite(rawDt) ? Math.min(Math.max(rawDt, 0.001), 0.1) : 0.016;
 
-    const isPaused = Boolean(this.hud.isModalPaused);
+    const isPaused = Boolean(this.hud.isModalPaused || this.hud.isSettingsModalOpen);
 
     if (!isPaused) {
       this.elapsedTime += dt;
@@ -3030,6 +3185,10 @@ function bootstrapGenesisBastion() {
       bastionAndNpcs: gameInstance.bastionAndNpcs,
       hud: gameInstance.hud,
       minimap: gameInstance.minimap,
+      getLanguage: () => getLanguage(),
+      setLanguage: (lang) => gameInstance.setLanguage(lang),
+      toggleSettingsModal: (open) => gameInstance.hud?.toggleSettingsModal?.(open),
+      toggleBloom: (forceState) => gameInstance.toggleBloom(forceState),
       toggleBlenderModels: (forceState) => gameInstance.toggleBlenderModels(forceState),
       setBlenderMode: (enabled) => gameInstance.toggleBlenderModels(Boolean(enabled)),
       forceEcoTick: () => gameInstance.forceEcoTick(),
@@ -3053,7 +3212,7 @@ function bootstrapGenesisBastion() {
       restartFromZero: () => gameInstance.restartFromZero(),
       skipTutorial: () => gameInstance.skipTutorial(),
       startTutorialAct: (actNum) => gameInstance.startTutorialAct(actNum),
-      playTutorialVoice: (actOrKey) => gameInstance.sound?.playTutorialVoice?.(actOrKey),
+      playTutorialVoice: (actOrKey) => gameInstance.sound?.playTutorialVoice?.(actOrKey, true),
       toggleMute: () => gameInstance.sound?.toggleMute?.(),
       toggleCodex: () =>
         gameInstance.hud.toggleCodexModal(undefined, gameInstance.enemyManager.getEnemies()),

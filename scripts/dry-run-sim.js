@@ -694,6 +694,76 @@ async function runDryRunSimulation() {
     masteryVerified = false;
   }
 
+  // Phase 13 verification: Settings Menu [O], Bilingual i18n ('en' default, 'fr' 2nd) & 15 English Gemini TTS .wav files
+  console.log('----------------------------------------------------------------------------------------');
+  console.log('[7] PHASE 13 VERIFICATION: BILINGUAL I18N (EN DEFAULT / FR 2ND) & 15 ENGLISH TTS VOICES');
+  let i18nVerified = false;
+  let ttsEnVerified = false;
+  let missingTtsEn = [];
+  try {
+    const i18nMod = await import('../src/utils/i18n.js');
+    const defaultLang = i18nMod.getLanguage();
+    const trEn = i18nMod.tr('Hello Guardian', 'Bonjour Gardien');
+    i18nMod.setLanguage('fr');
+    const switchedFr = i18nMod.getLanguage();
+    const trFr = i18nMod.tr('Hello Guardian', 'Bonjour Gardien');
+    i18nMod.setLanguage('en');
+    const switchedBackEn = i18nMod.getLanguage();
+    i18nVerified =
+      defaultLang === 'en' &&
+      trEn === 'Hello Guardian' &&
+      switchedFr === 'fr' &&
+      trFr === 'Bonjour Gardien' &&
+      switchedBackEn === 'en';
+    console.log(
+      `  - Bilingual i18n Engine    : default='${defaultLang}' -> '${switchedFr}' -> '${switchedBackEn}' (${
+        i18nVerified ? 'PASS' : 'FAIL'
+      })`
+    );
+  } catch (err) {
+    console.log(`  - Bilingual i18n Engine    : FAIL (${err.message})`);
+    i18nVerified = false;
+  }
+
+  const requiredTtsKeys = [
+    'act1_aldric',
+    'act2_aldric',
+    'act3_aldric',
+    'act4_aldric',
+    'act5_kaelen',
+    'act6_kaelen',
+    'act7_kaelen',
+    'alert_patient_zero',
+    'alert_dragon_wrath',
+    'alert_shark_landing',
+    'alert_mole_eruption',
+    'alert_prey_crisis',
+    'alert_relic_found',
+    'alert_island_victory',
+    'alert_gameover_requiem',
+  ];
+  let totalTtsEnBytes = 0;
+  for (const key of requiredTtsKeys) {
+    const wavPath = path.join(PROJECT_ROOT, 'public', 'assets', 'audio', 'tts', 'en', `${key}.wav`);
+    if (!fs.existsSync(wavPath)) {
+      missingTtsEn.push(key);
+    } else {
+      const st = fs.statSync(wavPath);
+      totalTtsEnBytes += st.size;
+      if (st.size < 4096) {
+        missingTtsEn.push(`${key} (small)`);
+      }
+    }
+  }
+  ttsEnVerified = missingTtsEn.length === 0;
+  console.log(
+    `  - English Gemini TTS (.wav): ${requiredTtsKeys.length - missingTtsEn.length}/${
+      requiredTtsKeys.length
+    } verified (${(totalTtsEnBytes / (1024 * 1024)).toFixed(2)} MB total) -> ${
+      ttsEnVerified ? 'PASS' : 'FAIL'
+    }`
+  );
+
   console.log('========================================================================================');
   if (!resetVerified) {
     throw new Error('Phase 9 EcosystemSimulator.resetForNewRoguelikeRun verification failed');
@@ -706,6 +776,11 @@ async function runDryRunSimulation() {
   if (!masteryVerified) {
     throw new Error('Phase 11 <=1%/monster mastery balancing verification failed');
   }
+  if (!i18nVerified || !ttsEnVerified) {
+    throw new Error(
+      `Phase 13 Bilingual i18n / English TTS verification failed: i18n=${i18nVerified}, missingTtsEn=[${missingTtsEn.join(', ')}]`
+    );
+  }
   console.log('DRY-RUN STATUS: PASS');
 }
 
@@ -713,3 +788,4 @@ runDryRunSimulation().catch((err) => {
   console.error('DRY-RUN FAILED:', err);
   process.exitCode = 1;
 });
+
