@@ -1121,3 +1121,303 @@ body {
   font-size: 12.5px;
   color: var(--text-parchment);
 }
+
+/* ============================================================================
+   9. ONBOARDING GUIDÉ (7 ACTES), DÉVOILEMENT PROGRESSIF & BULLES 3D->2D
+   ============================================================================ */
+
+/* Masquage et révélation progressive des panneaux du HUD */
+.hud-locked {
+  display: none !important;
+}
+
+.hud-just-unlocked {
+  animation: hudUnlockReveal 2.2s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes hudUnlockReveal {
+  0% {
+    opacity: 0;
+    transform: translateY(10px) scale(0.97);
+    box-shadow: 0 0 0 rgba(230, 161, 69, 0);
+  }
+  35% {
+    opacity: 1;
+    transform: translateY(0) scale(1.015);
+    box-shadow: 0 0 32px rgba(230, 161, 69, 0.85), inset 0 0 18px rgba(230, 161, 69, 0.35);
+    border-color: #ffd285;
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* Surbrillance pulsante dorée pour guider l'œil vers un bouton (ex. Tour de Guet, + Éclaireur) */
+.tutorial-highlight-pulse {
+  border-color: #ffd285 !important;
+  background: rgba(230, 161, 69, 0.32) !important;
+  color: #fff6df !important;
+  animation: tutorialBtnPulse 1.3s infinite ease-in-out;
+  position: relative;
+}
+
+@keyframes tutorialBtnPulse {
+  0%, 100% {
+    box-shadow: 0 0 10px rgba(230, 161, 69, 0.45), inset 0 0 6px rgba(230, 161, 69, 0.25);
+    transform: scale(1);
+  }
+  50% {
+    box-shadow: 0 0 24px rgba(230, 161, 69, 0.95), inset 0 0 12px rgba(230, 161, 69, 0.45);
+    transform: scale(1.03);
+  }
+}
+
+/* Carte centrale d'Onboarding Guidé (7 Actes) */
+.hud-onboarding-card {
+  pointer-events: auto;
+  max-width: 680px;
+  width: 100%;
+  background: rgba(15, 23, 32, 0.95);
+  backdrop-filter: blur(12px);
+  border: 1.5px solid var(--accent-amber);
+  border-radius: var(--radius-md);
+  padding: 12px 16px;
+  box-shadow: var(--shadow-glow-amber), var(--shadow-panel);
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  transition: opacity 0.25s ease, transform 0.25s ease;
+}
+
+.hud-onboarding-card.is-hidden {
+  display: none;
+}
+
+.onboarding-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.onboarding-step-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+}
+
+.onboarding-step-badge {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: var(--radius-sm);
+  background: rgba(230, 161, 69, 0.22);
+  border: 1px solid var(--accent-amber);
+  color: #ffd285;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.onboarding-progress-track {
+  flex: 1;
+  max-width: 180px;
+  height: 6px;
+  background: rgba(8, 12, 18, 0.9);
+  border: 1px solid rgba(240, 234, 214, 0.16);
+  border-radius: 99px;
+  overflow: hidden;
+}
+
+.onboarding-progress-fill {
+  height: 100%;
+  width: 14%;
+  background: linear-gradient(90deg, var(--accent-amber), #38c172);
+  border-radius: 99px;
+  transition: width 0.3s ease;
+}
+
+.hud-btn-skip-tutorial {
+  padding: 3px 9px;
+  font-size: 11px;
+  font-family: var(--font-mono);
+  background: rgba(29, 42, 54, 0.85);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-subtle);
+}
+
+.hud-btn-skip-tutorial:hover {
+  color: var(--text-parchment);
+  border-color: var(--accent-amber);
+}
+
+.onboarding-title {
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--accent-amber);
+  letter-spacing: 0.03em;
+}
+
+.onboarding-narrative {
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--text-parchment);
+}
+
+.onboarding-keys-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 7px;
+}
+
+.onboarding-key-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  background: rgba(24, 36, 48, 0.95);
+  border: 1px solid rgba(230, 161, 69, 0.45);
+  border-radius: var(--radius-sm);
+  font-size: 11.5px;
+  color: var(--text-secondary);
+}
+
+.onboarding-key-kbd {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  padding: 1px 6px;
+  background: #0d131a;
+  border: 1px solid var(--accent-amber);
+  border-radius: 3px;
+  color: #ffd285;
+}
+
+.onboarding-objective-box {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 7px 11px;
+  background: rgba(20, 35, 29, 0.78);
+  border: 1px solid rgba(56, 193, 114, 0.48);
+  border-left: 4px solid var(--accent-biomass);
+  border-radius: var(--radius-sm);
+}
+
+.onboarding-objective-text {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #dffbe9;
+}
+
+.onboarding-objective-counter {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 700;
+  color: #7ef0ae;
+  white-space: nowrap;
+}
+
+/* Couche plein écran pour les bulles d'actions contextuelles 3D->2D et les dégâts flottants */
+.hud-world-overlay-layer {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  pointer-events: none;
+  z-index: 8;
+  overflow: hidden;
+}
+
+.hud-context-prompt {
+  position: absolute;
+  transform: translate(-50%, -100%);
+  padding: 5px 11px;
+  background: rgba(13, 19, 26, 0.92);
+  border: 1.5px solid var(--accent-amber);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.75), 0 0 12px rgba(230, 161, 69, 0.35);
+  color: var(--text-parchment);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: opacity 0.12s ease;
+}
+
+.hud-context-prompt.is-hidden {
+  display: none;
+}
+
+.hud-context-prompt.prompt-combat {
+  border-color: var(--accent-threat);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.75), 0 0 14px rgba(255, 71, 87, 0.45);
+  color: #ffb8c0;
+}
+
+.hud-context-prompt.prompt-rescue {
+  border-color: #ffd285;
+  color: #ffe3aa;
+}
+
+.hud-context-prompt.prompt-harvest {
+  border-color: var(--accent-biomass);
+  color: #9df7c4;
+}
+
+/* Nombres de dégâts et gains flottants 3D->2D */
+.hud-floating-number {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  font-family: var(--font-mono);
+  font-size: 15px;
+  font-weight: 800;
+  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.95);
+  pointer-events: none;
+  white-space: nowrap;
+  animation: floatUpAndFade 1.05s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.hud-floating-number.num-damage {
+  color: #ff5e6c;
+  font-size: 16px;
+}
+
+.hud-floating-number.num-crit {
+  color: #ffd285;
+  font-size: 18px;
+}
+
+.hud-floating-number.num-xp {
+  color: #7ef0ae;
+  font-size: 14px;
+}
+
+.hud-floating-number.num-resource {
+  color: #70c4ff;
+  font-size: 13.5px;
+}
+
+@keyframes floatUpAndFade {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -10%) scale(0.75);
+  }
+  18% {
+    opacity: 1;
+    transform: translate(-50%, -65%) scale(1.12);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -175%) scale(0.95);
+  }
+}
+

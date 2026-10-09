@@ -81,6 +81,7 @@ export class HUDManager {
    * @param {Function} [callbacks.onBuildStructure] - `(structureId)` Construit un bâtiment au Bastion.
    * @param {Function} [callbacks.onFocusWorldPos] - `(x, z, lineageId)` Centre la caméra/radar sur une cible.
    * @param {Function} [callbacks.onSelectUpgrade] - `(upgrade)` Applique une amélioration roguelike.
+   * @param {Function} [callbacks.onSkipTutorial] - Passe immédiatement le tutoriel et déverrouille tout le HUD.
    */
   constructor(callbacks = {}) {
     /** @type {Object} */
@@ -102,10 +103,17 @@ export class HUDManager {
     this.currentAlertTarget = null;
     /** @type {Array<Object>} */
     this.extraUpgrades = [];
+    /** @type {Record<string, boolean>} */
+    this.previousUnlockedHud = {};
+    /** @type {string} */
+    this._lastPromptSignature = '';
+    /** @type {string} */
+    this._lastOnboardingKeySig = '';
 
     // Nettoyage initial du conteneur
     this.root.replaceChildren();
 
+    this._buildWorldOverlayLayer();
     this._buildTopBar();
     this._buildLeftPanel();
     this._buildCenterAlertColumn();
@@ -133,6 +141,70 @@ export class HUDManager {
   }
 
   /* ==========================================================================
+     0. CALQUE DE PROJECTION 3D -> 2D (BULLES D'ACTION & DÉGÂTS FLOTTANTS)
+     ========================================================================== */
+  _buildWorldOverlayLayer() {
+    this.worldOverlayLayer = el('div', 'hud-world-overlay-layer');
+    this.contextPromptEl = el('div', 'hud-context-prompt is-hidden');
+    this.worldOverlayLayer.appendChild(this.contextPromptEl);
+    this.root.appendChild(this.worldOverlayLayer);
+  }
+
+  /**
+   * Met à jour ou masque la bulle d'action contextuelle projetée au-dessus d'une cible 3D proche
+   * (ennemi à portée de fente, cage de survivant à secourir `[E]`, ou gisement à récolter `[E]`).
+   *
+   * @param {{x: number, y: number, visible: boolean}|null} screenPos - Coordonnées 2D écran.
+   * @param {string} [keyLabel=''] - Touche mise en avant (ex. `'Clic Gauche'`, `'E'`, `'Shift'`).
+   * @param {string} [actionText=''] - Texte d'action (ex. `'Libérer le Survivant'`).
+   * @param {'prompt-combat'|'prompt-rescue'|'prompt-harvest'|''} [variant=''] - Style visuel.
+   */
+  updateContextualPrompt(screenPos, keyLabel = '', actionText = '', variant = '') {
+    if (!this.contextPromptEl) return;
+    if (!screenPos || !screenPos.visible || !actionText) {
+      this.contextPromptEl.classList.add('is-hidden');
+      return;
+    }
+
+    this.contextPromptEl.className = `hud-context-prompt${variant ? ` ${variant}` : ''}`;
+    this.contextPromptEl.style.left = `${Math.round(screenPos.x)}px`;
+    this.contextPromptEl.style.top = `${Math.round(screenPos.y)}px`;
+
+    const sig = `${keyLabel}|${actionText}`;
+    if (this._lastPromptSignature !== sig) {
+      this._lastPromptSignature = sig;
+      this.contextPromptEl.replaceChildren();
+      if (keyLabel) {
+        this.contextPromptEl.appendChild(el('kbd', 'hud-key-cap', keyLabel));
+      }
+      this.contextPromptEl.appendChild(el('span', '', actionText));
+    }
+  }
+
+  /**
+   * Fait jaillir un nombre de dégâts ou d'XP flottant (`-32`, `+45 XP`) aux coordonnées écran 2D.
+   *
+   * @param {{x: number, y: number, visible: boolean}|null} screenPos - Coordonnées 2D écran.
+   * @param {string} text - Texte à afficher (ex. `'-32'`, `'+45 XP'`).
+   * @param {'dmg-normal'|'dmg-crit'|'dmg-xp'|'dmg-heal'} [variant='dmg-normal'] - Variante CSS.
+   */
+  spawnFloatingNumber(screenPos, text, variant = 'dmg-normal') {
+    if (!this.worldOverlayLayer || !screenPos || !screenPos.visible || !text) return;
+    const node = el('div', `hud-floating-number ${variant}`, text);
+    const jitterX = (Math.random() - 0.5) * 26;
+    const jitterY = (Math.random() - 0.5) * 12;
+    node.style.left = `${Math.round(screenPos.x + jitterX)}px`;
+    node.style.top = `${Math.round(screenPos.y + jitterY)}px`;
+    this.worldOverlayLayer.appendChild(node);
+
+    window.setTimeout(() => {
+      if (node.parentNode) {
+        node.parentNode.removeChild(node);
+      }
+    }, 920);
+  }
+
+  /* ==========================================================================
      1. BARRE SUPÉRIEURE (SURVIE, HORLOGE, ECO-TICK, POPULATION, JOUEUR, RESSOURCES)
      ========================================================================== */
   _buildTopBar() {
@@ -145,7 +217,7 @@ export class HUDManager {
     brandGroup.append(brandTitle, this.clockBadge);
 
     // Barre de progression Eco-Tick
-    const ecoGroup = el('div', 'hud-ecotick-group');
+    this.ecoGroup = el('div', 'hud-ecotick-group');
     const ecoHeader = el('div', 'hud-ecotick-header');
     const ecoLabel = el('span', 'hud-ecotick-label', '🧬 Prochain Cycle Génétique');
     this.ecoTimerText = el('span', 'hud-ecotick-timer', '12.0s');
@@ -154,10 +226,10 @@ export class HUDManager {
     const ecoTrack = el('div', 'hud-progress-track');
     this.ecoProgressFill = el('div', 'hud-progress-fill eco-fill');
     ecoTrack.appendChild(this.ecoProgressFill);
-    ecoGroup.append(ecoHeader, ecoTrack);
+    this.ecoGroup.append(ecoHeader, ecoTrack);
 
     // Compteurs Population (Adultes / Bébés) & Mutations actives
-    const statsCluster = el('div', 'hud-stats-cluster');
+    this.statsCluster = el('div', 'hud-stats-cluster');
 
     const popPill = el('div', 'hud-stat-pill');
     popPill.append(
@@ -171,7 +243,7 @@ export class HUDManager {
       (this.mutCountValueEl = el('span', 'hud-stat-pill-value', '1 Active'))
     );
 
-    statsCluster.append(popPill, this.mutPill);
+    this.statsCluster.append(popPill, this.mutPill);
 
     // Barres PV & XP du Joueur
     const vitalsGroup = el('div', 'hud-player-vitals');
@@ -204,13 +276,13 @@ export class HUDManager {
     vitalsGroup.append(hpBox, xpBox);
 
     // Ressources (Bois, Cristal, Biomasse)
-    const resGroup = el('div', 'hud-resources-group');
+    this.resGroup = el('div', 'hud-resources-group');
     this.woodBadge = el('div', 'hud-resource-badge res-wood', '🪵 Bois: 40');
     this.crystalBadge = el('div', 'hud-resource-badge res-crystal', '💎 Cristal: 20');
     this.biomassBadge = el('div', 'hud-resource-badge res-biomass', '🌿 Biomasse: 15');
-    resGroup.append(this.woodBadge, this.crystalBadge, this.biomassBadge);
+    this.resGroup.append(this.woodBadge, this.crystalBadge, this.biomassBadge);
 
-    this.topBar.append(brandGroup, ecoGroup, statsCluster, vitalsGroup, resGroup);
+    this.topBar.append(brandGroup, this.ecoGroup, this.statsCluster, vitalsGroup, this.resGroup);
     this.root.appendChild(this.topBar);
   }
 
@@ -253,8 +325,10 @@ export class HUDManager {
       'Expédition hors-frontière & Radar Mutant',
       '+ Éclaireur'
     );
+    this.scoutRowEl = scoutRow.row;
     this.scoutCountEl = scoutRow.countEl;
     this.scoutMetaEl = scoutRow.metaEl;
+    this.scoutAssignBtn = scoutRow.assignBtn;
 
     // Ligne Gardes
     const guardRow = this._createRoleRow(
@@ -278,8 +352,8 @@ export class HUDManager {
     rolesSection.appendChild(roleList);
 
     // Constructions du Bastion
-    const buildSection = el('div', 'hud-section-block');
-    buildSection.appendChild(el('div', 'hud-section-label', 'Fortifications & Bio-Structures'));
+    this.buildSection = el('div', 'hud-section-block');
+    this.buildSection.appendChild(el('div', 'hud-section-label', 'Fortifications & Bio-Structures'));
     const buildGrid = el('div', 'hud-build-grid');
 
     this.watchtowerBtn = this._createBuildButton(
@@ -299,11 +373,11 @@ export class HUDManager {
     );
 
     buildGrid.append(this.watchtowerBtn, this.palisadeBtn, this.biolabBtn);
-    buildSection.appendChild(buildGrid);
+    this.buildSection.appendChild(buildGrid);
 
     // Laboratoire de Simulation / Actions de Test Directes
-    const simLab = el('div', 'hud-sim-lab');
-    simLab.appendChild(el('div', 'hud-section-label', '🧪 Laboratoire Génétique (Actions Test)'));
+    this.simLab = el('div', 'hud-sim-lab');
+    this.simLab.appendChild(el('div', 'hud-section-label', '🧪 Laboratoire Génétique (Actions Test)'));
 
     const forceTickBtn = el(
       'button',
@@ -325,19 +399,19 @@ export class HUDManager {
       if (this.callbacks.onSpawnFireTroll) this.callbacks.onSpawnFireTroll();
     });
 
-    const openCodexBtn = el(
+    this.openCodexBtn = el(
       'button',
       'hud-btn hud-btn-scout',
       '🧬 Ouvrir Arbre Phylogénétique [Tab]'
     );
-    openCodexBtn.type = 'button';
-    openCodexBtn.addEventListener('click', () => {
+    this.openCodexBtn.type = 'button';
+    this.openCodexBtn.addEventListener('click', () => {
       this.toggleCodexModal();
     });
 
-    simLab.append(forceTickBtn, spawnFireTrollBtn, openCodexBtn);
+    this.simLab.append(forceTickBtn, spawnFireTrollBtn, this.openCodexBtn);
 
-    this.leftPanel.append(header, bastionHpSection, rolesSection, buildSection, simLab);
+    this.leftPanel.append(header, bastionHpSection, rolesSection, this.buildSection, this.simLab);
     this.root.appendChild(this.leftPanel);
   }
 
@@ -347,7 +421,7 @@ export class HUDManager {
    * @param {string} titleText
    * @param {string} subtitleText
    * @param {string} addLabel
-   * @returns {{row: HTMLElement, countEl: HTMLElement, metaEl: HTMLElement}}
+   * @returns {{row: HTMLElement, countEl: HTMLElement, metaEl: HTMLElement, assignBtn: HTMLButtonElement}}
    * @private
    */
   _createRoleRow(roleKey, titleText, subtitleText, addLabel) {
@@ -370,7 +444,7 @@ export class HUDManager {
 
     controls.append(countEl, assignBtn);
     row.append(info, controls);
-    return { row, countEl, metaEl };
+    return { row, countEl, metaEl, assignBtn };
   }
 
   /**
@@ -396,11 +470,55 @@ export class HUDManager {
   }
 
   /* ==========================================================================
-     3. BANNIÈRE CENTRALE D'ALERTE PRIORITAIRE ÉCLAIREUR (PATIENT ZÉRO)
+     3. COLONNE CENTRALE : ONBOARDING GUIDÉ (7 ACTES) & ALERTE ÉCLAIREUR
      ========================================================================== */
   _buildCenterAlertColumn() {
     this.centerCol = el('div', 'hud-center-column');
 
+    // 3A. Carte d'Onboarding Guidé (Actes 1 à 7)
+    this.onboardingCard = el('div', 'hud-onboarding-card is-hidden hud-interactive');
+
+    const topRow = el('div', 'hud-onboarding-top');
+    const stepWrap = el('div', 'hud-onboarding-step-wrap');
+    this.onboardingStepBadge = el('span', 'hud-onboarding-step-badge', 'ACTE 1 / 7');
+    const progTrack = el('div', 'hud-onboarding-progress-track');
+    this.onboardingProgressFill = el('div', 'hud-onboarding-progress-fill');
+    this.onboardingProgressFill.style.width = '14%';
+    progTrack.appendChild(this.onboardingProgressFill);
+    stepWrap.append(this.onboardingStepBadge, progTrack);
+
+    this.skipTutorialBtn = el('button', 'hud-onboarding-skip-btn', 'Passer le tutoriel [P]');
+    this.skipTutorialBtn.type = 'button';
+    this.skipTutorialBtn.title = 'Déverrouiller immédiatement tous les systèmes et lancer l’écosystème complet';
+    this.skipTutorialBtn.addEventListener('click', () => {
+      if (this.callbacks.onSkipTutorial) {
+        this.callbacks.onSkipTutorial();
+      }
+    });
+    topRow.append(stepWrap, this.skipTutorialBtn);
+
+    this.onboardingTitleEl = el('div', 'hud-onboarding-title', '');
+    this.onboardingDescEl = el('div', 'hud-onboarding-desc', '');
+    this.onboardingWhyEl = el('div', 'hud-onboarding-why', '');
+    this.onboardingKeysRow = el('div', 'hud-onboarding-keys-row');
+
+    const objBox = el('div', 'hud-onboarding-objective-box');
+    this.onboardingObjIcon = el('span', 'hud-onboarding-obj-icon', '🎯');
+    this.onboardingObjText = el('span', 'hud-onboarding-obj-text', '');
+    this.onboardingObjProgress = el('span', 'hud-onboarding-obj-progress', '');
+    objBox.append(this.onboardingObjIcon, this.onboardingObjText, this.onboardingObjProgress);
+
+    this.onboardingCard.append(
+      topRow,
+      this.onboardingTitleEl,
+      this.onboardingDescEl,
+      this.onboardingWhyEl,
+      this.onboardingKeysRow,
+      objBox
+    );
+    this.centerCol.appendChild(this.onboardingCard);
+
+    // 3B. Bannière d'alerte prioritaire Éclaireur (Patient Zéro)
     this.alertBanner = el('div', 'hud-scout-alert-banner is-hidden hud-interactive');
     this.alertIconWrap = el('div', 'hud-alert-icon-wrap', '🦅');
 
@@ -441,6 +559,153 @@ export class HUDManager {
     this.alertBanner.append(this.alertIconWrap, body, actions);
     this.centerCol.appendChild(this.alertBanner);
     this.root.appendChild(this.centerCol);
+  }
+
+  /**
+   * Met à jour la bannière d'Onboarding Guidé (Actes 1 à 7) en haut au centre.
+   *
+   * @param {Object} state - État courant de l'acte d'onboarding.
+   * @param {boolean} [state.visible=true] - Affiche ou masque la carte.
+   * @param {number} [state.actNumber=1] - Numéro de l'acte (`1..7`).
+   * @param {number} [state.totalActs=7] - Nombre total d'actes (`7`).
+   * @param {string} [state.stepLabel] - Libellé d'étape (ex. `'Acte 1/7'`).
+   * @param {string} [state.title] - Titre narratif et mécanique.
+   * @param {string} [state.instructionText] - Instructions détaillées.
+   * @param {string} [state.whyItMatters] - Encadré pédagogique expliquant l'utilité stratégique.
+   * @param {Array<{key: string, action: string}>} [state.keyBadges] - Badges de touches/souris.
+   * @param {string} [state.objectiveText] - Objectif actif en cours.
+   * @param {string} [state.progressText] - Compteur de progression (ex. `'1 / 2'`).
+   * @param {boolean} [state.isCompleted=false] - Si l'objectif vient d'être validé.
+   */
+  updateOnboardingBanner(state = {}) {
+    if (!this.onboardingCard) return;
+    if (state.visible === false) {
+      this.onboardingCard.classList.add('is-hidden');
+      return;
+    }
+
+    this.onboardingCard.classList.remove('is-hidden');
+    const actNum = state.actNumber || 1;
+    const total = state.totalActs || 7;
+    this.onboardingStepBadge.textContent = state.stepLabel || `ACTE ${actNum} / ${total}`;
+    const pct = Math.min(100, Math.max(8, Math.round((actNum / total) * 100)));
+    this.onboardingProgressFill.style.width = `${pct}%`;
+
+    this.onboardingTitleEl.textContent = state.title || '';
+    this.onboardingDescEl.textContent = state.instructionText || '';
+
+    if (state.whyItMatters) {
+      this.onboardingWhyEl.textContent = `💡 ${state.whyItMatters}`;
+      this.onboardingWhyEl.style.display = 'block';
+    } else {
+      this.onboardingWhyEl.style.display = 'none';
+    }
+
+    const badges = Array.isArray(state.keyBadges) ? state.keyBadges : [];
+    const keySig = badges.map((b) => `${b.key}:${b.action}`).join('|');
+    if (this._lastOnboardingKeySig !== keySig) {
+      this._lastOnboardingKeySig = keySig;
+      this.onboardingKeysRow.replaceChildren();
+      for (const b of badges) {
+        const pill = el('div', 'hud-key-badge-item');
+        pill.append(
+          el('kbd', 'hud-key-cap', b.key || ''),
+          el('span', 'hud-key-action-label', b.action || '')
+        );
+        this.onboardingKeysRow.appendChild(pill);
+      }
+    }
+
+    this.onboardingObjIcon.textContent = state.isCompleted ? '✅' : '🎯';
+    this.onboardingObjText.textContent = state.objectiveText || '';
+    this.onboardingObjProgress.textContent = state.progressText || '';
+    this.onboardingObjProgress.classList.toggle('is-completed', Boolean(state.isCompleted));
+  }
+
+  /**
+   * Masque la bannière d'Onboarding Guidé (une fois l'Acte 7 terminé ou le tutoriel passé).
+   */
+  hideOnboardingBanner() {
+    if (this.onboardingCard) {
+      this.onboardingCard.classList.add('is-hidden');
+    }
+  }
+
+  /**
+   * Applique le dévoilement progressif (Progressive Disclosure) des panneaux du HUD selon l'Acte courant.
+   * Ajoute une animation d'illumination dorée (`.hud-just-unlocked`) aux panneaux nouvellement déverrouillés.
+   *
+   * @param {Object} unlockedHud - Dictionnaire de visibilité issu de `OnboardingSteps.js`.
+   * @param {Object} [minimapInstance=null] - Instance `Minimap` pour verrouiller/déverrouiller son conteneur.
+   */
+  setHudVisibility(unlockedHud = {}, minimapInstance = null) {
+    const applyLockState = (element, key, isUnlocked) => {
+      if (!element) return;
+      const wasUnlocked = Boolean(this.previousUnlockedHud[key]);
+      element.classList.toggle('hud-locked', !isUnlocked);
+
+      if (isUnlocked && !wasUnlocked && Object.keys(this.previousUnlockedHud).length > 0) {
+        element.classList.remove('hud-just-unlocked');
+        void element.offsetWidth;
+        element.classList.add('hud-just-unlocked');
+        window.setTimeout(() => {
+          element.classList.remove('hud-just-unlocked');
+        }, 1800);
+      }
+    };
+
+    const topEco = Boolean(unlockedHud.topEcoBar);
+    const leftBastion = Boolean(unlockedHud.leftBastionPanel);
+    const leftBuild = Boolean(unlockedHud.leftBuildSection);
+    const leftScout = Boolean(unlockedHud.leftScoutRole);
+    const leftLab = Boolean(unlockedHud.leftLabSection);
+    const rightLineage = Boolean(unlockedHud.rightLineagePanel);
+    const showMinimap = Boolean(unlockedHud.minimap);
+
+    applyLockState(this.ecoGroup, 'topEcoBar', topEco);
+    applyLockState(this.statsCluster, 'topStatsCluster', topEco);
+    applyLockState(this.resGroup, 'topResGroup', leftBastion || topEco);
+    applyLockState(this.leftPanel, 'leftBastionPanel', leftBastion);
+    applyLockState(this.buildSection, 'leftBuildSection', leftBuild);
+    applyLockState(this.scoutRowEl, 'leftScoutRole', leftScout);
+    applyLockState(this.simLab, 'leftLabSection', leftLab);
+    applyLockState(this.rightPanel, 'rightLineagePanel', rightLineage);
+
+    if (minimapInstance && minimapInstance.container) {
+      applyLockState(minimapInstance.container, 'minimap', showMinimap);
+    }
+
+    this.previousUnlockedHud = {
+      topEcoBar: topEco,
+      topStatsCluster: topEco,
+      topResGroup: leftBastion || topEco,
+      leftBastionPanel: leftBastion,
+      leftBuildSection: leftBuild,
+      leftScoutRole: leftScout,
+      leftLabSection: leftLab,
+      rightLineagePanel: rightLineage,
+      minimap: showMinimap,
+    };
+  }
+
+  /**
+   * Met en surbrillance pulsante dorée (`.tutorial-highlight-pulse`) un bouton clé du HUD pendant le tutoriel.
+   *
+   * @param {'watchtower'|'scout'|'codex'|null} targetKey - Bouton à mettre en valeur ou `null`.
+   */
+  setTutorialHighlight(targetKey = null) {
+    const buttons = [this.watchtowerBtn, this.scoutAssignBtn, this.openCodexBtn];
+    for (const btn of buttons) {
+      if (btn) btn.classList.remove('tutorial-highlight-pulse');
+    }
+
+    if (targetKey === 'watchtower' && this.watchtowerBtn) {
+      this.watchtowerBtn.classList.add('tutorial-highlight-pulse');
+    } else if (targetKey === 'scout' && this.scoutAssignBtn) {
+      this.scoutAssignBtn.classList.add('tutorial-highlight-pulse');
+    } else if (targetKey === 'codex' && this.openCodexBtn) {
+      this.openCodexBtn.classList.add('tutorial-highlight-pulse');
+    }
   }
 
   /**
