@@ -40,7 +40,8 @@ npm run build
 | **`1` / `2` / `3` / `4`** | Lancer les **Sorts 3D Évolutifs** en mode Actif Diablo *(auto-cast en mode Vampire Survivors)* |
 | **`C` / `B`** | Basculer en direct entre le mode **Auto (Vampire Survivors)** et **Actif (Diablo)** / Ouvrir le sélecteur |
 | **`Shift` / `Clic Droit`** | Esquive rapide (**Dash / Roulade**) |
-| **`E`** | Interagir : libérer un PNJ en cage, récolter bois/cristal, se soigner au Bastion |
+| **`E`** | Interagir : libérer un PNJ en cage, récolter bois/cristal, **construire/améliorer un bâtiment sur son socle 3D** |
+| **`H`** | Ouvrir / Fermer la modale **Architecte du Bastion (5 Bâtiments Niv. 0 $\rightarrow$ 3)** *(met le jeu en pause)* |
 | **`Q` / `E` ou Glisser Clic Droit** | Rotation orbitale de la caméra 3D tactique |
 | **`Molette Souris`** | Zoom / Dézoom tactique (vue rapprochée action $\leftrightarrow$ vue stratégique écosystème) |
 | **`Tab`** | Ouvrir / Fermer le **Codex de l'Arbre Phylogénétique & Génome** *(met le jeu 100% en pause)* |
@@ -48,7 +49,7 @@ npm run build
 | **`G`** | Afficher / Masquer la **Grille de Densité de Conway** sur la Minimap |
 | **`T`** | **[Labo Test]** Forcer immédiatement un **Cycle Écologique (Eco-Tick)** |
 | **`M`** | **[Labo Test]** Faire apparaître un **Patient Zéro (Troll de Feu)** dans la nature |
-| **`F1` / `F2` / `F3`** | Actions rapides du Bastion (Construire Tour de Guet, Palissade, Bio-Labo) |
+| **`F1`..`F5`** | Construire / Améliorer les **5 Bâtiments du Bastion** (Tour de Guet, Scierie, Bio-Labo, Guilde des Éclaireurs, Cœur) |
 
 ---
 

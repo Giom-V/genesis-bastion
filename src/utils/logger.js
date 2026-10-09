@@ -124,6 +124,20 @@ class GenesisLogger {
   }
 
   /**
+   * Logs a runtime error or caught exception so render/tick loops can recover safely.
+   * @param {string} category - Subsystem name or error message.
+   * @param {string|Object} [message] - Error description or metadata object.
+   * @param {Object} [meta={}] - Additional error context.
+   * @returns {Object} Created log entry.
+   */
+  error(category, message, meta = {}) {
+    if (typeof message === 'undefined' || (typeof message === 'object' && message !== null)) {
+      return this._record('WARN', 'ERROR', String(category), message || {});
+    }
+    return this._record('WARN', category || 'ERROR', message, meta);
+  }
+
+  /**
    * Logs a Darwinian evolutionary event (crossover birth, Mendelian dominant inheritance,
    * de novo mutation emergence, or inter-species hybridization).
    * @param {string} message - Evolutionary event description.
