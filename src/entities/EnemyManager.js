@@ -1,0 +1,1046 @@
+/**
+ * @fileoverview Enemy Population, Pack/Territory AI, Combat & Eco-Tick Lifecycle Manager.
+ * Manages all wild creatures across the 3D island, including pack cohesion (maintaining
+ * Conway's Game of Life optimal density windows), famine migration waves, aggro & melee/fireball
+ * attacks against the Player, Scouts, and Bastion, and mutant lineage eradication tracking.
+ *
+ * Usage:
+ *   const enemyManager = new EnemyManager(scene, terrain, vfx, ecoSim);
+ *   enemyManager.spawnInitialPopulation();
+ *   enemyManager.update(dt, elapsedTime, player, bastionAndNpcs, onLineageEradicated);
+ */
+
+import * as THREE from 'three';
+import { CONFIG } from '../config.js';
+import { Genome } from '../ecosystem/Genome.js';
+import { createHybridSpec } from '../ecosystem/Phylogeny.js';
+import {
+  buildCreatureMesh,
+  animateCreatureMesh,
+  updateCreatureOverlay,
+} from './CreatureMeshBuilder.js';
+import { dist2D, clamp } from '../utils/math.js';
+import { logger } from '../utils/logger.js';
+
+export class EnemyManager {
+  /**
+   * @param {THREE.Scene} scene - Three.js scene for enemy meshes.
+   * @param {Object} terrain - Terrain instance providing `getHeightAt(x, z)` and `getBiomeAt(x, z)`.
+   * @param {Object} vfx - VFXManager instance for birth/hit/death particles and Patient Zero sky beacons.
+   * @param {Object} ecoSim - EcosystemSimulator instance running Conway's Game of Life + genetics.
+   */
+  constructor(scene, terrain, vfx, ecoSim) {
+    /** @type {THREE.Scene} */
+    this.scene = scene;
+    /** @type {Object} */
+    this.terrain = terrain;
+    /** @type {Object} */
+    this.vfx = vfx;
+    /** @type {Object} */
+    this.ecoSim = ecoSim;
+
+    /** @type {Array<Object>} Active enemy entities in the world */
+    this.enemies = [];
+    /** @type {Array<Object>} Active enemy projectiles (e.g. Pyro/Dragon fireballs) */
+    this.projectiles = [];
+    /** @type {number} Monotonic entity ID counter */
+    this.nextEnemyId = 1;
+
+    /** @type {number} Seconds elapsed since last genetic Eco-Tick */
+    this.ecoTickTimer = 0;
+    /** @type {number} Interval in seconds between Eco-Ticks */
+    this.ecoTickInterval = CONFIG.ECO?.TICK_INTERVAL || 12;
+    /** @type {number} Seconds remaining until next Eco-Tick */
+    this.timeUntilNextTick = this.ecoTickInterval;
+    /** @type {number} Normalized [0..1] progress toward next Eco-Tick */
+    this.ecoTickProgress = 0;
+
+    /** @type {Set<string>} Tracks mutations that have existed so we can detect complete eradication */
+    this.seenMutations = new Set();
+    /** @type {Function|null} Optional stored callback when a mutant lineage is eradicated */
+    this.onLineageEradicated = null;
+  }
+
+  /**
+   * Creates a fallback Genome object if `Genome.createInitial` is unavailable or returns partial data.
+   * @param {string} speciesId - Base species ID.
+   * @returns {Object} Genome instance.
+   */
+  _createSafeGenome(speciesId = 'goblin') {
+    if (Genome && typeof Genome.createInitial === 'function') {
+      return Genome.createInitial(speciesId);
+    }
+    const sp = CONFIG.SPECIES[speciesId] || CONFIG.SPECIES.goblin;
+    return {
+      speciesId: sp.id,
+      speciesName: sp.name,
+      isHybrid: false,
+      hybridParents: [sp.id, sp.id],
+      generation: 1,
+      lineageId: `${sp.id}_gen1`,
+      genes: {
+        size: sp.baseSize,
+        speed: sp.baseSpeed,
+        strength: sp.baseDamage,
+        maxHp: sp.baseHp,
+        fertility: sp.fertility || 1.0,
+        metabolism: sp.metabolism || 4.0,
+        aggroRadius: sp.aggroRadius || 18,
+      },
+      mutations: [],
+      fitnessScore: 1.0,
+    };
+  }
+
+  /**
+   * Injects a dominant mutation into a genome and recalculates its combat/morphological genes.
+   * @param {Object} genome - Target genome.
+   * @param {string} mutationId - Key from `CONFIG.MUTATIONS`.
+   */
+  _applyMutationToGenome(genome, mutationId) {
+    const mutDef = CONFIG.MUTATIONS?.[mutationId];
+    if (!mutDef || !genome) return;
+
+    if (!Array.isArray(genome.mutations)) {
+      genome.mutations = [];
+    }
+    if (!genome.mutations.includes(mutationId)) {
+      genome.mutations.push(mutationId);
+    }
+
+    const mults = mutDef.statMultipliers || {};
+    if (genome.genes) {
+      if (mults.maxHp) genome.genes.maxHp = Math.round(genome.genes.maxHp * mults.maxHp);
+      if (mults.strength) genome.genes.strength = +(genome.genes.strength * mults.strength).toFixed(1);
+      if (mults.speed) genome.genes.speed = +(genome.genes.speed * mults.speed).toFixed(2);
+      if (mults.size) genome.genes.size = +(genome.genes.size * mults.size).toFixed(2);
+    }
+    genome.fitnessScore = (genome.fitnessScore || 1.0) + (mutDef.fitnessBonus || 0.4);
+  }
+
+  /**
+   * Spawns the initial tribal packs and beast prides across their preferred biomes
+   * outside the Bastion safe radius (`42` units), and seeds an innate "Patient Zero"
+   * Fire Troll (`troll` with `pyro_gland`) at moderate distance (~68-78 units) so
+   * Scouts can discover it early in the session.
+   *
+   * @param {number} [count=CONFIG.ECO.INITIAL_POPULATION] - Total initial creatures to spawn.
+   * @returns {Array<Object>} Spawned enemies.
+   */
+  spawnInitialPopulation(count = CONFIG.ECO?.INITIAL_POPULATION || 42) {
+    const safeRadius = CONFIG.WORLD?.SAFE_SPAWN_RADIUS || 42;
+    const maxRadius = (CONFIG.WORLD?.SIZE || 240) * 0.43;
+
+    // Define biome-aligned pack centers around the island (each pack has 3-5 creatures
+    // within Conway's optimal neighbor radius so reproduction works immediately).
+    const packDefinitions = [
+      { speciesId: 'goblin', angle: 0.35, dist: 52, size: 5 },
+      { speciesId: 'orc', angle: 0.95, dist: 62, size: 5 },
+      { speciesId: 'troll', angle: 0.72, dist: 72, size: 4, seedMutant: 'pyro_gland' }, // NE Fire Troll pack!
+      { speciesId: 'wolf', angle: 2.1, dist: 55, size: 5 },
+      { speciesId: 'lion', angle: 2.75, dist: 66, size: 4 },
+      { speciesId: 'goblin', angle: 3.55, dist: 50, size: 5 },
+      { speciesId: 'orc', angle: 4.15, dist: 64, size: 4 },
+      { speciesId: 'vulture', angle: 4.85, dist: 74, size: 4 },
+      { speciesId: 'wolf', angle: 5.5, dist: 58, size: 4 },
+      { speciesId: 'dragon', angle: 1.55, dist: 86, size: 2 },
+    ];
+
+    let spawnedCount = 0;
+    let patientZeroSeeded = false;
+
+    for (const pack of packDefinitions) {
+      if (spawnedCount >= count) break;
+      const centerDist = clamp(pack.dist, safeRadius + 6, maxRadius);
+      const cx = Math.cos(pack.angle) * centerDist;
+      const cz = Math.sin(pack.angle) * centerDist;
+
+      for (let i = 0; i < pack.size && spawnedCount < count; i++) {
+        const offsetAngle = (i / pack.size) * Math.PI * 2 + Math.random() * 0.4;
+        const offsetDist = 4 + Math.random() * 6.5;
+        const x = clamp(cx + Math.cos(offsetAngle) * offsetDist, -maxRadius, maxRadius);
+        const z = clamp(cz + Math.sin(offsetAngle) * offsetDist, -maxRadius, maxRadius);
+
+        const genome = this._createSafeGenome(pack.speciesId);
+        let isPatientZero = false;
+
+        if (pack.seedMutant && !patientZeroSeeded && i === 0) {
+          this._applyMutationToGenome(genome, pack.seedMutant);
+          isPatientZero = true;
+          patientZeroSeeded = true;
+          genome.isPatientZero = true;
+        }
+
+        const enemy = this.spawnEnemy(x, z, genome, [], { isPatientZero });
+        if (isPatientZero) {
+          logger.evolution(
+            `Patient Zéro initial détecté dans l'écosystème : ${genome.speciesName} porteur de [${CONFIG.MUTATIONS[pack.seedMutant]?.name || pack.seedMutant}]`,
+            { enemyId: enemy.id, speciesId: genome.speciesId, mutationId: pack.seedMutant, x: Math.round(x), z: Math.round(z) }
+          );
+        }
+        spawnedCount++;
+      }
+    }
+
+    // Fill any remaining count with small sister-species pairs
+    const fallbackSpecies = ['goblin', 'orc', 'wolf', 'lion', 'vulture', 'troll'];
+    while (spawnedCount < count) {
+      const spId = fallbackSpecies[spawnedCount % fallbackSpecies.length];
+      const angle = Math.random() * Math.PI * 2;
+      const dist = safeRadius + 8 + Math.random() * (maxRadius - safeRadius - 12);
+      const x = Math.cos(angle) * dist;
+      const z = Math.sin(angle) * dist;
+      const genome = this._createSafeGenome(spId);
+      this.spawnEnemy(x, z, genome, []);
+      spawnedCount++;
+    }
+
+    logger.info('ECO', `Population initiale générée : ${this.enemies.length} créatures réparties en meutes.`, {
+      count: this.enemies.length,
+    });
+
+    return this.enemies;
+  }
+
+  /**
+   * Computes species-tuned maturation duration in seconds for a juvenile creature.
+   * @param {string} speciesId
+   * @returns {number}
+   */
+  _getMaturationTime(speciesId) {
+    const speciesTimes = {
+      goblin: 16,
+      orc: 22,
+      troll: 26,
+      wolf: 18,
+      lion: 24,
+      vulture: 20,
+      dragon: 34,
+    };
+    return speciesTimes[speciesId] || CONFIG.ECO?.MATURATION_TIME || 20;
+  }
+
+  /**
+   * Spawns a single enemy creature in the world with articulated genome-driven 3D morphology.
+   * Supports both Adult (`lifeStage: 'adult'`, `isAdult: true`) and Juvenile Baby
+   * (`lifeStage: 'baby'`, `isAdult: false`, `0.5x` 3D scale, `0.55x` HP/damage, cannot reproduce).
+   *
+   * @param {number} x - World X position.
+   * @param {number} z - World Z position.
+   * @param {Object} genome - Creature Genome object.
+   * @param {Array<string|number>} [parentIds=[]] - Parent IDs if born from crossover.
+   * @param {Object} [options={}] - Additional spawn flags (`isPatientZero`, `spottedByScout`, `lifeStage`, `isAdult`, `age`).
+   * @returns {Object} Spawned enemy entity.
+   */
+  spawnEnemy(x, z, genome, parentIds = [], options = {}) {
+    const safeGenome = genome || this._createSafeGenome('goblin');
+    const spDef = CONFIG.SPECIES[safeGenome.speciesId] || CONFIG.SPECIES.goblin;
+    const genes = safeGenome.genes || {};
+
+    // Ensure hybrid metadata is populated if hybrid
+    if (safeGenome.isHybrid && Array.isArray(safeGenome.hybridParents) && safeGenome.hybridParents.length >= 2) {
+      const hybridSpec = createHybridSpec(safeGenome.hybridParents[0], safeGenome.hybridParents[1]);
+      if (hybridSpec && !safeGenome.speciesName) {
+        safeGenome.speciesName = hybridSpec.name;
+      }
+    }
+    if (!safeGenome.speciesName) {
+      safeGenome.speciesName = spDef.name || safeGenome.speciesId;
+    }
+
+    const mutations = Array.isArray(safeGenome.mutations) ? safeGenome.mutations : [];
+    const isPatientZero = Boolean(
+      options.isPatientZero ||
+        safeGenome.isPatientZero ||
+        (mutations.length > 0 && mutations.some((m) => !this.seenMutations.has(m)))
+    );
+
+    for (const mutId of mutations) {
+      this.seenMutations.add(mutId);
+    }
+
+    const id = `enemy_${this.nextEnemyId++}`;
+    const y = this.terrain ? this.terrain.getHeightAt(x, z) : 0;
+
+    // Determine juvenile ('baby') vs 'adult' lifecycle stage
+    const isNewborn = parentIds && parentIds.length > 0;
+    const lifeStage =
+      options.lifeStage || (options.isAdult === false || isNewborn ? 'baby' : 'adult');
+    const isAdult = lifeStage === 'adult';
+    const maturationTime = options.maturationTime || this._getMaturationTime(safeGenome.speciesId);
+    const age = typeof options.age === 'number' ? options.age : isAdult ? maturationTime : 0;
+
+    const adultMaxHp = Math.round(genes.maxHp || spDef.baseHp || 60);
+    const adultDamage = +(genes.strength || spDef.baseDamage || 10).toFixed(1);
+    const babyStatMult = CONFIG.ECO?.BABY_STAT_MULT || 0.55;
+
+    const maxHp = isAdult ? adultMaxHp : Math.max(12, Math.round(adultMaxHp * babyStatMult));
+    const damage = isAdult ? adultDamage : +(adultDamage * babyStatMult).toFixed(1);
+    const speed = +(genes.speed || spDef.baseSpeed || 6.5).toFixed(2);
+
+    let mesh = null;
+    if (this.scene) {
+      mesh = buildCreatureMesh({
+        type: 'enemy',
+        speciesId: safeGenome.speciesId,
+        genome: safeGenome,
+        isPatientZero,
+        lifeStage,
+        isAdult,
+      });
+      mesh.position.set(x, Math.max(y, CONFIG.WORLD.WATER_LEVEL + 0.2), z);
+      mesh.userData.enemyId = id;
+      this.scene.add(mesh);
+    }
+
+    const enemy = {
+      id,
+      x,
+      z,
+      y,
+      vx: 0,
+      vz: 0,
+      hp: maxHp,
+      maxHp,
+      adultMaxHp,
+      damage,
+      adultDamage,
+      speed,
+      genome: safeGenome,
+      parentIds,
+      lifeStage,
+      isAdult,
+      age,
+      maturationTime,
+      starving: false,
+      lonely: false,
+      spottedByScout: Boolean(options.spottedByScout),
+      isPatientZero,
+      mesh,
+      position: mesh ? mesh.position : new THREE.Vector3(x, y, z),
+      state: 'patrol',
+      targetId: null,
+      attackCooldown: 0,
+      hitFlash: 0,
+      wanderAngle: Math.random() * Math.PI * 2,
+      wanderTimer: 1.5 + Math.random() * 3.0,
+      homeX: x,
+      homeZ: z,
+    };
+
+    this.enemies.push(enemy);
+    return enemy;
+  }
+
+  /**
+   * Transitions a juvenile ('baby') creature into a reproductive 'adult'.
+   * Restores full adult maxHp, damage, and 1.0x 3D scale.
+   * @param {Object} enemy
+   */
+  _matureEnemyToAdult(enemy) {
+    if (!enemy || enemy.isAdult) return;
+    const hpRatio = enemy.maxHp > 0 ? enemy.hp / enemy.maxHp : 1;
+    enemy.lifeStage = 'adult';
+    enemy.isAdult = true;
+    enemy.maxHp = enemy.adultMaxHp || enemy.maxHp;
+    enemy.hp = Math.max(1, Math.round(enemy.maxHp * hpRatio));
+    enemy.damage = enemy.adultDamage || enemy.damage;
+
+    if (enemy.mesh) {
+      updateCreatureOverlay(
+        enemy.mesh,
+        enemy.hp,
+        enemy.maxHp,
+        enemy.isPatientZero,
+        enemy.spottedByScout,
+        false,
+        1.0
+      );
+    }
+
+    if (Array.isArray(enemy.genome?.mutations) && enemy.genome.mutations.length > 0) {
+      const mutName = CONFIG.MUTATIONS?.[enemy.genome.mutations[0]]?.name || enemy.genome.mutations[0];
+      logger.evolution(
+        `Maturation : Le juvénile ${enemy.genome.speciesName} [${mutName}] est devenu ADULTE et peut désormais se reproduire !`,
+        { enemyId: enemy.id, speciesName: enemy.genome.speciesName, mutations: enemy.genome.mutations }
+      );
+    }
+  }
+
+  /**
+   * Forces the immediate spawn of a mutant Patient Zero (e.g. a Fire Troll with `pyro_gland`)
+   * along with 2 packmates so the user or `--dry-run` can test Scout discovery and dominant
+   * mutation inheritance on demand.
+   *
+   * @param {string} [mutationId='pyro_gland'] - Mutation ID from `CONFIG.MUTATIONS`.
+   * @param {string} [speciesId='troll'] - Base species ID from `CONFIG.SPECIES`.
+   * @param {{x: number, z: number}|null} [nearPos=null] - Optional custom coordinates.
+   * @returns {Object} The spawned Patient Zero enemy entity.
+   */
+  forceSpawnMutant(mutationId = 'pyro_gland', speciesId = 'troll', nearPos = null) {
+    let x;
+    let z;
+    if (nearPos && typeof nearPos.x === 'number' && typeof nearPos.z === 'number') {
+      x = nearPos.x;
+      z = nearPos.z;
+    } else {
+      const angle = Math.random() * Math.PI * 2;
+      const dist = 58 + Math.random() * 24;
+      x = Math.cos(angle) * dist;
+      z = Math.sin(angle) * dist;
+    }
+
+    const genome = this._createSafeGenome(speciesId);
+    this._applyMutationToGenome(genome, mutationId);
+    genome.isPatientZero = true;
+
+    const mutantEnemy = this.spawnEnemy(x, z, genome, [], {
+      isPatientZero: true,
+      lifeStage: 'adult',
+      isAdult: true,
+    });
+
+    // Ensure at least 2 same-species adult neighbors are nearby so Conway's optimal density (2..5) is met
+    const nearbyCount = this.enemies.filter(
+      (e) => e.id !== mutantEnemy.id && dist2D(e.x, e.z, x, z) <= (CONFIG.ECO?.NEIGHBOR_RADIUS || 22)
+    ).length;
+
+    if (nearbyCount < 2) {
+      for (let i = 0; i < 2 - nearbyCount; i++) {
+        const mateGenome = this._createSafeGenome(speciesId);
+        const a = Math.random() * Math.PI * 2;
+        const mx = x + Math.cos(a) * 7;
+        const mz = z + Math.sin(a) * 7;
+        this.spawnEnemy(mx, mz, mateGenome, [], { lifeStage: 'adult', isAdult: true });
+      }
+    }
+
+    const mutName = CONFIG.MUTATIONS?.[mutationId]?.name || mutationId;
+    if (this.vfx && typeof this.vfx.spawnBirthEffect === 'function') {
+      this.vfx.spawnBirthEffect(
+        new THREE.Vector3(mutantEnemy.x, mutantEnemy.y + 0.5, mutantEnemy.z),
+        true,
+        false,
+        CONFIG.MUTATIONS?.[mutationId]?.colorHex || 0xff4500
+      );
+    }
+
+    logger.evolution(
+      `Apparition de Patient Zéro : ${mutantEnemy.genome.speciesName} [${mutName}] en (${Math.round(x)}, ${Math.round(z)}) !`,
+      { enemyId: mutantEnemy.id, speciesId, mutationId, x: Math.round(x), z: Math.round(z) }
+    );
+
+    return mutantEnemy;
+  }
+
+  /**
+   * Executes one Conway's Game of Life + Darwinian genetic reproduction cycle across the island.
+   * All newborn offspring start as Juvenile Babies (`lifeStage: 'baby'`, `isAdult: false`, `age: 0`)
+   * and cannot reproduce until they mature into Adults!
+   *
+   * @returns {Object} Summary of the Eco-Tick result.
+   */
+  triggerEcoTick() {
+    // If triggerEcoTick was called manually (button / dry-run) before a full timer elapsed,
+    // advance juvenile ages by the remaining tick interval so babies mature across manual ticks.
+    const unelapsed = Math.max(0, this.ecoTickInterval - this.ecoTickTimer);
+    if (unelapsed > 1.0) {
+      for (const e of this.enemies) {
+        e.age = (e.age || 0) + unelapsed;
+        if (!e.isAdult && e.age >= (e.maturationTime || 20)) {
+          this._matureEnemyToAdult(e);
+        }
+      }
+    }
+
+    this.ecoTickTimer = 0;
+    this.timeUntilNextTick = this.ecoTickInterval;
+    this.ecoTickProgress = 0;
+
+    if (!this.ecoSim || typeof this.ecoSim.stepEcoTick !== 'function') {
+      return { tickNumber: 0, births: [], starvingIds: [], lonelyIds: [] };
+    }
+
+    const result = this.ecoSim.stepEcoTick(this.enemies, (x, z) =>
+      this.terrain ? this.terrain.getBiomeAt(x, z) : 'plains'
+    );
+
+    // Synchronize starving & lonely sets if returned as ID collections
+    if (result.starvingIds) {
+      const starvingSet =
+        result.starvingIds instanceof Set ? result.starvingIds : new Set(result.starvingIds);
+      for (const e of this.enemies) {
+        e.starving = starvingSet.has(e.id);
+      }
+    }
+    if (result.lonelyIds) {
+      const lonelySet = result.lonelyIds instanceof Set ? result.lonelyIds : new Set(result.lonelyIds);
+      for (const e of this.enemies) {
+        e.lonely = lonelySet.has(e.id);
+      }
+    }
+
+    // Spawn newborn offspring as Juvenile Babies ('baby') up to world population cap
+    const maxPop = CONFIG.ECO?.MAX_WORLD_POPULATION || 130;
+    const births = Array.isArray(result.births) ? result.births : [];
+    const spawnedOffspring = [];
+
+    for (const birth of births) {
+      if (this.enemies.length >= maxPop) break;
+      const bx = typeof birth.x === 'number' ? birth.x : 0;
+      const bz = typeof birth.z === 'number' ? birth.z : 0;
+      const childGenome = birth.genome || this._createSafeGenome(birth.speciesId || 'goblin');
+      const parentIds = birth.parentIds || ['parent_a', 'parent_b'];
+
+      // Inherit Scout-spotted status if a parent was already tracked by Scouts
+      const parentSpotted = this.enemies.some(
+        (e) => parentIds.includes(e.id) && e.spottedByScout
+      );
+
+      const child = this.spawnEnemy(bx, bz, childGenome, parentIds, {
+        isPatientZero: Boolean(birth.isPatientZero),
+        spottedByScout: parentSpotted,
+        lifeStage: 'baby',
+        isAdult: false,
+        age: 0,
+      });
+      spawnedOffspring.push(child);
+
+      const hasMut = Array.isArray(childGenome.mutations) && childGenome.mutations.length > 0;
+      const isHyb = Boolean(childGenome.isHybrid);
+      const mutHex = hasMut
+        ? CONFIG.MUTATIONS?.[childGenome.mutations[0]]?.colorHex || 0xff4500
+        : isHyb
+          ? 0x48dbfb
+          : 0x44ff88;
+
+      if (this.vfx && typeof this.vfx.spawnBirthEffect === 'function') {
+        this.vfx.spawnBirthEffect(
+          new THREE.Vector3(child.x, child.y + 0.5, child.z),
+          hasMut,
+          isHyb,
+          mutHex
+        );
+      }
+
+      if (child.spottedByScout && (hasMut || isHyb) && this.vfx?.setPatientZeroBeacon) {
+        this.vfx.setPatientZeroBeacon(child.id, child.mesh ? child.mesh.position : child.position, mutHex, true);
+      }
+    }
+
+    // Refresh beacons for all spotted mutants/hybrids
+    for (const enemy of this.enemies) {
+      const hasMut = Array.isArray(enemy.genome?.mutations) && enemy.genome.mutations.length > 0;
+      if (enemy.spottedByScout && (hasMut || enemy.genome?.isHybrid || enemy.isPatientZero)) {
+        const mutId = hasMut ? enemy.genome.mutations[0] : null;
+        const colorHex = mutId ? CONFIG.MUTATIONS?.[mutId]?.colorHex || 0xff3300 : 0xff3300;
+        if (this.vfx && typeof this.vfx.setPatientZeroBeacon === 'function' && enemy.mesh) {
+          this.vfx.setPatientZeroBeacon(enemy.id, enemy.mesh.position, colorHex, true);
+        }
+      }
+    }
+
+    return {
+      ...result,
+      spawnedOffspring,
+    };
+  }
+
+  /**
+   * Updates all enemies, eco-tick timers, juvenile-to-adult maturation, starvation damage,
+   * pack movement, combat attacks, and projectiles every frame.
+   *
+   * @param {number} dt - Frame delta time in seconds.
+   * @param {number} elapsedTime - Total elapsed game time in seconds.
+   * @param {Object} player - PlayerController instance.
+   * @param {Object} bastionAndNpcs - BastionAndNPCs instance.
+   * @param {Function} [onLineageEradicated] - Callback `(mutationId, enemy)` when a mutant lineage hits 0 carriers.
+   */
+  update(dt, elapsedTime, player, bastionAndNpcs, onLineageEradicated) {
+    if (typeof onLineageEradicated === 'function') {
+      this.onLineageEradicated = onLineageEradicated;
+    }
+
+    // 1. Automatic Genetic Eco-Tick Timer
+    this.ecoTickTimer += dt;
+    this.timeUntilNextTick = Math.max(0, this.ecoTickInterval - this.ecoTickTimer);
+    this.ecoTickProgress = clamp(this.ecoTickTimer / this.ecoTickInterval, 0, 1);
+
+    if (this.ecoTickTimer >= this.ecoTickInterval) {
+      this.triggerEcoTick();
+    }
+
+    const worldHalf = (CONFIG.WORLD?.SIZE || 240) * 0.45;
+    const bastionRadius = CONFIG.BASTION?.RADIUS || 14;
+    const starvationDps = CONFIG.ECO?.STARVATION_DPS || 4.5;
+
+    // 2. Update Each Enemy Entity
+    for (let i = this.enemies.length - 1; i >= 0; i--) {
+      const enemy = this.enemies[i];
+      enemy.attackCooldown = Math.max(0, enemy.attackCooldown - dt);
+      enemy.hitFlash = Math.max(0, enemy.hitFlash - dt * 4);
+
+      // Advance age & check Baby -> Adult maturation
+      enemy.age = (enemy.age || 0) + dt;
+      if (!enemy.isAdult && enemy.age >= (enemy.maturationTime || 20)) {
+        this._matureEnemyToAdult(enemy);
+      }
+
+      // Starvation HP drain & migration pressure
+      if (enemy.starving) {
+        const hasCryo = Array.isArray(enemy.genome?.mutations) && enemy.genome.mutations.includes('cryo_blood');
+        const drain = starvationDps * (hasCryo ? 0.55 : 1.0) * dt;
+        enemy.hp -= drain;
+        if (enemy.hp <= 0) {
+          this._removeEnemyAtIndex(i, false, this.onLineageEradicated);
+          continue;
+        }
+      }
+
+      // Passive vampiric regeneration if mutated
+      if (
+        Array.isArray(enemy.genome?.mutations) &&
+        enemy.genome.mutations.includes('vampiric_maw') &&
+        enemy.hp < enemy.maxHp
+      ) {
+        enemy.hp = Math.min(enemy.maxHp, enemy.hp + 1.5 * dt);
+      }
+
+      const aggroRadius = enemy.genome?.genes?.aggroRadius || 19;
+      let targetX = null;
+      let targetZ = null;
+      let targetType = null;
+      let targetEntity = null;
+      let nearestDist = Infinity;
+
+      // Check Player distance
+      if (player && player.hp > 0) {
+        const dPlayer = dist2D(enemy.x, enemy.z, player.x, player.z);
+        if (dPlayer <= aggroRadius) {
+          nearestDist = dPlayer;
+          targetX = player.x;
+          targetZ = player.z;
+          targetType = 'player';
+          targetEntity = player;
+        }
+      }
+
+      // Check nearby NPCs (Guards / Harvesters / Scouts)
+      if (bastionAndNpcs && Array.isArray(bastionAndNpcs.npcs)) {
+        for (const npc of bastionAndNpcs.npcs) {
+          if (npc.hp <= 0) continue;
+          const dNpc = dist2D(enemy.x, enemy.z, npc.x, npc.z);
+          if (dNpc <= aggroRadius * 0.85 && dNpc < nearestDist) {
+            nearestDist = dNpc;
+            targetX = npc.x;
+            targetZ = npc.z;
+            targetType = 'npc';
+            targetEntity = npc;
+          }
+        }
+      }
+
+      // Starving enemies migrate toward the Bastion or greener cells
+      const distToBastion = Math.hypot(enemy.x, enemy.z);
+      if (!targetType && (enemy.starving || distToBastion < aggroRadius + bastionRadius)) {
+        if (distToBastion < aggroRadius + bastionRadius) {
+          targetX = 0;
+          targetZ = 0;
+          targetType = 'bastion';
+          nearestDist = Math.max(0, distToBastion - bastionRadius);
+        }
+      }
+
+      let moveSpeed = enemy.speed;
+      let isAttacking = false;
+
+      if (targetType) {
+        enemy.state = 'chase';
+        const attackRange = targetType === 'bastion' ? bastionRadius + 2.5 : 2.6;
+        const hasPyro =
+          Array.isArray(enemy.genome?.mutations) && enemy.genome.mutations.includes('pyro_gland');
+        const isDragon = enemy.genome?.speciesId === 'dragon';
+        const rangedRange = hasPyro || isDragon ? 11.5 : attackRange;
+
+        if (nearestDist <= attackRange) {
+          // Melee strike
+          enemy.state = 'attack';
+          isAttacking = true;
+          enemy.vx *= 0.7;
+          enemy.vz *= 0.7;
+
+          if (enemy.attackCooldown <= 0) {
+            enemy.attackCooldown = 1.15;
+            this._performEnemyAttack(enemy, targetType, targetEntity, bastionAndNpcs, false);
+          }
+        } else if ((hasPyro || isDragon) && nearestDist <= rangedRange && enemy.attackCooldown <= 0) {
+          // Ranged Pyroclastic Fireball!
+          enemy.state = 'attack';
+          isAttacking = true;
+          enemy.attackCooldown = 2.2;
+          this._spawnFireball(enemy, targetX, targetZ);
+        } else {
+          // Chase target
+          const angle = Math.atan2(targetZ - enemy.z, targetX - enemy.x);
+          enemy.vx = Math.cos(angle) * moveSpeed;
+          enemy.vz = Math.sin(angle) * moveSpeed;
+        }
+      } else {
+        // Patrol / Pack Cohesion / Famine Migration
+        enemy.state = enemy.starving ? 'migrate' : 'patrol';
+        enemy.wanderTimer -= dt;
+        if (enemy.wanderTimer <= 0) {
+          enemy.wanderTimer = 2.0 + Math.random() * 3.5;
+
+          if (enemy.starving) {
+            // Migrate inward toward richer central plains
+            const inwardAngle = Math.atan2(-enemy.z, -enemy.x) + (Math.random() - 0.5) * 0.9;
+            enemy.wanderAngle = inwardAngle;
+          } else if (enemy.lonely) {
+            // Lonely creature searches for nearest compatible mate
+            const mate = this._findNearestCompatibleMate(enemy);
+            if (mate) {
+              enemy.wanderAngle = Math.atan2(mate.z - enemy.z, mate.x - enemy.x);
+            } else {
+              enemy.wanderAngle += (Math.random() - 0.5) * 1.6;
+            }
+          } else {
+            // Gentle patrol around home territory
+            const dHome = dist2D(enemy.x, enemy.z, enemy.homeX, enemy.homeZ);
+            if (dHome > 18) {
+              enemy.wanderAngle = Math.atan2(enemy.homeZ - enemy.z, enemy.homeX - enemy.x) + (Math.random() - 0.5) * 0.5;
+            } else {
+              enemy.wanderAngle += (Math.random() - 0.5) * 1.4;
+            }
+          }
+        }
+
+        const patrolSpeed = moveSpeed * (enemy.starving ? 0.72 : 0.42);
+        enemy.vx = Math.cos(enemy.wanderAngle) * patrolSpeed;
+        enemy.vz = Math.sin(enemy.wanderAngle) * patrolSpeed;
+
+        // Keep wild patrolling creatures outside the Bastion sanctuary ring unless aggroed
+        if (distToBastion < bastionRadius + 6) {
+          const pushAngle = Math.atan2(enemy.z, enemy.x);
+          enemy.vx = Math.cos(pushAngle) * moveSpeed * 0.6;
+          enemy.vz = Math.sin(pushAngle) * moveSpeed * 0.6;
+          enemy.wanderAngle = pushAngle;
+        }
+      }
+
+      // Integrate position & clamp to island bounds
+      enemy.x = clamp(enemy.x + enemy.vx * dt, -worldHalf, worldHalf);
+      enemy.z = clamp(enemy.z + enemy.vz * dt, -worldHalf, worldHalf);
+      enemy.y = this.terrain ? this.terrain.getHeightAt(enemy.x, enemy.z) : 0;
+
+      // Prevent drowning in deep ocean
+      if (enemy.y < CONFIG.WORLD.WATER_LEVEL + 0.1) {
+        const toCenter = Math.atan2(-enemy.z, -enemy.x);
+        enemy.x += Math.cos(toCenter) * moveSpeed * dt * 1.5;
+        enemy.z += Math.sin(toCenter) * moveSpeed * dt * 1.5;
+        enemy.wanderAngle = toCenter;
+        enemy.y = this.terrain ? this.terrain.getHeightAt(enemy.x, enemy.z) : 0;
+      }
+
+      // Sync 3D Mesh & Animation
+      if (enemy.mesh) {
+        enemy.mesh.position.set(enemy.x, Math.max(enemy.y, CONFIG.WORLD.WATER_LEVEL + 0.1), enemy.z);
+        const speedMag = Math.hypot(enemy.vx, enemy.vz);
+        if (speedMag > 0.15) {
+          const targetRot = Math.atan2(enemy.vx, enemy.vz);
+          enemy.mesh.rotation.y = targetRot;
+        }
+
+        animateCreatureMesh(
+          enemy.mesh,
+          {
+            isMoving: speedMag > 0.25,
+            speed: speedMag,
+            isAttacking: isAttacking || enemy.attackCooldown > 0.75,
+            hitFlash: enemy.hitFlash,
+          },
+          elapsedTime,
+          dt
+        );
+
+        const growthProgress = enemy.isAdult
+          ? 1.0
+          : clamp((enemy.age || 0) / (enemy.maturationTime || 20), 0, 1);
+
+        updateCreatureOverlay(
+          enemy.mesh,
+          enemy.hp,
+          enemy.maxHp,
+          enemy.isPatientZero,
+          enemy.spottedByScout,
+          !enemy.isAdult,
+          growthProgress
+        );
+
+        // Keep 3D sky beacon locked onto moving spotted mutant/Patient Zero
+        if (enemy.spottedByScout && this.vfx && typeof this.vfx.setPatientZeroBeacon === 'function') {
+          const mutId = enemy.genome?.mutations?.[0];
+          const colorHex = mutId ? CONFIG.MUTATIONS?.[mutId]?.colorHex || 0xff3300 : 0xff3300;
+          this.vfx.setPatientZeroBeacon(enemy.id, enemy.mesh.position, colorHex, true);
+        }
+      } else {
+        enemy.position.set(enemy.x, enemy.y, enemy.z);
+      }
+    }
+
+    // 3. Update Fireball Projectiles
+    this._updateProjectiles(dt, player, bastionAndNpcs);
+  }
+
+  /**
+   * Finds the nearest compatible packmate for a lonely creature so it can form a breeding cluster.
+   * @param {Object} enemy - Searching enemy.
+   * @returns {Object|null}
+   */
+  _findNearestCompatibleMate(enemy) {
+    let best = null;
+    let bestDist = Infinity;
+    for (const other of this.enemies) {
+      if (other.id === enemy.id) continue;
+      if (other.genome?.speciesId === enemy.genome?.speciesId || other.genome?.clade === enemy.genome?.clade) {
+        const d = dist2D(enemy.x, enemy.z, other.x, other.z);
+        if (d < bestDist && d < 65) {
+          bestDist = d;
+          best = other;
+        }
+      }
+    }
+    return best;
+  }
+
+  /**
+   * Executes a melee or elemental attack from an enemy against its target.
+   */
+  _performEnemyAttack(enemy, targetType, targetEntity, bastionAndNpcs) {
+    const isElemental =
+      Array.isArray(enemy.genome?.mutations) &&
+      (enemy.genome.mutations.includes('pyro_gland') ||
+        enemy.genome.mutations.includes('venom_sacs') ||
+        enemy.genome.mutations.includes('cryo_blood'));
+
+    if (targetType === 'player' && targetEntity) {
+      if (typeof targetEntity.takeDamage === 'function') {
+        targetEntity.takeDamage(enemy.damage, isElemental, enemy);
+      } else {
+        targetEntity.hp = Math.max(0, targetEntity.hp - enemy.damage);
+      }
+    } else if (targetType === 'npc' && targetEntity && bastionAndNpcs) {
+      if (typeof bastionAndNpcs.damageNpc === 'function') {
+        bastionAndNpcs.damageNpc(targetEntity.id, enemy.damage);
+      } else {
+        targetEntity.hp = Math.max(0, targetEntity.hp - enemy.damage);
+      }
+    } else if (targetType === 'bastion' && bastionAndNpcs) {
+      if (typeof bastionAndNpcs.damageBastion === 'function') {
+        const thorns = bastionAndNpcs.damageBastion(enemy.damage);
+        if (thorns > 0) {
+          this.damageEnemy(enemy.id, thorns);
+        }
+      }
+    }
+  }
+
+  /**
+   * Spawns a glowing magma fireball projectile from a `pyro_gland` mutant or `dragon`.
+   */
+  _spawnFireball(enemy, targetX, targetZ) {
+    const angle = Math.atan2(targetZ - enemy.z, targetX - enemy.x);
+    const speed = 18;
+    let mesh = null;
+    if (this.scene) {
+      mesh = new THREE.Mesh(
+        new THREE.SphereGeometry(0.32, 8, 8),
+        new THREE.MeshStandardMaterial({
+          color: 0xff5500,
+          emissive: 0xff2200,
+          emissiveIntensity: 2.2,
+        })
+      );
+      mesh.position.set(enemy.x, enemy.y + 1.3, enemy.z);
+      this.scene.add(mesh);
+    }
+
+    this.projectiles.push({
+      x: enemy.x,
+      y: enemy.y + 1.3,
+      z: enemy.z,
+      vx: Math.cos(angle) * speed,
+      vz: Math.sin(angle) * speed,
+      damage: enemy.damage * 0.85,
+      ttl: 1.6,
+      mesh,
+      ownerId: enemy.id,
+    });
+  }
+
+  /**
+   * Updates active enemy fireball projectiles.
+   */
+  _updateProjectiles(dt, player, bastionAndNpcs) {
+    for (let i = this.projectiles.length - 1; i >= 0; i--) {
+      const p = this.projectiles[i];
+      p.ttl -= dt;
+      p.x += p.vx * dt;
+      p.z += p.vz * dt;
+      if (p.mesh) {
+        p.mesh.position.set(p.x, p.y, p.z);
+      }
+
+      let hit = false;
+      if (player && player.hp > 0 && dist2D(p.x, p.z, player.x, player.z) < 1.5) {
+        if (typeof player.takeDamage === 'function') {
+          player.takeDamage(p.damage, true);
+        } else {
+          player.hp = Math.max(0, player.hp - p.damage);
+        }
+        hit = true;
+      } else if (bastionAndNpcs && Math.hypot(p.x, p.z) < (CONFIG.BASTION?.RADIUS || 14)) {
+        if (typeof bastionAndNpcs.damageBastion === 'function') {
+          bastionAndNpcs.damageBastion(p.damage);
+        }
+        hit = true;
+      }
+
+      if (hit || p.ttl <= 0) {
+        if (hit && this.vfx && typeof this.vfx.spawnHitEffect === 'function') {
+          this.vfx.spawnHitEffect(new THREE.Vector3(p.x, p.y, p.z), 0xff4500);
+        }
+        if (p.mesh && this.scene) {
+          this.scene.remove(p.mesh);
+        }
+        this.projectiles.splice(i, 1);
+      }
+    }
+  }
+
+  /**
+   * Applies combat damage and optional knockback to an enemy.
+   * Checks for complete eradication of a mutant lineage when a carrier dies.
+   *
+   * @param {string|Object} enemyIdOrObj - Enemy ID string or enemy object.
+   * @param {number} amount - Damage amount.
+   * @param {{x: number, z: number}|THREE.Vector3|null} [knockbackDir=null] - Normalized knockback vector.
+   * @param {Function|null} [onLineageEradicated=null] - Optional eradication callback.
+   * @returns {{ killed: boolean, enemy: Object|null, xpGained: number }}
+   */
+  damageEnemy(enemyIdOrObj, amount, knockbackDir = null, onLineageEradicated = null) {
+    const targetId = typeof enemyIdOrObj === 'object' ? enemyIdOrObj?.id : enemyIdOrObj;
+    const idx = this.enemies.findIndex((e) => e.id === targetId);
+    if (idx === -1) {
+      return { killed: false, enemy: null, xpGained: 0 };
+    }
+
+    const enemy = this.enemies[idx];
+    enemy.hp -= amount;
+    enemy.hitFlash = 1.0;
+
+    if (knockbackDir) {
+      const kx = knockbackDir.x || 0;
+      const kz = knockbackDir.z || 0;
+      enemy.x += kx * 1.45;
+      enemy.z += kz * 1.45;
+    }
+
+    if (this.vfx && typeof this.vfx.spawnHitEffect === 'function') {
+      const hasPyro = enemy.genome?.mutations?.includes('pyro_gland');
+      this.vfx.spawnHitEffect(
+        new THREE.Vector3(enemy.x, enemy.y + 1.0, enemy.z),
+        hasPyro ? 0xff4500 : 0xffaa33
+      );
+    }
+
+    if (enemy.hp <= 0) {
+      const spDef = CONFIG.SPECIES[enemy.genome?.speciesId] || CONFIG.SPECIES.goblin;
+      const baseXp = spDef.xpReward || 20;
+      const mutBonus = (enemy.genome?.mutations?.length || 0) * 25;
+      const pzBonus = enemy.isPatientZero ? 45 : 0;
+      const xpGained = baseXp + mutBonus + pzBonus;
+
+      const cb = onLineageEradicated || this.onLineageEradicated;
+      this._removeEnemyAtIndex(idx, true, cb);
+      return { killed: true, enemy, xpGained };
+    }
+
+    return { killed: false, enemy, xpGained: 0 };
+  }
+
+  /**
+   * Internal helper to remove a dead enemy, clean up its 3D mesh/beacon, and check
+   * whether its death eradicated an active mutation lineage.
+   */
+  _removeEnemyAtIndex(idx, killedByPlayer = false, onLineageEradicated = null) {
+    const enemy = this.enemies[idx];
+    if (!enemy) return;
+
+    const carriedMutations = Array.isArray(enemy.genome?.mutations) ? [...enemy.genome.mutations] : [];
+    const wasHybrid = Boolean(enemy.genome?.isHybrid);
+    const hybridName = enemy.genome?.speciesName;
+
+    if (this.vfx) {
+      if (typeof this.vfx.spawnDeathEffect === 'function') {
+        this.vfx.spawnDeathEffect(
+          new THREE.Vector3(enemy.x, enemy.y + 0.8, enemy.z),
+          carriedMutations.length > 0 ? 0xff4500 : 0xaa2222
+        );
+      }
+      if (typeof this.vfx.setPatientZeroBeacon === 'function') {
+        this.vfx.setPatientZeroBeacon(
+          enemy.id,
+          enemy.mesh ? enemy.mesh.position : new THREE.Vector3(enemy.x, enemy.y, enemy.z),
+          0xff3300,
+          false
+        );
+      }
+    }
+
+    if (enemy.mesh && this.scene) {
+      this.scene.remove(enemy.mesh);
+    }
+
+    this.enemies.splice(idx, 1);
+
+    // Check if any mutation carried by this enemy now has 0 surviving carriers in the world!
+    for (const mutId of carriedMutations) {
+      const remaining = this.enemies.filter(
+        (e) => Array.isArray(e.genome?.mutations) && e.genome.mutations.includes(mutId)
+      ).length;
+
+      if (remaining === 0) {
+        const mutName = CONFIG.MUTATIONS?.[mutId]?.name || mutId;
+        logger.alert(`Lignée mutante [${mutName}] éradiquée à temps ! Aucun porteur survivant.`, {
+          mutationId: mutId,
+          lastCarrierId: enemy.id,
+          speciesName: enemy.genome?.speciesName,
+          killedByPlayer,
+        });
+        if (typeof onLineageEradicated === 'function') {
+          onLineageEradicated(mutId, enemy);
+        }
+      }
+    }
+
+    if (wasHybrid && killedByPlayer) {
+      const remainingHybrids = this.enemies.filter(
+        (e) => e.genome?.isHybrid && e.genome?.speciesName === hybridName
+      ).length;
+      if (remainingHybrids === 0 && carriedMutations.length === 0 && typeof onLineageEradicated === 'function') {
+        onLineageEradicated(enemy.genome?.lineageId || hybridName, enemy);
+      }
+    }
+  }
+
+  /**
+   * Returns all live enemies currently in the world.
+   * @returns {Array<Object>}
+   */
+  getEnemies() {
+    return this.enemies;
+  }
+}
+
+export default EnemyManager;
