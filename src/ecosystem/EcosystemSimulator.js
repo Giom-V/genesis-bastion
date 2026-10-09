@@ -126,6 +126,15 @@ export class EcosystemSimulator {
      */
     this.discoveredMutations = new Set();
 
+    /** @type {number} */
+    this.sharksLandedCount = 0;
+
+    /** @type {number} */
+    this.molesEruptedCount = 0;
+
+    /** @type {boolean} */
+    this._hadHerbivores = false;
+
     /**
      * Last computed ecosystem summary statistics.
      * @type {object}
@@ -142,11 +151,33 @@ export class EcosystemSimulator {
       optimalCount: 0,
       activeMutants: 0,
       activeHybrids: 0,
+      herbivoreCount: 0,
+      preyExtinctionRisk: false,
+      sharksLanded: 0,
+      molesErupted: 0,
       averageFitness: 1.0,
       totalBiomass: 0,
     };
 
     this._initGrid();
+  }
+
+  /**
+   * Records amphibious Shark beach landings for telemetry.
+   * @param {number} [count=1]
+   */
+  recordSharkLanding(count = 1) {
+    this.sharksLandedCount += Math.max(0, count);
+    this.lastStats.sharksLanded = Math.max(this.lastStats.sharksLanded || 0, this.sharksLandedCount);
+  }
+
+  /**
+   * Records Giant Mole subterranean eruptions for telemetry.
+   * @param {number} [count=1]
+   */
+  recordMoleEruption(count = 1) {
+    this.molesEruptedCount += Math.max(0, count);
+    this.lastStats.molesErupted = Math.max(this.lastStats.molesErupted || 0, this.molesEruptedCount);
   }
 
   /**
@@ -173,6 +204,7 @@ export class EcosystemSimulator {
           enemyCount: 0,
           adultCount: 0,
           babyCount: 0,
+          herbivoreCount: 0,
           densityState: 'empty',
           dominantSpecies: null,
           biome: 'plains',
@@ -396,11 +428,12 @@ export class EcosystemSimulator {
       cell.enemyCount = 0;
       cell.adultCount = 0;
       cell.babyCount = 0;
+      cell.herbivoreCount = 0;
       cell.dominantSpecies = null;
       cell.densityState = 'empty';
     }
 
-    // 2. Assign enemies to cells, sync genomes, advance gestation timers, and consume cell biomass
+    // 2. Assign enemies to cells, sync genomes, advance gestation timers, and update cell biomass
     const tickIntervalSec = CONFIG?.ECO?.TICK_INTERVAL ?? 12;
 
     for (const enemy of liveEnemies) {
@@ -421,27 +454,50 @@ export class EcosystemSimulator {
       }
 
       const isBaby = enemy.isAdult === false || enemy.lifeStage === 'baby';
+      const spId = enemy.genome.speciesId || enemy.speciesId || 'goblin';
+      const spCfg = CONFIG?.SPECIES?.[spId] || {};
+      const isHerbivore =
+        enemy.clade === 'herbivore' ||
+        enemy.genome.clade === 'herbivore' ||
+        spCfg.clade === 'herbivore' ||
+        enemy.aggroStance === 'prey_pacifist' ||
+        enemy.genome.aggroStance === 'prey_pacifist' ||
+        spId === 'deer' ||
+        spId === 'rabbit' ||
+        spId === 'deer_rabbit' ||
+        spId === 'rabbit_deer';
+
+      if (isHerbivore) {
+        this._hadHerbivores = true;
+        enemy.clade = 'herbivore';
+        enemy.isHerbivore = true;
+      }
 
       // Sync individual gestationTime, aggressiveness, and aggroStance from Genome
       const geneGestation =
         enemy.genome.genes?.gestationTime ??
         enemy.genome.baseGenes?.gestationTime ??
-        CONFIG?.SPECIES?.[enemy.genome.speciesId]?.baseGestationTime ??
+        spCfg.baseGestationTime ??
         18;
       enemy.gestationTime = Number(geneGestation);
 
       if (!enemy.enraged) {
-        enemy.aggressiveness =
-          enemy.genome.genes?.aggressiveness ??
-          enemy.genome.baseGenes?.aggressiveness ??
-          CONFIG?.SPECIES?.[enemy.genome.speciesId]?.baseAggressiveness ??
-          0.65;
+        enemy.aggressiveness = isHerbivore
+          ? 0.0
+          : (enemy.genome.genes?.aggressiveness ??
+            enemy.genome.baseGenes?.aggressiveness ??
+            spCfg.baseAggressiveness ??
+            0.65);
       }
       if (!enemy.aggroStance) {
         enemy.aggroStance =
           enemy.genome.aggroStance ||
-          CONFIG?.SPECIES?.[enemy.genome.speciesId]?.aggroStance ||
-          (enemy.genome.speciesId === 'dragon' ? 'pacifist_apex' : 'hostile');
+          spCfg.aggroStance ||
+          (spId === 'dragon'
+            ? 'pacifist_apex'
+            : isHerbivore
+              ? 'prey_pacifist'
+              : 'hostile');
       }
 
       // Initialize or advance reproTimer for adults
@@ -450,7 +506,7 @@ export class EcosystemSimulator {
         enemy._reproTimerAtLastEcoTick = 0;
       } else {
         if (typeof enemy.reproTimer !== 'number' || Number.isNaN(enemy.reproTimer)) {
-          // Stagger initial wild adults so fast breeders (Goblin ~9s) are ready immediately
+          // Stagger initial wild adults so fast breeders (Goblin ~9s, Rabbit ~7.5s) are ready immediately
           enemy.reproTimer = Number((enemy.gestationTime * (0.45 + this._rand() * 0.65)).toFixed(2));
         }
         // If real-time frame loop didn't increment reproTimer since last tick (e.g. dry-run or manual [T] tick),
@@ -485,11 +541,21 @@ export class EcosystemSimulator {
       }
       cellMembersMap.get(cell).push(enemy);
 
-      // Metabolic biomass consumption (0.5x metabolic weight for babies!)
-      const rawMetabolism = enemy.genome.genes?.metabolism ?? 4.0;
-      const metabolicWeight = isBaby ? 0.5 : 1.0;
-      const consumed = rawMetabolism * metabolicWeight * 0.72;
-      cell.biomass = Math.max(0, Number((cell.biomass - consumed).toFixed(2)));
+      if (isHerbivore) {
+        // Phase 7: Herbivores ('deer', 'rabbit') ENRICH their cell's biomass (+6+ per herbivore per tick)
+        // instead of depleting it, and buffer local carnivores against starvation!
+        cell.herbivoreCount = (cell.herbivoreCount || 0) + 1;
+        const enrichment = Math.max(6, spCfg.biomassEnrichmentPerTick ?? 6);
+        cell.biomass = Number(
+          clamp(cell.biomass + enrichment, 0, cell.maxBiomass + 24).toFixed(2)
+        );
+      } else {
+        // Metabolic biomass consumption (0.5x metabolic weight for babies!)
+        const rawMetabolism = enemy.genome.genes?.metabolism ?? 4.0;
+        const metabolicWeight = isBaby ? 0.5 : 1.0;
+        const consumed = rawMetabolism * metabolicWeight * 0.72;
+        cell.biomass = Math.max(0, Number((cell.biomass - consumed).toFixed(2)));
+      }
     }
 
     // Determine dominant species per occupied cell
@@ -520,6 +586,12 @@ export class EcosystemSimulator {
       const ex = e.x ?? e.mesh?.position?.x ?? 0;
       const ez = e.z ?? e.mesh?.position?.z ?? 0;
       const cell = this.getCellAt(ex, ez);
+      const isHerbivore = Boolean(
+        e.isHerbivore ||
+          e.clade === 'herbivore' ||
+          e.genome?.clade === 'herbivore' ||
+          e.aggroStance === 'prey_pacifist'
+      );
 
       // Count neighbors within radius 22 (`CONFIG.ECO.NEIGHBOR_RADIUS`)
       let neighborCount = 0;
@@ -535,8 +607,19 @@ export class EcosystemSimulator {
 
       e.neighborCount = neighborCount;
 
-      // Rule 2: Overpopulation / Famine (cell enemyCount > 6 OR local crowding > 8 OR cell biomass <= 10)
-      if (cell.enemyCount > maxDensity || neighborCount > maxDensity + 2 || cell.biomass <= 10) {
+      // Herbivores in the same cell reduce carnivore starvation by buffering carrying capacity
+      const herbivoreBuffer = cell.herbivoreCount || 0;
+      const effectiveMaxDensity = maxDensity + herbivoreBuffer * 2;
+      const effectiveNeighborCap = maxDensity + 2 + herbivoreBuffer * 2;
+      const famineBiomassThreshold = herbivoreBuffer > 0 ? 4 : 10;
+
+      // Rule 2: Overpopulation / Famine
+      if (
+        !isHerbivore &&
+        (cell.enemyCount > effectiveMaxDensity ||
+          neighborCount > effectiveNeighborCap ||
+          cell.biomass <= famineBiomassThreshold)
+      ) {
         e.starving = true;
         e.lonely = false;
         if (e.id) starvingIds.push(e.id);
@@ -546,7 +629,7 @@ export class EcosystemSimulator {
         e.starving = false;
         if (e.id) lonelyIds.push(e.id);
       } else {
-        // Rule 3: Optimal Reproduction Window (2..6 neighbors and biomass > 10)
+        // Rule 3: Optimal Reproduction Window (2..6 neighbors and biomass > threshold)
         e.lonely = false;
         e.starving = false;
         if (e.id) optimalIds.push(e.id);
@@ -563,14 +646,15 @@ export class EcosystemSimulator {
 
     // Update each cell's densityState for the Minimap & HUD heatmap
     for (const cell of this.cells) {
+      const effectiveMax = maxDensity + (cell.herbivoreCount || 0) * 2;
       if (cell.enemyCount === 0) {
         cell.densityState = 'empty';
-      } else if (cell.enemyCount > maxDensity || cell.biomass <= 10) {
+      } else if (cell.enemyCount > effectiveMax || cell.biomass <= 10) {
         cell.densityState = 'overpopulated';
       } else {
         const members = cellMembersMap.get(cell) || [];
         const hasOptimalMember = members.some((m) => !m.lonely && !m.starving);
-        if (hasOptimalMember || (cell.enemyCount >= minDensity && cell.enemyCount <= maxDensity)) {
+        if (hasOptimalMember || (cell.enemyCount >= minDensity && cell.enemyCount <= effectiveMax)) {
           cell.densityState = 'optimal';
         } else {
           cell.densityState = 'underpopulated';
@@ -691,8 +775,11 @@ export class EcosystemSimulator {
       chosenPartner.reproTimer = 0;
       chosenPartner._reproTimerAtLastEcoTick = 0;
 
-      // Consume cell biomass for gestation/birth
-      cellA.biomass = Number(Math.max(11, cellA.biomass - birthBiomassCost).toFixed(1));
+      // Consume cell biomass for gestation/birth (herbivores consume half birth cost)
+      const isChildHerbivore =
+        parentA.isHerbivore || parentA.genome?.clade === 'herbivore';
+      const effectiveBirthCost = isChildHerbivore ? birthBiomassCost * 0.45 : birthBiomassCost;
+      cellA.biomass = Number(Math.max(11, cellA.biomass - effectiveBirthCost).toFixed(1));
 
       // Perform genetic crossover, Mendelian dominant inheritance, and de novo mutation roll
       const { genome: childGenome, newMutationId, becameHybrid } = Genome.crossover(
@@ -735,6 +822,7 @@ export class EcosystemSimulator {
         z: Number(bz.toFixed(2)),
         speciesId: childGenome.speciesId,
         speciesName: childGenome.speciesName,
+        clade: childGenome.clade,
         parentIds: [parentA.id, chosenPartner.id].filter(Boolean),
         parentAId: parentA.id || null,
         parentBId: chosenPartner.id || null,
@@ -743,11 +831,13 @@ export class EcosystemSimulator {
         newMutationId,
         mutations: [...childGenome.mutations],
         isPatientZero,
-        // Individual gestation & aggressiveness genes (Phase 5)
+        // Individual gestation & aggressiveness genes (Phase 5 & 7)
         gestationTime: childGenome.genes?.gestationTime ?? 18,
         reproTimer: 0,
         aggressiveness: childGenome.genes?.aggressiveness ?? 0.65,
         aggroStance: childGenome.aggroStance || 'hostile',
+        foodYield: childGenome.foodYield ?? 0,
+        autoRepopulate: childGenome.autoRepopulate !== false,
         // Juvenile / Baby lifecycle attributes (Directive #8 & BalanceAndPacing)
         lifeStage: matProfile.lifeStage,
         isAdult: matProfile.isAdult,
@@ -772,7 +862,7 @@ export class EcosystemSimulator {
       births.push(birthRecord);
     }
 
-    // 5. Compile Ecosystem, Species Population, Gestation & Aggressiveness Telemetry Stats
+    // 5. Compile Ecosystem, Species Population, Herbivore & Emerging Species Telemetry Stats
     const totalPop = liveEnemies.length + births.length;
     const adultCount = liveEnemies.filter(
       (e) => e.isAdult !== false && e.lifeStage !== 'baby'
@@ -797,26 +887,82 @@ export class EcosystemSimulator {
       lion: 0,
       vulture: 0,
       dragon: 0,
+      shark: 0,
+      giant_mole: 0,
+      rabbit: 0,
+      deer: 0,
     };
 
     let fitnessSum = 0;
     let gestationSum = 0;
     let aggressivenessSum = 0;
+    let herbivoreCount = 0;
+    let landedSharkEntities = 0;
+    let moleEntities = 0;
 
     for (const e of liveEnemies) {
-      const spId = e.genome?.speciesId || 'goblin';
+      const spId = e.genome?.speciesId || e.speciesId || 'goblin';
       speciesCounts[spId] = (speciesCounts[spId] || 0) + 1;
       fitnessSum += e.genome?.fitnessScore || 1.0;
       gestationSum += e.genome?.genes?.gestationTime ?? e.gestationTime ?? 18;
       aggressivenessSum += e.genome?.genes?.aggressiveness ?? e.aggressiveness ?? 0.65;
+
+      if (
+        e.isHerbivore ||
+        e.clade === 'herbivore' ||
+        e.genome?.clade === 'herbivore' ||
+        spId === 'deer' ||
+        spId === 'rabbit' ||
+        spId === 'deer_rabbit' ||
+        spId === 'rabbit_deer'
+      ) {
+        herbivoreCount += 1;
+      }
+
+      if (
+        spId === 'shark' &&
+        (e.isAquatic === false ||
+          e.isAmphibiousLanded === true ||
+          e.hasLandLegs === true ||
+          e.genome?.hasMutation?.('amphibious_lungs'))
+      ) {
+        landedSharkEntities += 1;
+      }
+      if (spId === 'giant_mole') {
+        moleEntities += 1;
+      }
     }
     for (const b of births) {
-      const spId = b.genome?.speciesId || 'goblin';
+      const spId = b.genome?.speciesId || b.speciesId || 'goblin';
       speciesCounts[spId] = (speciesCounts[spId] || 0) + 1;
       fitnessSum += b.genome?.fitnessScore || 1.0;
       gestationSum += b.genome?.genes?.gestationTime ?? b.gestationTime ?? 18;
       aggressivenessSum += b.genome?.genes?.aggressiveness ?? b.aggressiveness ?? 0.65;
+
+      if (
+        b.clade === 'herbivore' ||
+        b.genome?.clade === 'herbivore' ||
+        spId === 'deer' ||
+        spId === 'rabbit' ||
+        spId === 'deer_rabbit' ||
+        spId === 'rabbit_deer'
+      ) {
+        herbivoreCount += 1;
+      }
+      if (spId === 'giant_mole') {
+        moleEntities += 1;
+      }
     }
+
+    const deerTotal = (speciesCounts.deer || 0) + (speciesCounts.deer_rabbit || 0) + (speciesCounts.rabbit_deer || 0);
+    const rabbitTotal = (speciesCounts.rabbit || 0) + (speciesCounts.deer_rabbit || 0) + (speciesCounts.rabbit_deer || 0);
+    const preyExtinctionRisk = Boolean(
+      (this._hadHerbivores && (deerTotal < 2 || rabbitTotal < 2)) ||
+        (herbivoreCount > 0 && (deerTotal < 2 || rabbitTotal < 2))
+    );
+
+    const sharksLanded = Math.max(this.sharksLandedCount || 0, landedSharkEntities);
+    const molesErupted = Math.max(this.molesEruptedCount || 0, moleEntities);
 
     const averageFitness = totalPop > 0 ? Number((fitnessSum / totalPop).toFixed(3)) : 1.0;
     const averageGestationTime = totalPop > 0 ? Number((gestationSum / totalPop).toFixed(2)) : 18.0;
@@ -842,6 +988,10 @@ export class EcosystemSimulator {
       optimalCount: optimalIds.length,
       activeMutants,
       activeHybrids,
+      herbivoreCount,
+      preyExtinctionRisk,
+      sharksLanded,
+      molesErupted,
       averageFitness,
       averageGestationTime,
       averageAggressiveness,
@@ -851,7 +1001,7 @@ export class EcosystemSimulator {
 
     logger.info(
       'ECO',
-      `Cycle écologique #${this.tickNumber} : Pop=${totalPop} (${adultCount} adultes, ${babyCount} bébés) | Naissances=${births.length} | Mutants=${activeMutants} | Hybrides=${activeHybrids} | Famine=${starvingIds.length}`,
+      `Cycle écologique #${this.tickNumber} : Pop=${totalPop} (${adultCount} adultes, ${babyCount} bébés, Gibier=${herbivoreCount}) | Naissances=${births.length} | Mutants=${activeMutants} | Hybrides=${activeHybrids} | Famine=${starvingIds.length}`,
       this.lastStats
     );
 

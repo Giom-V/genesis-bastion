@@ -81,42 +81,93 @@ function sampleGaussianDrift(rng, stdDev = 0.03, maxAbs = 0.06) {
  */
 const SPECIES_CYCLE_DEFAULTS = Object.freeze({
   goblin: {
+    id: 'goblin',
+    name: 'Gobelin',
+    clade: 'greenskin',
+    baseHp: 48,
+    baseDamage: 8,
+    baseSpeed: 8.8,
+    baseSize: 0.78,
     baseGestationTime: 9,
     baseMaturationTime: 12,
     baseAggressiveness: 0.75,
     aggroStance: 'hostile',
+    autoRepopulate: true,
   },
   wolf: {
+    id: 'wolf',
+    name: 'Loup',
+    clade: 'beast',
+    baseHp: 58,
+    baseDamage: 11,
+    baseSpeed: 9.6,
+    baseSize: 0.85,
     baseGestationTime: 13,
     baseMaturationTime: 15,
     baseAggressiveness: 0.82,
     aggroStance: 'hostile',
+    autoRepopulate: true,
   },
   vulture: {
+    id: 'vulture',
+    name: 'Vautour',
+    clade: 'beast',
+    baseHp: 64,
+    baseDamage: 13,
+    baseSpeed: 10.2,
+    baseSize: 0.9,
     baseGestationTime: 15,
     baseMaturationTime: 17,
     baseAggressiveness: 0.38,
     aggroStance: 'territorial',
+    autoRepopulate: true,
   },
   orc: {
+    id: 'orc',
+    name: 'Orc',
+    clade: 'greenskin',
+    baseHp: 95,
+    baseDamage: 15,
+    baseSpeed: 6.8,
+    baseSize: 1.08,
     baseGestationTime: 18,
     baseMaturationTime: 22,
     baseAggressiveness: 0.88,
     aggroStance: 'hostile',
+    autoRepopulate: true,
   },
   lion: {
+    id: 'lion',
+    name: 'Lion',
+    clade: 'beast',
+    baseHp: 110,
+    baseDamage: 18,
+    baseSpeed: 8.2,
+    baseSize: 1.15,
     baseGestationTime: 24,
     baseMaturationTime: 26,
     baseAggressiveness: 0.70,
     aggroStance: 'hostile',
+    autoRepopulate: true,
   },
   troll: {
+    id: 'troll',
+    name: 'Troll',
+    clade: 'greenskin',
+    baseHp: 175,
+    baseDamage: 24,
+    baseSpeed: 5.1,
+    baseSize: 1.52,
     baseGestationTime: 30,
     baseMaturationTime: 34,
     baseAggressiveness: 0.48,
     aggroStance: 'territorial',
+    autoRepopulate: true,
   },
   dragon: {
+    id: 'dragon',
+    name: 'Dragon',
+    clade: 'apex',
     baseHp: 680,
     baseDamage: 58,
     baseSpeed: 8.2,
@@ -125,29 +176,142 @@ const SPECIES_CYCLE_DEFAULTS = Object.freeze({
     baseMaturationTime: 50,
     baseAggressiveness: 0.08,
     aggroStance: 'pacifist_apex',
+    autoRepopulate: true,
+  },
+  shark: {
+    id: 'shark',
+    name: 'Requin Marcheur des Abysses',
+    clade: 'abyssal',
+    isAquatic: true,
+    baseHp: 135,
+    baseDamage: 22,
+    baseSpeed: 7.8,
+    baseSize: 1.25,
+    baseGestationTime: 22,
+    baseMaturationTime: 24,
+    baseAggressiveness: 0.90,
+    aggroStance: 'hostile',
+    metabolism: 5.8,
+    fertility: 1.0,
+    aggroRadius: 24,
+    autoRepopulate: true,
+  },
+  giant_mole: {
+    id: 'giant_mole',
+    name: 'Taupe Géante Fouisseuse',
+    clade: 'subterranean',
+    isSubterranean: true,
+    baseHp: 150,
+    baseDamage: 21,
+    baseSpeed: 6.4,
+    baseSize: 1.32,
+    baseGestationTime: 20,
+    baseMaturationTime: 22,
+    baseAggressiveness: 0.78,
+    aggroStance: 'hostile',
+    metabolism: 5.5,
+    fertility: 0.95,
+    aggroRadius: 20,
+    autoRepopulate: true,
+  },
+  rabbit: {
+    id: 'rabbit',
+    name: 'Lapin des Plaines',
+    clade: 'herbivore',
+    baseHp: 26,
+    baseDamage: 0,
+    baseSpeed: 9.8,
+    baseSize: 0.58,
+    baseGestationTime: 7.5,
+    baseMaturationTime: 9.5,
+    baseAggressiveness: 0.0,
+    aggroStance: 'prey_pacifist',
+    foodYield: 18,
+    healYield: 12,
+    biomassEnrichment: 6,
+    metabolism: 1.5,
+    fertility: 1.45,
+    aggroRadius: 12,
+    autoRepopulate: false,
+  },
+  deer: {
+    id: 'deer',
+    name: 'Biche Sylvestre',
+    clade: 'herbivore',
+    baseHp: 54,
+    baseDamage: 0,
+    baseSpeed: 10.5,
+    baseSize: 1.05,
+    baseGestationTime: 15,
+    baseMaturationTime: 17,
+    baseAggressiveness: 0.0,
+    aggroStance: 'prey_pacifist',
+    foodYield: 35,
+    healYield: 25,
+    biomassEnrichment: 6,
+    metabolism: 2.2,
+    fertility: 1.25,
+    aggroRadius: 14,
+    autoRepopulate: false,
+  },
+  storm_harpy: {
+    id: 'storm_harpy',
+    name: 'Vouivre des Nuées',
+    clade: 'beast',
+    isFlying: true,
+    baseHp: 82,
+    baseDamage: 16,
+    baseSpeed: 10.8,
+    baseSize: 0.96,
+    baseGestationTime: 16,
+    baseMaturationTime: 18,
+    baseAggressiveness: 0.80,
+    aggroStance: 'hostile',
+    metabolism: 4.2,
+    fertility: 1.1,
+    aggroRadius: 26,
+    autoRepopulate: true,
+  },
+});
+
+const FALLBACK_MUTATIONS = Object.freeze({
+  amphibious_lungs: {
+    id: 'amphibious_lungs',
+    name: 'Pattes & Branchies Amphibies',
+    shortLabel: 'Amphibie',
+    element: 'water',
+    dominant: true,
+    colorHex: 0x1ee6ff,
+    colorCss: '#1ee6ff',
+    statMultipliers: { maxHp: 1.2, speed: 1.2, strength: 1.15, size: 1.08 },
+    metabolismCost: 1.1,
+    fitnessBonus: 0.5,
+    grantsLandLocomotion: true,
   },
 });
 
 /**
  * Resolves the baseline species specification for a base or hybrid species identifier.
  *
- * @param {string} speciesId - Species ID (`'goblin'`, `'troll'`, or `'goblin_orc'`).
+ * @param {string} speciesId - Species ID (`'goblin'`, `'shark'`, `'giant_mole'`, `'rabbit'`, `'deer'`, or `'goblin_orc'`).
  * @param {string[]} [hybridParents=[]] - Optional pair of parent species IDs if hybrid.
  * @returns {object} Species baseline traits.
  */
 function resolveSpeciesBaseline(speciesId, hybridParents = []) {
-  const cycleDef = SPECIES_CYCLE_DEFAULTS[speciesId] || {};
-  if (CONFIG?.SPECIES?.[speciesId]) {
+  const cycleDef = SPECIES_CYCLE_DEFAULTS[speciesId] || null;
+  if (CONFIG?.SPECIES?.[speciesId] || cycleDef) {
+    const cfgSpec = CONFIG?.SPECIES?.[speciesId] || {};
     return {
-      ...cycleDef,
-      ...CONFIG.SPECIES[speciesId],
+      ...(cycleDef || {}),
+      ...cfgSpec,
+      id: speciesId,
       baseGestationTime:
-        CONFIG.SPECIES[speciesId].baseGestationTime ?? cycleDef.baseGestationTime ?? 18,
+        cfgSpec.baseGestationTime ?? cycleDef?.baseGestationTime ?? 18,
       baseMaturationTime:
-        CONFIG.SPECIES[speciesId].baseMaturationTime ?? cycleDef.baseMaturationTime ?? 20,
+        cfgSpec.baseMaturationTime ?? cycleDef?.baseMaturationTime ?? 20,
       baseAggressiveness:
-        CONFIG.SPECIES[speciesId].baseAggressiveness ?? cycleDef.baseAggressiveness ?? 0.65,
-      aggroStance: CONFIG.SPECIES[speciesId].aggroStance || cycleDef.aggroStance || 'hostile',
+        cfgSpec.baseAggressiveness ?? cycleDef?.baseAggressiveness ?? 0.65,
+      aggroStance: cfgSpec.aggroStance || cycleDef?.aggroStance || 'hostile',
     };
   }
   if (Array.isArray(hybridParents) && hybridParents.length >= 2) {
@@ -188,11 +352,12 @@ export class Genome {
    * @param {object} [init={}] - Genome initialization parameters.
    * @param {string} [init.speciesId='goblin'] - Species identifier.
    * @param {string} [init.speciesName] - Display name of the species or hybrid.
+   * @param {string} [init.clade] - Evolutionary clade (`'greenskin'`, `'beast'`, `'apex'`, `'herbivore'`, `'abyssal'`, `'subterranean'`).
    * @param {boolean} [init.isHybrid=false] - Whether this individual is an inter-species hybrid.
    * @param {string[]} [init.hybridParents=[]] - Parent species IDs if hybrid.
    * @param {number} [init.generation=1] - Evolutionary generation number (`1` for initial population).
    * @param {string} [init.lineageId] - Unique identifier for tracking genetic lineages.
-   * @param {string} [init.aggroStance] - Behavioral stance (`'hostile'`, `'territorial'`, `'pacifist_apex'`).
+   * @param {string} [init.aggroStance] - Behavioral stance (`'hostile'`, `'territorial'`, `'pacifist_apex'`, `'prey_pacifist'`).
    * @param {object} [init.genes] - Polygenic traits (`size`, `speed`, `strength`, `maxHp`, `gestationTime`, `aggressiveness`, `fertility`, `metabolism`, `aggroRadius`).
    * @param {object} [init.baseGenes] - Unmutated polygenic baseline prior to mutation multipliers.
    * @param {string[]} [init.mutations=[]] - Array of active mutation IDs from `CONFIG.MUTATIONS`.
@@ -206,6 +371,9 @@ export class Genome {
 
     /** @type {string} */
     this.speciesId = init.speciesId || baseline.id || 'goblin';
+
+    /** @type {string} */
+    this.clade = init.clade || baseline.clade || 'greenskin';
 
     /** @type {boolean} */
     this.isHybrid = Boolean(
@@ -226,11 +394,24 @@ export class Genome {
     /** @type {string} */
     this.speciesName = init.speciesName || baseline.name || this.speciesId;
 
-    /** @type {'hostile'|'territorial'|'pacifist_apex'} */
+    /** @type {'hostile'|'territorial'|'pacifist_apex'|'prey_pacifist'} */
     this.aggroStance =
       init.aggroStance ||
       baseline.aggroStance ||
-      (this.speciesId === 'dragon' ? 'pacifist_apex' : 'hostile');
+      (this.speciesId === 'dragon'
+        ? 'pacifist_apex'
+        : this.clade === 'herbivore'
+          ? 'prey_pacifist'
+          : 'hostile');
+
+    /** @type {number} */
+    this.foodYield = init.foodYield ?? baseline.foodYield ?? 0;
+
+    /** @type {boolean} */
+    this.autoRepopulate =
+      init.autoRepopulate !== undefined
+        ? Boolean(init.autoRepopulate)
+        : baseline.autoRepopulate !== false;
 
     /** @type {number} */
     this.generation = Math.max(1, Math.floor(init.generation ?? 1));
@@ -239,13 +420,15 @@ export class Genome {
     this.lineageId =
       init.lineageId || `lineage_${this.speciesId}_g${this.generation}_${nextLineageCounter++}`;
 
+    const isHerbivore = this.clade === 'herbivore' || this.aggroStance === 'prey_pacifist';
+
     const defaultGenes = {
       size: baseline.baseSize ?? 1.0,
       speed: baseline.baseSpeed ?? 7.5,
-      strength: baseline.baseDamage ?? 12,
+      strength: baseline.baseDamage ?? (isHerbivore ? 0 : 12),
       maxHp: baseline.baseHp ?? 80,
       gestationTime: baseline.baseGestationTime ?? 18,
-      aggressiveness: baseline.baseAggressiveness ?? 0.65,
+      aggressiveness: baseline.baseAggressiveness ?? (isHerbivore ? 0.0 : 0.65),
       fertility: baseline.fertility ?? 1.0,
       metabolism: baseline.metabolism ?? 4.0,
       aggroRadius: baseline.aggroRadius ?? 20,
@@ -275,7 +458,11 @@ export class Genome {
       maxHp: Math.max(10, Math.round(rawBaseGenes.maxHp ?? defaultGenes.maxHp)),
       gestationTime: Number((rawBaseGenes.gestationTime ?? defaultGenes.gestationTime).toFixed(2)),
       aggressiveness: Number(
-        clamp(rawBaseGenes.aggressiveness ?? defaultGenes.aggressiveness, 0.02, 1.0).toFixed(3)
+        clamp(
+          rawBaseGenes.aggressiveness ?? defaultGenes.aggressiveness,
+          isHerbivore ? 0.0 : 0.02,
+          1.0
+        ).toFixed(3)
       ),
       fertility: Number((rawBaseGenes.fertility ?? defaultGenes.fertility).toFixed(3)),
       metabolism: Number((rawBaseGenes.metabolism ?? defaultGenes.metabolism).toFixed(3)),
@@ -298,9 +485,10 @@ export class Genome {
      */
     this.genes = { ...this.baseGenes };
 
+    const mutCatalog = { ...FALLBACK_MUTATIONS, ...(CONFIG?.MUTATIONS || {}) };
     /** @type {string[]} */
     this.mutations = Array.isArray(init.mutations)
-      ? Array.from(new Set(init.mutations.filter((m) => Boolean(CONFIG?.MUTATIONS?.[m]))))
+      ? Array.from(new Set(init.mutations.filter((m) => Boolean(mutCatalog[m]))))
       : [];
 
     /** @type {string} */
@@ -355,7 +543,7 @@ export class Genome {
     let multSize = 1.0;
     let multMetabolism = 1.0;
 
-    const catalog = CONFIG?.MUTATIONS || {};
+    const catalog = { ...FALLBACK_MUTATIONS, ...(CONFIG?.MUTATIONS || {}) };
     for (const mutId of this.mutations) {
       const mut = catalog[mutId];
       if (!mut) continue;
@@ -368,10 +556,15 @@ export class Genome {
     }
 
     const baseline = resolveSpeciesBaseline(this.speciesId, this.hybridParents);
+    const isHerbivore =
+      this.clade === 'herbivore' ||
+      baseline.clade === 'herbivore' ||
+      this.aggroStance === 'prey_pacifist';
+
     const minHp = Math.max(12, Math.round((baseline.baseHp || 48) * 0.35));
     const maxHpCap = Math.max(950, Math.round((baseline.baseHp || 680) * 4.5));
-    const minStr = Math.max(2.0, (baseline.baseDamage || 8) * 0.35);
-    const maxStrCap = Math.max(140.0, (baseline.baseDamage || 58) * 4.5);
+    const minStr = isHerbivore ? 0 : Math.max(2.0, (baseline.baseDamage || 8) * 0.35);
+    const maxStrCap = isHerbivore ? 0 : Math.max(140.0, (baseline.baseDamage || 58) * 4.5);
     const minSpd = Math.max(1.8, (baseline.baseSpeed || 5.0) * 0.35);
     const maxSpdCap = Math.max(22.0, (baseline.baseSpeed || 10.2) * 3.5);
     const minSize = Math.max(0.3, (baseline.baseSize || 0.78) * 0.35);
@@ -379,25 +572,31 @@ export class Genome {
     const minGest = Math.max(3.5, (baseline.baseGestationTime || 9) * 0.35);
     const maxGestCap = Math.max(120.0, (baseline.baseGestationTime || 65) * 2.5);
 
-    // Aggressive mutations slightly increase expressed aggressiveness (except unprovoked pacifist_apex)
+    // Aggressive mutations slightly increase expressed aggressiveness (except pacifist_apex and prey_pacifist)
     const mutAggroAdd =
-      this.aggroStance === 'pacifist_apex' ? 0 : Math.min(0.18, this.mutations.length * 0.06);
+      this.aggroStance === 'pacifist_apex' || isHerbivore
+        ? 0
+        : Math.min(0.18, this.mutations.length * 0.06);
 
     this.genes = {
       size: Number(clamp(this.baseGenes.size * multSize, minSize, maxSizeCap).toFixed(3)),
       speed: Number(clamp(this.baseGenes.speed * multSpeed, minSpd, maxSpdCap).toFixed(2)),
-      strength: Number(clamp(this.baseGenes.strength * multStrength, minStr, maxStrCap).toFixed(2)),
-      maxHp: Math.max(15, Math.round(clamp(this.baseGenes.maxHp * multMaxHp, minHp, maxHpCap))),
+      strength: isHerbivore
+        ? 0
+        : Number(clamp(this.baseGenes.strength * multStrength, minStr, maxStrCap).toFixed(2)),
+      maxHp: Math.max(12, Math.round(clamp(this.baseGenes.maxHp * multMaxHp, minHp, maxHpCap))),
       gestationTime: Number(
         clamp(this.baseGenes.gestationTime ?? baseline.baseGestationTime ?? 18, minGest, maxGestCap).toFixed(2)
       ),
-      aggressiveness: Number(
-        clamp(
-          (this.baseGenes.aggressiveness ?? baseline.baseAggressiveness ?? 0.65) + mutAggroAdd,
-          0.02,
-          1.0
-        ).toFixed(3)
-      ),
+      aggressiveness: isHerbivore
+        ? 0.0
+        : Number(
+            clamp(
+              (this.baseGenes.aggressiveness ?? baseline.baseAggressiveness ?? 0.65) + mutAggroAdd,
+              0.02,
+              1.0
+            ).toFixed(3)
+          ),
       fertility: Number(clamp(this.baseGenes.fertility, 0.25, 3.8).toFixed(3)),
       metabolism: Number(clamp(this.baseGenes.metabolism * multMetabolism, 0.8, 36.0).toFixed(2)),
       aggroRadius: Number(
@@ -452,11 +651,12 @@ export class Genome {
    * Adds a dominant mutation to this genome (if not already present), updates phenotypic `genes`
    * and `fitnessScore`, and updates `lineageId` to reflect the mutant strain.
    *
-   * @param {string} mutationId - Key from `CONFIG.MUTATIONS` (e.g. `'pyro_gland'`).
+   * @param {string} mutationId - Key from `CONFIG.MUTATIONS` (e.g. `'pyro_gland'`, `'amphibious_lungs'`).
    * @returns {boolean} True if the mutation was newly added.
    */
   addMutation(mutationId) {
-    if (!mutationId || !CONFIG?.MUTATIONS?.[mutationId]) {
+    const mutCatalog = { ...FALLBACK_MUTATIONS, ...(CONFIG?.MUTATIONS || {}) };
+    if (!mutationId || !mutCatalog[mutationId]) {
       return false;
     }
     if (!this.mutations.includes(mutationId)) {
@@ -498,6 +698,9 @@ export class Genome {
    */
   static createInitial(speciesId = 'goblin', rng = Math.random, initialMutations = []) {
     const baseline = resolveSpeciesBaseline(speciesId);
+    const isHerbivore =
+      baseline.clade === 'herbivore' || baseline.aggroStance === 'prey_pacifist';
+
     const vary = (baseVal, amplitude = 0.1) => {
       const delta = (sampleUniform(rng) * 2 - 1) * amplitude;
       return baseVal * (1 + delta);
@@ -506,12 +709,16 @@ export class Genome {
     const baseGenes = {
       size: Number(vary(baseline.baseSize ?? 1.0, 0.1).toFixed(3)),
       speed: Number(vary(baseline.baseSpeed ?? 7.5, 0.1).toFixed(2)),
-      strength: Number(vary(baseline.baseDamage ?? 12, 0.1).toFixed(2)),
-      maxHp: Math.max(15, Math.round(vary(baseline.baseHp ?? 80, 0.1))),
+      strength: isHerbivore
+        ? 0
+        : Number(vary(baseline.baseDamage ?? 12, 0.1).toFixed(2)),
+      maxHp: Math.max(12, Math.round(vary(baseline.baseHp ?? 80, 0.1))),
       gestationTime: Number(clamp(vary(baseline.baseGestationTime ?? 18, 0.1), 3.5, 160.0).toFixed(2)),
-      aggressiveness: Number(
-        clamp(vary(baseline.baseAggressiveness ?? 0.65, 0.1), 0.02, 1.0).toFixed(3)
-      ),
+      aggressiveness: isHerbivore
+        ? 0.0
+        : Number(
+            clamp(vary(baseline.baseAggressiveness ?? 0.65, 0.1), 0.02, 1.0).toFixed(3)
+          ),
       fertility: Number(vary(baseline.fertility ?? 1.0, 0.1).toFixed(3)),
       metabolism: Number(vary(baseline.metabolism ?? 4.0, 0.1).toFixed(2)),
       aggroRadius: Number(vary(baseline.aggroRadius ?? 20, 0.1).toFixed(2)),
@@ -525,9 +732,18 @@ export class Genome {
     const genome = new Genome({
       speciesId: baseline.id || speciesId,
       speciesName: baseline.name || speciesId,
+      clade: baseline.clade,
       isHybrid,
       hybridParents,
-      aggroStance: baseline.aggroStance || (speciesId === 'dragon' ? 'pacifist_apex' : 'hostile'),
+      aggroStance:
+        baseline.aggroStance ||
+        (speciesId === 'dragon'
+          ? 'pacifist_apex'
+          : isHerbivore
+            ? 'prey_pacifist'
+            : 'hostile'),
+      foodYield: baseline.foodYield ?? 0,
+      autoRepopulate: baseline.autoRepopulate !== false,
       generation: 1,
       baseGenes,
       mutations: initialMutations,
@@ -605,6 +821,9 @@ export class Genome {
 
     const childBaseline =
       hybridSpec || resolveSpeciesBaseline(childSpeciesId, childHybridParents);
+    const isHerbivore =
+      childBaseline.clade === 'herbivore' ||
+      childBaseline.aggroStance === 'prey_pacifist';
 
     // 2. Scope-Expanding Crossover: uniform([min(Dad, Mom), max(Dad, Mom)]) * uniform(0.90, 1.10)
     const genesA = parentA.baseGenes || parentA.genes;
@@ -624,10 +843,10 @@ export class Genome {
 
     const refSize = childBaseline.baseSize || 1.0;
     const refSpeed = childBaseline.baseSpeed || 7.5;
-    const refStr = childBaseline.baseDamage || 12;
+    const refStr = isHerbivore ? 0 : childBaseline.baseDamage || 12;
     const refHp = childBaseline.baseHp || 80;
     const refGest = childBaseline.baseGestationTime || 18;
-    const refAggro = childBaseline.baseAggressiveness ?? 0.65;
+    const refAggro = isHerbivore ? 0.0 : childBaseline.baseAggressiveness ?? 0.65;
     const refFert = childBaseline.fertility || 1.0;
     const refMetab = childBaseline.metabolism || 4.0;
     const refRadius = childBaseline.aggroRadius || 20;
@@ -647,15 +866,17 @@ export class Genome {
           refSpeed * 4.5
         ).toFixed(2)
       ),
-      strength: Number(
-        clamp(
-          crossoverTrait(genesA.strength, genesB.strength, refStr),
-          refStr * 0.35,
-          refStr * 4.5
-        ).toFixed(2)
-      ),
+      strength: isHerbivore
+        ? 0
+        : Number(
+            clamp(
+              crossoverTrait(genesA.strength, genesB.strength, refStr),
+              refStr * 0.35,
+              refStr * 4.5
+            ).toFixed(2)
+          ),
       maxHp: Math.max(
-        15,
+        12,
         Math.round(
           clamp(
             crossoverTrait(genesA.maxHp, genesB.maxHp, refHp),
@@ -671,13 +892,15 @@ export class Genome {
           refGest * 3.0
         ).toFixed(2)
       ),
-      aggressiveness: Number(
-        clamp(
-          crossoverTrait(genesA.aggressiveness, genesB.aggressiveness, refAggro),
-          0.02,
-          1.0
-        ).toFixed(3)
-      ),
+      aggressiveness: isHerbivore
+        ? 0.0
+        : Number(
+            clamp(
+              crossoverTrait(genesA.aggressiveness, genesB.aggressiveness, refAggro),
+              0.02,
+              1.0
+            ).toFixed(3)
+          ),
       fertility: Number(
         clamp(
           crossoverTrait(genesA.fertility, genesB.fertility, refFert),
@@ -720,11 +943,11 @@ export class Genome {
       }
     }
 
-    // 4. De Novo Spontaneous Mutation Roll (CONFIG.ECO.MUTATION_RATE = 8%)
-    const deNovoRate = CONFIG?.ECO?.MUTATION_RATE ?? 0.08;
+    // 4. De Novo Spontaneous Mutation Roll (CONFIG.ECO.MUTATION_RATE = 8% for combat/predator clades)
+    const deNovoRate = isHerbivore ? 0.0 : (CONFIG?.ECO?.MUTATION_RATE ?? 0.08);
     let newMutationId = null;
 
-    if (sampleUniform(rng) < deNovoRate) {
+    if (deNovoRate > 0 && sampleUniform(rng) < deNovoRate) {
       const allMutationKeys = Object.keys(CONFIG?.MUTATIONS || {});
       const candidateKeys = allMutationKeys.filter((k) => !parentMutationsUnion.has(k) && !childMutations.includes(k));
       if (candidateKeys.length > 0) {
@@ -748,11 +971,18 @@ export class Genome {
     const childGenome = new Genome({
       speciesId: childSpeciesId,
       speciesName: childSpeciesName,
+      clade: childBaseline.clade,
       isHybrid: childIsHybrid,
       hybridParents: childHybridParents,
       aggroStance:
         childBaseline.aggroStance ||
-        (childSpeciesId === 'dragon' ? 'pacifist_apex' : parentA.aggroStance || 'hostile'),
+        (childSpeciesId === 'dragon'
+          ? 'pacifist_apex'
+          : isHerbivore
+            ? 'prey_pacifist'
+            : parentA.aggroStance || 'hostile'),
+      foodYield: childBaseline.foodYield ?? 0,
+      autoRepopulate: childBaseline.autoRepopulate !== false,
       generation,
       lineageId,
       baseGenes: childBaseGenes,

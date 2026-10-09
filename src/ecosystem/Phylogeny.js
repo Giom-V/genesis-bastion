@@ -32,6 +32,11 @@ const CANONICAL_SPECIES_ORDER = Object.freeze([
   'lion',
   'vulture',
   'dragon',
+  'shark',
+  'giant_mole',
+  'rabbit',
+  'deer',
+  'storm_harpy',
 ]);
 
 /**
@@ -40,13 +45,54 @@ const CANONICAL_SPECIES_ORDER = Object.freeze([
  * @type {Readonly<Record<string, Readonly<Record<string, number>>>>}
  */
 const FALLBACK_PHYLOGENY_DIST = Object.freeze({
-  goblin: { goblin: 0.0, orc: 0.18, troll: 0.32, wolf: 0.62, lion: 0.72, vulture: 0.78, dragon: 0.85 },
-  orc: { goblin: 0.18, orc: 0.0, troll: 0.22, wolf: 0.44, lion: 0.60, vulture: 0.72, dragon: 0.75 },
-  troll: { goblin: 0.32, orc: 0.22, troll: 0.0, wolf: 0.58, lion: 0.64, vulture: 0.68, dragon: 0.42 },
-  wolf: { goblin: 0.62, orc: 0.44, troll: 0.58, wolf: 0.0, lion: 0.20, vulture: 0.40, dragon: 0.74 },
-  lion: { goblin: 0.72, orc: 0.60, troll: 0.64, wolf: 0.20, lion: 0.0, vulture: 0.35, dragon: 0.62 },
-  vulture: { goblin: 0.78, orc: 0.72, troll: 0.68, wolf: 0.40, lion: 0.35, vulture: 0.0, dragon: 0.38 },
-  dragon: { goblin: 0.85, orc: 0.75, troll: 0.42, wolf: 0.74, lion: 0.62, vulture: 0.38, dragon: 0.0 },
+  goblin: {
+    goblin: 0.0, orc: 0.18, troll: 0.32, wolf: 0.62, lion: 0.72, vulture: 0.78, dragon: 0.85,
+    shark: 0.72, giant_mole: 0.44, rabbit: 0.85, deer: 0.84, storm_harpy: 0.76,
+  },
+  orc: {
+    goblin: 0.18, orc: 0.0, troll: 0.22, wolf: 0.44, lion: 0.60, vulture: 0.72, dragon: 0.75,
+    shark: 0.64, giant_mole: 0.36, rabbit: 0.88, deer: 0.86, storm_harpy: 0.72,
+  },
+  troll: {
+    goblin: 0.32, orc: 0.22, troll: 0.0, wolf: 0.58, lion: 0.64, vulture: 0.68, dragon: 0.42,
+    shark: 0.38, giant_mole: 0.28, rabbit: 0.90, deer: 0.88, storm_harpy: 0.68,
+  },
+  wolf: {
+    goblin: 0.62, orc: 0.44, troll: 0.58, wolf: 0.0, lion: 0.20, vulture: 0.40, dragon: 0.74,
+    shark: 0.34, giant_mole: 0.39, rabbit: 0.84, deer: 0.82, storm_harpy: 0.52,
+  },
+  lion: {
+    goblin: 0.72, orc: 0.60, troll: 0.64, wolf: 0.20, lion: 0.0, vulture: 0.35, dragon: 0.62,
+    shark: 0.58, giant_mole: 0.56, rabbit: 0.86, deer: 0.80, storm_harpy: 0.46,
+  },
+  vulture: {
+    goblin: 0.78, orc: 0.72, troll: 0.68, wolf: 0.40, lion: 0.35, vulture: 0.0, dragon: 0.38,
+    shark: 0.70, giant_mole: 0.76, rabbit: 0.82, deer: 0.82, storm_harpy: 0.24,
+  },
+  dragon: {
+    goblin: 0.85, orc: 0.75, troll: 0.42, wolf: 0.74, lion: 0.62, vulture: 0.38, dragon: 0.0,
+    shark: 0.42, giant_mole: 0.68, rabbit: 0.92, deer: 0.90, storm_harpy: 0.32,
+  },
+  shark: {
+    goblin: 0.72, orc: 0.64, troll: 0.38, wolf: 0.34, lion: 0.58, vulture: 0.70, dragon: 0.42,
+    shark: 0.0, giant_mole: 0.66, rabbit: 0.88, deer: 0.86, storm_harpy: 0.68,
+  },
+  giant_mole: {
+    goblin: 0.44, orc: 0.36, troll: 0.28, wolf: 0.39, lion: 0.56, vulture: 0.76, dragon: 0.68,
+    shark: 0.66, giant_mole: 0.0, rabbit: 0.82, deer: 0.84, storm_harpy: 0.78,
+  },
+  rabbit: {
+    goblin: 0.85, orc: 0.88, troll: 0.90, wolf: 0.84, lion: 0.86, vulture: 0.82, dragon: 0.92,
+    shark: 0.88, giant_mole: 0.82, rabbit: 0.0, deer: 0.24, storm_harpy: 0.86,
+  },
+  deer: {
+    goblin: 0.84, orc: 0.86, troll: 0.88, wolf: 0.82, lion: 0.80, vulture: 0.82, dragon: 0.90,
+    shark: 0.86, giant_mole: 0.84, rabbit: 0.24, deer: 0.0, storm_harpy: 0.84,
+  },
+  storm_harpy: {
+    goblin: 0.76, orc: 0.72, troll: 0.68, wolf: 0.52, lion: 0.46, vulture: 0.24, dragon: 0.32,
+    shark: 0.68, giant_mole: 0.78, rabbit: 0.86, deer: 0.84, storm_harpy: 0.0,
+  },
 });
 
 /**
@@ -68,6 +114,7 @@ const FALLBACK_SPECIES = Object.freeze({
     aggroStance: 'hostile',
     repopulationCooldown: 8,
     repopulationHabitatLabel: 'terriers forestiers',
+    autoRepopulate: true,
     color: '#5a8f3d',
     accentColor: '#9ccf63',
     preferredBiome: 'forest',
@@ -89,6 +136,7 @@ const FALLBACK_SPECIES = Object.freeze({
     aggroStance: 'hostile',
     repopulationCooldown: 16,
     repopulationHabitatLabel: 'campements des plaines',
+    autoRepopulate: true,
     color: '#3f6a34',
     accentColor: '#c87d32',
     preferredBiome: 'plains',
@@ -110,6 +158,7 @@ const FALLBACK_SPECIES = Object.freeze({
     aggroStance: 'territorial',
     repopulationCooldown: 18,
     repopulationHabitatLabel: 'cavernes des hautes terres',
+    autoRepopulate: true,
     color: '#4e635e',
     accentColor: '#8ba89c',
     preferredBiome: 'highlands',
@@ -131,6 +180,7 @@ const FALLBACK_SPECIES = Object.freeze({
     aggroStance: 'hostile',
     repopulationCooldown: 12,
     repopulationHabitatLabel: 'tanières sylvestres',
+    autoRepopulate: true,
     color: '#6e7785',
     accentColor: '#b8c4d4',
     preferredBiome: 'forest',
@@ -152,6 +202,7 @@ const FALLBACK_SPECIES = Object.freeze({
     aggroStance: 'hostile',
     repopulationCooldown: 16,
     repopulationHabitatLabel: 'hautes herbes dorées',
+    autoRepopulate: true,
     color: '#c8963e',
     accentColor: '#7a491b',
     preferredBiome: 'plains',
@@ -173,6 +224,7 @@ const FALLBACK_SPECIES = Object.freeze({
     aggroStance: 'territorial',
     repopulationCooldown: 12,
     repopulationHabitatLabel: 'falaises rocheuses',
+    autoRepopulate: true,
     color: '#5c4938',
     accentColor: '#d96b43',
     preferredBiome: 'highlands',
@@ -194,6 +246,7 @@ const FALLBACK_SPECIES = Object.freeze({
     aggroStance: 'pacifist_apex',
     repopulationCooldown: 28,
     repopulationHabitatLabel: 'sommets de la caldeira volcanique',
+    autoRepopulate: true,
     color: '#8f2424',
     accentColor: '#ff7b29',
     preferredBiome: 'volcanic',
@@ -201,6 +254,124 @@ const FALLBACK_SPECIES = Object.freeze({
     fertility: 0.65,
     aggroRadius: 34,
     xpReward: 180,
+  },
+  shark: {
+    id: 'shark',
+    name: 'Requin Marcheur des Abysses',
+    clade: 'abyssal',
+    isAquatic: true,
+    emergenceType: 'sea_beach',
+    emergenceTimeSec: 40,
+    baseHp: 135,
+    baseSpeed: 7.8,
+    baseDamage: 22,
+    baseSize: 1.25,
+    baseGestationTime: 22,
+    baseMaturationTime: 24,
+    baseAggressiveness: 0.90,
+    aggroStance: 'hostile',
+    repopulationCooldown: 20,
+    repopulationHabitatLabel: 'les fosses océaniques côtières',
+    repopulationMessageFR: 'Des Requins Marcheurs émergent des brisants et gagnent la plage !',
+    autoRepopulate: true,
+    color: '#2c5364',
+    accentColor: '#6dd5ed',
+    colorHex: 0x2c5364,
+    accentHex: 0x6dd5ed,
+    preferredBiome: 'beach',
+    metabolism: 5.8,
+    fertility: 1.0,
+    aggroRadius: 24,
+    xpReward: 42,
+    description: 'Prédateur océanique qui développe des pattes amphibies pour traquer sur la terre ferme.',
+  },
+  giant_mole: {
+    id: 'giant_mole',
+    name: 'Taupe Géante Fouisseuse',
+    clade: 'subterranean',
+    isSubterranean: true,
+    emergenceType: 'underground',
+    emergenceTimeSec: 65,
+    baseHp: 150,
+    baseSpeed: 6.4,
+    baseDamage: 21,
+    baseSize: 1.32,
+    baseGestationTime: 20,
+    baseMaturationTime: 22,
+    baseAggressiveness: 0.78,
+    aggroStance: 'hostile',
+    repopulationCooldown: 18,
+    repopulationHabitatLabel: 'les galeries souterraines profondes',
+    repopulationMessageFR: 'Des Taupes Géantes forent la roche et surgissent des profondeurs !',
+    autoRepopulate: true,
+    color: '#5d4037',
+    accentColor: '#ff8a80',
+    colorHex: 0x5d4037,
+    accentHex: 0xff8a80,
+    preferredBiome: 'highlands',
+    metabolism: 5.5,
+    fertility: 0.95,
+    aggroRadius: 20,
+    xpReward: 40,
+    description: 'Colosse fouisseur blindé doté de griffes métalliques et d’un museau étoilé sensoriel.',
+  },
+  rabbit: {
+    id: 'rabbit',
+    name: 'Lapin des Plaines',
+    clade: 'herbivore',
+    baseHp: 26,
+    baseSpeed: 9.8,
+    baseDamage: 0,
+    baseSize: 0.58,
+    baseGestationTime: 7.5,
+    baseMaturationTime: 9.5,
+    baseAggressiveness: 0.0,
+    aggroStance: 'prey_pacifist',
+    foodYield: 18,
+    healYield: 12,
+    biomassEnrichment: 6,
+    autoRepopulate: false,
+    repopulationCooldown: 0,
+    repopulationHabitatLabel: 'terriers des prairies (extinction irréversible sans réintroduction)',
+    color: '#dcdde1',
+    accentColor: '#fbc531',
+    colorHex: 0xdcdde1,
+    accentHex: 0xfbc531,
+    preferredBiome: 'plains',
+    metabolism: 1.5,
+    fertility: 1.45,
+    aggroRadius: 12,
+    xpReward: 5,
+    description: 'Petit herbivore véloce qui fertilise la biomasse (+6/tick) et nourrit les prédateurs (+18 Rations).',
+  },
+  deer: {
+    id: 'deer',
+    name: 'Biche Sylvestre',
+    clade: 'herbivore',
+    baseHp: 54,
+    baseSpeed: 10.5,
+    baseDamage: 0,
+    baseSize: 1.05,
+    baseGestationTime: 15,
+    baseMaturationTime: 17,
+    baseAggressiveness: 0.0,
+    aggroStance: 'prey_pacifist',
+    foodYield: 35,
+    healYield: 25,
+    biomassEnrichment: 6,
+    autoRepopulate: false,
+    repopulationCooldown: 0,
+    repopulationHabitatLabel: 'clairières sylvestres (extinction irréversible sans réintroduction)',
+    color: '#b87333',
+    accentColor: '#f5f6fa',
+    colorHex: 0xb87333,
+    accentHex: 0xf5f6fa,
+    preferredBiome: 'forest',
+    metabolism: 2.2,
+    fertility: 1.25,
+    aggroRadius: 14,
+    xpReward: 10,
+    description: 'Herbivore grégaire pacifique qui régénère la biomasse (+6/tick) et fournit +35 Rations.',
   },
 });
 
@@ -218,6 +389,31 @@ const CURATED_HYBRID_NAMES = Object.freeze({
   vulture_dragon: 'Wyverne Cendrée',
   troll_dragon: 'Drak-Troll',
   orc_wolf: 'Chevaucheur Garou',
+  // Phase 7 emerging & herbivore hybrids (both sort orders supported)
+  wolf_shark: 'Squale-Garou',
+  shark_wolf: 'Squale-Garou',
+  troll_shark: 'Léviathan des Brisants',
+  shark_troll: 'Léviathan des Brisants',
+  dragon_shark: 'Drake Abyssal',
+  shark_dragon: 'Drake Abyssal',
+  troll_giant_mole: 'Taupe-Colosse',
+  giant_mole_troll: 'Taupe-Colosse',
+  orc_giant_mole: 'Sapeur Taupe-Orc',
+  giant_mole_orc: 'Sapeur Taupe-Orc',
+  goblin_giant_mole: 'Tunnelier Gobelin',
+  giant_mole_goblin: 'Tunnelier Gobelin',
+  wolf_giant_mole: 'Fouisseur Lupin',
+  giant_mole_wolf: 'Fouisseur Lupin',
+  lion_shark: 'Squale-Lion',
+  shark_lion: 'Squale-Lion',
+  lion_giant_mole: 'Lion Fouisseur',
+  giant_mole_lion: 'Lion Fouisseur',
+  rabbit_deer: 'Cerf-Lièvre Véloce',
+  deer_rabbit: 'Cerf-Lièvre Véloce',
+  vulture_storm_harpy: 'Harpie Charognarde',
+  storm_harpy_vulture: 'Harpie Charognarde',
+  dragon_storm_harpy: 'Vouivre des Tempêtes',
+  storm_harpy_dragon: 'Vouivre des Tempêtes',
 });
 
 /**
@@ -245,7 +441,7 @@ function normalizeSpeciesId(speciesOrId) {
 
 /**
  * Extracts constituent base species IDs from a base or hybrid species identifier.
- * For example, `'goblin'` -> `['goblin']`, `'goblin_orc'` -> `['goblin', 'orc']`.
+ * Supports multi-word base species IDs containing underscores (such as `'giant_mole'` or `'storm_harpy'`).
  *
  * @param {string|object} speciesOrId - Species ID string or object.
  * @returns {string[]} Array of 1 or 2 base species IDs.
@@ -263,13 +459,26 @@ function extractBaseSpeciesIds(speciesOrId) {
   const rawId = normalizeSpeciesId(speciesOrId).replace(/^hybrid_/, '');
   if (!rawId) return [];
 
-  const catalog = CONFIG?.SPECIES || FALLBACK_SPECIES;
-  if (catalog[rawId] || FALLBACK_SPECIES[rawId]) {
+  const mergedCatalog = { ...FALLBACK_SPECIES, ...(CONFIG?.SPECIES || {}) };
+  if (mergedCatalog[rawId]) {
     return [rawId];
   }
 
+  // Exact pair matching across known base species IDs (handles 'giant_mole_troll', 'shark_wolf', etc.)
+  const knownIds = Object.keys(mergedCatalog);
+  for (let i = 0; i < knownIds.length; i += 1) {
+    const spA = knownIds[i];
+    for (let j = 0; j < knownIds.length; j += 1) {
+      if (i === j) continue;
+      const spB = knownIds[j];
+      if (rawId === `${spA}_${spB}` || rawId === `${spA}-${spB}`) {
+        return [spA, spB];
+      }
+    }
+  }
+
   const parts = rawId.split(/[_-]+/).filter(Boolean);
-  const validParts = parts.filter((p) => Boolean(catalog[p] || FALLBACK_SPECIES[p]));
+  const validParts = parts.filter((p) => Boolean(mergedCatalog[p]));
   if (validParts.length >= 2) {
     return [validParts[0], validParts[1]];
   }
@@ -509,7 +718,15 @@ export function createHybridSpec(speciesA, speciesB) {
     const extractedA = extractBaseSpeciesIds(speciesA);
     const extractedB = extractBaseSpeciesIds(speciesB);
     baseA = extractedA[0] || 'goblin';
-    baseB = extractedB[0] === baseA && extractedB[1] ? extractedB[1] : extractedB[0] || 'orc';
+    if (extractedB[0] && extractedB[0] !== baseA) {
+      baseB = extractedB[0];
+    } else if (extractedB[1] && extractedB[1] !== baseA) {
+      baseB = extractedB[1];
+    } else if (extractedA[1] && extractedA[1] !== baseA) {
+      baseB = extractedA[1];
+    } else {
+      baseB = extractedB[0] || 'orc';
+    }
   }
 
   const [sortedA, sortedB] = sortSpeciesPair(baseA, baseB);
@@ -560,8 +777,11 @@ export function createHybridSpec(speciesA, speciesB) {
       0.5
     ).toFixed(2)
   );
-  const aggroStance =
-    specA.aggroStance === 'hostile' || specB.aggroStance === 'hostile'
+  const isHerbivorePair =
+    specA.clade === 'herbivore' && specB.clade === 'herbivore';
+  const aggroStance = isHerbivorePair
+    ? 'prey_pacifist'
+    : specA.aggroStance === 'hostile' || specB.aggroStance === 'hostile'
       ? 'hostile'
       : specA.aggroStance === 'territorial' || specB.aggroStance === 'territorial'
         ? 'territorial'
@@ -574,6 +794,10 @@ export function createHybridSpec(speciesA, speciesB) {
   );
   const aggroRadius = Math.round(((specA.aggroRadius ?? 20) + (specB.aggroRadius ?? 20)) * 0.5);
   const xpReward = Math.round((((specA.xpReward ?? 25) + (specB.xpReward ?? 25)) * 0.5) * 1.25);
+  const foodYield = isHerbivorePair
+    ? Math.round((((specA.foodYield ?? 20) + (specB.foodYield ?? 20)) * 0.5) * 1.15)
+    : 0;
+  const autoRepopulate = isHerbivorePair ? false : true;
 
   const clade =
     specA.clade === specB.clade ? specA.clade : `${specA.clade}/${specB.clade}`;
@@ -591,12 +815,14 @@ export function createHybridSpec(speciesA, speciesB) {
     accentHex: blendedAccent.hexNumber,
     baseHp,
     baseSpeed,
-    baseDamage,
+    baseDamage: isHerbivorePair ? 0 : baseDamage,
     baseSize,
     baseGestationTime,
     baseMaturationTime,
-    baseAggressiveness,
+    baseAggressiveness: isHerbivorePair ? 0.0 : baseAggressiveness,
     aggroStance,
+    foodYield,
+    autoRepopulate,
     metabolism,
     fertility,
     aggroRadius,
@@ -609,30 +835,50 @@ export function createHybridSpec(speciesA, speciesB) {
 
 /**
  * Returns the complete list of foundational species metadata objects in canonical phylogenetic order.
+ * Merges `FALLBACK_SPECIES` with `CONFIG.SPECIES` so all 11 species (`goblin`, `orc`, `troll`, `wolf`,
+ * `lion`, `vulture`, `dragon`, `shark`, `giant_mole`, `rabbit`, `deer`) are always included.
  *
  * @returns {Array<object>} Array of species configuration objects.
  */
 export function getAllSpecies() {
-  const catalog = CONFIG?.SPECIES || FALLBACK_SPECIES;
-  const keys = Object.keys(catalog);
+  const mergedCatalog = { ...FALLBACK_SPECIES, ...(CONFIG?.SPECIES || {}) };
+  const keys = Object.keys(mergedCatalog);
   const orderedKeys = [
     ...CANONICAL_SPECIES_ORDER.filter((k) => keys.includes(k)),
     ...keys.filter((k) => !CANONICAL_SPECIES_ORDER.includes(k)),
   ];
   return orderedKeys.map((id) => ({
     ...FALLBACK_SPECIES[id],
-    ...catalog[id],
+    ...(CONFIG?.SPECIES?.[id] || {}),
     id,
   }));
 }
 
 /**
- * Returns the catalog of all Mendelian dominant mutations from `CONFIG.MUTATIONS`.
+ * Returns the catalog of all Mendelian dominant mutations from `CONFIG.MUTATIONS`
+ * (including `amphibious_lungs` for ocean-to-land sharks).
  *
  * @returns {Array<object>} Array of mutation definition objects.
  */
 export function getMutationsCatalog() {
-  const mutations = CONFIG?.MUTATIONS || {};
+  const fallbackAmphibious = {
+    amphibious_lungs: {
+      id: 'amphibious_lungs',
+      name: 'Pattes & Branchies Amphibies',
+      shortLabel: 'Amphibie',
+      element: 'water',
+      dominant: true,
+      colorHex: 0x1ee6ff,
+      colorCss: '#1ee6ff',
+      statMultipliers: { maxHp: 1.2, speed: 1.2, strength: 1.15, size: 1.08 },
+      metabolismCost: 1.1,
+      fitnessBonus: 0.5,
+      grantsLandLocomotion: true,
+      description:
+        'Développe quatre pattes musclées griffues et des poumons amphibies permettant aux squales de chasser sur terre.',
+    },
+  };
+  const mutations = { ...fallbackAmphibious, ...(CONFIG?.MUTATIONS || {}) };
   return Object.entries(mutations).map(([key, mut]) => ({
     id: key,
     ...mut,
@@ -672,6 +918,11 @@ export function getPhylogenyGraphData() {
     baseMaturationTime: sp.baseMaturationTime,
     baseAggressiveness: sp.baseAggressiveness,
     aggroStance: sp.aggroStance,
+    foodYield: sp.foodYield ?? 0,
+    autoRepopulate: sp.autoRepopulate !== false,
+    isAquatic: Boolean(sp.isAquatic),
+    isSubterranean: Boolean(sp.isSubterranean),
+    emergenceType: sp.emergenceType || 'native',
     repopulationCooldown: sp.repopulationCooldown,
     repopulationHabitatLabel: sp.repopulationHabitatLabel,
     preferredBiome: sp.preferredBiome,
@@ -716,6 +967,9 @@ export function getPhylogenyGraphData() {
     greenskin: speciesList.filter((s) => s.clade === 'greenskin').map((s) => s.id),
     beast: speciesList.filter((s) => s.clade === 'beast').map((s) => s.id),
     apex: speciesList.filter((s) => s.clade === 'apex').map((s) => s.id),
+    herbivore: speciesList.filter((s) => s.clade === 'herbivore').map((s) => s.id),
+    abyssal: speciesList.filter((s) => s.clade === 'abyssal').map((s) => s.id),
+    subterranean: speciesList.filter((s) => s.clade === 'subterranean').map((s) => s.id),
   };
 
   return {
