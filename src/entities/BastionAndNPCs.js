@@ -27,6 +27,7 @@
 import * as THREE from 'three';
 import { CONFIG } from '../config.js';
 import { buildCreatureMesh, animateCreatureMesh } from './CreatureMeshBuilder.js';
+import { blenderModelManager } from './BlenderModelManager.js';
 import {
   pickScoutExpeditionWaypoint,
   computeScoutEvasionVector,
@@ -1377,7 +1378,8 @@ export class BastionAndNPCs {
         mesh = new THREE.Group();
         mesh.position.set(x, y, z);
 
-        // Ancient stepped stone plinth
+        // Ancient stepped stone plinth (with Blender 5.0 bastion_monolith.glb decoration)
+        const plinthGroup = new THREE.Group();
         const plinth = new THREE.Mesh(
           new THREE.CylinderGeometry(1.55, 2.05, 1.1, 6),
           new THREE.MeshStandardMaterial({
@@ -1389,7 +1391,9 @@ export class BastionAndNPCs {
         plinth.position.y = 0.55;
         plinth.castShadow = true;
         plinth.receiveShadow = true;
-        mesh.add(plinth);
+        plinthGroup.add(plinth);
+        blenderModelManager.decorateMonolithGroup(plinthGroup);
+        mesh.add(plinthGroup);
 
         // Levitating octahedral Relic Core crystal
         const crystal = new THREE.Mesh(

@@ -14,6 +14,7 @@
 
 import * as THREE from 'three';
 import { CONFIG } from '../config.js';
+import { blenderModelManager } from './BlenderModelManager.js';
 
 /** Default fallback species definitions in case CONFIG.SPECIES is partially populated */
 const FALLBACK_SPECIES = {
@@ -539,10 +540,12 @@ function attachLimbReferences(group, limbs) {
 export function buildCreatureMesh(spec = {}) {
   const type = spec.type || 'enemy';
   if (type === 'player') {
-    return buildPlayerHeroMesh();
+    const heroGroup = buildPlayerHeroMesh();
+    return blenderModelManager.decorateCreatureGroup(heroGroup, spec);
   }
   if (type === 'npc') {
-    return buildNpcMesh(spec.role || 'scout');
+    const npcGroup = buildNpcMesh(spec.role || 'scout');
+    return blenderModelManager.decorateCreatureGroup(npcGroup, spec);
   }
 
   const genome = spec.genome || {};
@@ -1643,6 +1646,7 @@ export function buildCreatureMesh(spec = {}) {
 
   attachLimbReferences(group, limbs);
   enableShadows(group);
+  blenderModelManager.decorateCreatureGroup(group, spec);
   return group;
 }
 
@@ -1777,10 +1781,16 @@ export function setSharkAmphibiousMode(group, hasLandLegs = true) {
   if (!group) return;
   const visible = Boolean(hasLandLegs);
   if (group.userData?.amphibiousLegs) {
-    group.userData.amphibiousLegs.visible = visible;
+    group.userData.amphibiousLegs.visible = visible && !blenderModelManager.isBlenderModeEnabled();
+    group.userData.sharkHasLandLegs = visible;
   }
   if (Array.isArray(group.userData?.sharkLegParts)) {
     for (const part of group.userData.sharkLegParts) {
+      if (part) part.visible = visible;
+    }
+  }
+  if (Array.isArray(group.userData?.blenderSharkLegParts)) {
+    for (const part of group.userData.blenderSharkLegParts) {
       if (part) part.visible = visible;
     }
   }
@@ -1790,6 +1800,13 @@ export function setSharkAmphibiousMode(group, hasLandLegs = true) {
     limbs.baseBodyY = visible ? 0.86 : 0.38;
     if (limbs.body) {
       limbs.body.position.y = limbs.baseBodyY;
+    }
+  }
+  const bLimbs = group.userData?.blenderLimbs;
+  if (bLimbs) {
+    bLimbs.baseBodyY = visible ? 0.86 : 0.38;
+    if (bLimbs.body) {
+      bLimbs.body.position.y = bLimbs.baseBodyY;
     }
   }
 }
@@ -1868,7 +1885,7 @@ export function updateCreatureOverlay(
 
 /**
  * Smoothly animates a creature's walk cycle, attack swing, wing flap, idle breathing,
- * mutation attachments, and damage hit flash.
+ * mutation attachments, and damage hit flash (across both procedural limbs and Blender `.glb` limbs).
  *
  * @param {THREE.Group} group - Root creature group built by `buildCreatureMesh`.
  * @param {Object} [animState={}] - Current animation state.
@@ -1887,9 +1904,17 @@ export function animateCreatureMesh(group, animState = {}, elapsedTime = 0, dt =
   const moveSpeed = animState.speed || 4.5;
   const phase = elapsedTime * Math.max(4.5, moveSpeed * 1.15) + (group.id || 0) * 0.7;
 
+  // Animate Blender 5.0 `.glb` articulated limb nodes when present
+  if (group.userData?.blenderModelRoot && group.userData.blenderModelRoot.visible) {
+    blenderModelManager.animateBlenderModel(group, animState, elapsedTime, dt);
+  }
+
   // Synchronize Shark amphibious legs if userData.amphibiousLegs.visible was toggled directly
   if (group.userData?.amphibiousLegs && Array.isArray(group.userData?.sharkLegParts)) {
-    const legsVisible = Boolean(group.userData.amphibiousLegs.visible);
+    const legsVisible =
+      group.userData.sharkHasLandLegs !== undefined
+        ? Boolean(group.userData.sharkHasLandLegs)
+        : Boolean(group.userData.amphibiousLegs.visible);
     if (limbs.isQuadruped !== legsVisible) {
       setSharkAmphibiousMode(group, legsVisible);
     }
@@ -2017,5 +2042,7 @@ export function setPlayerWeaponAppearance(group, weaponSpec = {}) {
     group.userData.heroWeaponAura.visible = isElemental;
     group.userData.heroWeaponAuraMat.color.setHex(bladeColor);
   }
+
+  blenderModelManager.applyHeroWeaponAppearance(group, weaponSpec);
 }
 
