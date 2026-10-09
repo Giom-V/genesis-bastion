@@ -387,6 +387,27 @@ export class AdaptiveMasterySystem {
   }
 
   /**
+   * Réinitialise intégralement toutes les maîtrises adaptatives pour une nouvelle run Roguelike ("Repartir à Zéro").
+   */
+  resetForNewRoguelikeRun() {
+    this.speciesKills = {};
+    this.speciesRanks = {};
+    this.mutationKills = {};
+    this.mutationRanks = {};
+    this.damageTakenByType = { fire: 0, venom: 0, cryo: 0, physical: 0 };
+    this.hitsTakenByType = { fire: 0, venom: 0, cryo: 0, physical: 0 };
+    this.resistanceRanks = { fire: 0, venom: 0, cryo: 0, physical: 0 };
+    this.pendingNotifications = [];
+  }
+
+  /**
+   * Alias de `resetForNewRoguelikeRun()`.
+   */
+  reset() {
+    this.resetForNewRoguelikeRun();
+  }
+
+  /**
    * Normalise un identifiant d'espèce (extrait l'espèce de base ou garde l'identifiant).
    * @param {string|object} enemyOrSpeciesId
    * @returns {string}

@@ -304,3 +304,17 @@ En explorant les **Autels d'Armes Élémentaires (`[E]`)** disséminés sur l'î
      - **Île 2 — Caldeira des Abysses** : Stats `×1.35`, Mutation `12%` (`3` mutants initiaux), Requins `24s` / Taupes `38s`.
      - **Île 3 — Terres Mutantes d'Obsidienne** : Stats `×1.75`, Mutation `16%` (`5` mutants initiaux), Requins `16s` / Taupes `26s`.
      - **Île 4+ — Sanctuaire Draconique Primordial** : Stats `×2.20+`, Mutation `20%+` (`7+` mutants initiaux), Requins `12s` / Taupes `18s`.
+
+---
+
+## 14. Mort Roguelike, « Requiem des Cendres » (Lyria 64 BPM) & Dilemme Game Over
+
+En tant que véritable **Action-Roguelike Écologique**, la chute du Gardien (`player.hp <= 0`) ou la destruction du Cœur du Sanctuaire (`bastion.hp <= 0`) met immédiatement le monde en pause et déclenche l'écran solennel **`💀 GAME OVER — FIN DE L'EXPÉDITION`** :
+
+1. **Transition Musicale & Vocale (« Requiem des Cendres » — Lyria 64 BPM)** :
+   - Dès l'instant où survient le Game Over (`sound.playGameOverRequiem()`), le moteur musical adaptatif coupe les percussions de combat et bascule sans atténuation modale vers le 5e stem Lyria 3 (`lyria_gameover_requiem.mp3`, **64 BPM en Ré mineur**, violoncelle solo mélancolique, accords de piano lents et chœur funèbre), accompagné de l'élégie vocale française du **Commandant Aldric** (`alert_gameover_requiem.wav`).
+2. **Bilan Complet de l'Expédition (6 Cartes Récapitulatives)** :
+   - L'écran présente le nom du prédateur ou mutant ayant porté le coup fatal (`Tombé sous les coups de : [...]`), ainsi que les 6 métriques de la run : **Île Atteinte**, **Niveau & Mode de Combat**, **Arme Élémentaire Équipée**, **Sorts 3D & Rangs de Maîtrise**, **Monstres & Mutants Éliminés**, et **Reliques d'Éden & Génération Darwinienne**.
+3. **Double Choix : Vraie Règle Roguelike vs Grâce Temporaire du Sanctuaire** :
+   - **`🔄 Repartir à Zéro (Nouvelle Run Roguelike — Niv. 1, Île #1)`** : Applique la règle pure du Roguelike (`restartFromZero()`) — réinitialise intégralement le Héros au Niveau 1 (`Espadon Runique`, maîtrises et sorts remis à zéro), reconstruit le Bastion initial et génère un tout nouvel écosystème Gen-1 sur l'Île #1.
+   - **`✨ Continuer quand même (Grâce Temporaire du Sanctuaire — 100% PV)`** : Permet au joueur qui souhaite poursuivre son exploration actuelle (`continueAfterGameOver()`) de relever le Gardien au cœur du Bastion avec `100% PV`, `+60 🍖 Rations`, une onde de choc purificatrice et l'intégralité de ses armes, sorts et reliques conservés.

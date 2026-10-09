@@ -431,6 +431,25 @@ export class DynamicQuestSystem {
   }
 
   /**
+   * Réinitialise intégralement les quêtes dynamiques pour une nouvelle run Roguelike ("Repartir à Zéro").
+   */
+  resetForNewRoguelikeRun() {
+    this.activeQuests = [];
+    this.completedQuests = [];
+    this.pendingRewards = [];
+    this.nextQuestSeq = 1;
+    this.startLineageEradicationQuest('pyro_gland', 'troll');
+    this.startBaseUpgradeQuest();
+  }
+
+  /**
+   * Alias de `resetForNewRoguelikeRun()`.
+   */
+  reset() {
+    this.resetForNewRoguelikeRun();
+  }
+
+  /**
    * Démarre (ou met en priorité) une quête dynamique d'éradication d'une lignée mutante ou hybride.
    *
    * @param {string} [mutationId='pyro_gland'] - Identifiant de la mutation ciblée (ex. `'pyro_gland'`).
