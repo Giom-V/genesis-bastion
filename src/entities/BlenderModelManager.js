@@ -22,20 +22,20 @@ import { logger } from '../utils/logger.js';
  * @type {Record<string, string>}
  */
 export const BLENDER_MODEL_MANIFEST = {
-  hero_guardian: '/assets/models/hero_guardian.glb',
-  npc_survivor: '/assets/models/npc_survivor.glb',
-  goblin: '/assets/models/goblin.glb',
-  orc: '/assets/models/orc.glb',
-  troll: '/assets/models/troll.glb',
-  wolf: '/assets/models/wolf.glb',
-  lion: '/assets/models/lion.glb',
-  vulture: '/assets/models/vulture.glb',
-  dragon: '/assets/models/dragon.glb',
-  shark: '/assets/models/shark.glb',
-  giant_mole: '/assets/models/giant_mole.glb',
-  deer: '/assets/models/deer.glb',
-  rabbit: '/assets/models/rabbit.glb',
-  bastion_monolith: '/assets/models/bastion_monolith.glb',
+  hero_guardian: 'assets/models/hero_guardian.glb',
+  npc_survivor: 'assets/models/npc_survivor.glb',
+  goblin: 'assets/models/goblin.glb',
+  orc: 'assets/models/orc.glb',
+  troll: 'assets/models/troll.glb',
+  wolf: 'assets/models/wolf.glb',
+  lion: 'assets/models/lion.glb',
+  vulture: 'assets/models/vulture.glb',
+  dragon: 'assets/models/dragon.glb',
+  shark: 'assets/models/shark.glb',
+  giant_mole: 'assets/models/giant_mole.glb',
+  deer: 'assets/models/deer.glb',
+  rabbit: 'assets/models/rabbit.glb',
+  bastion_monolith: 'assets/models/bastion_monolith.glb',
 };
 
 /** Standard articulated node names exported by `scripts/generate-blender-models.py`. */

@@ -46,9 +46,9 @@ export const TTS_VOICE_CATALOG = {
     roleEN: 'Master Biologist & Bastion Forgemaster',
     roleFR: 'Maître Biologiste & Forgeron du Bastion',
     speakerTitle: 'Master Biologist & Bastion Forgemaster',
-    urlEN: '/assets/audio/tts/en/act1_aldric.wav',
-    urlFR: '/assets/audio/tts/act1_aldric.wav',
-    url: '/assets/audio/tts/en/act1_aldric.wav',
+    urlEN: 'assets/audio/tts/en/act1_aldric.wav',
+    urlFR: 'assets/audio/tts/act1_aldric.wav',
+    url: 'assets/audio/tts/en/act1_aldric.wav',
     textEN:
       'Welcome to the Bastion Sanctuary, Guardian. The ecosystem around us is frozen for now. Walk to the golden beacon to the South and adjust your camera.',
     textFR:
@@ -66,9 +66,9 @@ export const TTS_VOICE_CATALOG = {
     roleEN: 'Master Biologist & Bastion Forgemaster',
     roleFR: 'Maître Biologiste & Forgeron du Bastion',
     speakerTitle: 'Master Biologist & Bastion Forgemaster',
-    urlEN: '/assets/audio/tts/en/act2_aldric.wav',
-    urlFR: '/assets/audio/tts/act2_aldric.wav',
-    url: '/assets/audio/tts/en/act2_aldric.wav',
+    urlEN: 'assets/audio/tts/en/act2_aldric.wav',
+    urlFR: 'assets/audio/tts/act2_aldric.wav',
+    url: 'assets/audio/tts/en/act2_aldric.wav',
     textEN:
       'A stray Goblin and an Orc marauder are approaching! Strike them with your runic sword, dodge with Shift, and choose your first spell at level two.',
     textFR:
@@ -86,9 +86,9 @@ export const TTS_VOICE_CATALOG = {
     roleEN: 'Master Biologist & Bastion Forgemaster',
     roleFR: 'Maître Biologiste & Forgeron du Bastion',
     speakerTitle: 'Master Biologist & Bastion Forgemaster',
-    urlEN: '/assets/audio/tts/en/act3_aldric.wav',
-    urlFR: '/assets/audio/tts/act3_aldric.wav',
-    url: '/assets/audio/tts/en/act3_aldric.wav',
+    urlEN: 'assets/audio/tts/en/act3_aldric.wav',
+    urlFR: 'assets/audio/tts/act3_aldric.wav',
+    url: 'assets/audio/tts/en/act3_aldric.wav',
     textEN:
       'Eliminate that wolf, rescue the survivor locked in the cage to the Southeast with the E key, then harvest wood or crystal for our camp.',
     textFR:
@@ -106,9 +106,9 @@ export const TTS_VOICE_CATALOG = {
     roleEN: 'Master Biologist & Bastion Forgemaster',
     roleFR: 'Maître Biologiste & Forgeron du Bastion',
     speakerTitle: 'Master Biologist & Bastion Forgemaster',
-    urlEN: '/assets/audio/tts/en/act4_aldric.wav',
-    urlFR: '/assets/audio/tts/act4_aldric.wav',
-    url: '/assets/audio/tts/en/act4_aldric.wav',
+    urlEN: 'assets/audio/tts/en/act4_aldric.wav',
+    urlFR: 'assets/audio/tts/act4_aldric.wav',
+    url: 'assets/audio/tts/en/act4_aldric.wav',
     textEN:
       'Use our resources to build a Watchtower on the golden pad, then repel the goblin raiders charging our ramparts!',
     textFR:
@@ -126,9 +126,9 @@ export const TTS_VOICE_CATALOG = {
     roleEN: 'Chief of Outrider Scouts',
     roleFR: 'Cheffe des Éclaireurs Hors-Frontière',
     speakerTitle: 'Chief of Outrider Scouts',
-    urlEN: '/assets/audio/tts/en/act5_kaelen.wav',
-    urlFR: '/assets/audio/tts/act5_kaelen.wav',
-    url: '/assets/audio/tts/en/act5_kaelen.wav',
+    urlEN: 'assets/audio/tts/en/act5_kaelen.wav',
+    urlFR: 'assets/audio/tts/act5_kaelen.wav',
+    url: 'assets/audio/tts/en/act5_kaelen.wav',
     textEN:
       'Thank you for freeing me! Assign a survivor to the Scout role in the left panel: we will patrol beyond the frontier to track down mutations.',
     textFR:
@@ -146,9 +146,9 @@ export const TTS_VOICE_CATALOG = {
     roleEN: 'Chief of Outrider Scouts',
     roleFR: 'Cheffe des Éclaireurs Hors-Frontière',
     speakerTitle: 'Chief of Outrider Scouts',
-    urlEN: '/assets/audio/tts/en/act6_kaelen.wav',
-    urlFR: '/assets/audio/tts/act6_kaelen.wav',
-    url: '/assets/audio/tts/en/act6_kaelen.wav',
+    urlEN: 'assets/audio/tts/en/act6_kaelen.wav',
+    urlFR: 'assets/audio/tts/act6_kaelen.wav',
+    url: 'assets/audio/tts/en/act6_kaelen.wav',
     textEN:
       'Priority alert! I have spotted a Baby Fire Troll to the Northeast! It is a Patient Zero: eliminate it quickly before it matures and reproduces!',
     textFR:
@@ -166,9 +166,9 @@ export const TTS_VOICE_CATALOG = {
     roleEN: 'Chief of Outrider Scouts',
     roleFR: 'Cheffe des Éclaireurs Hors-Frontière',
     speakerTitle: 'Chief of Outrider Scouts',
-    urlEN: '/assets/audio/tts/en/act7_kaelen.wav',
-    urlFR: '/assets/audio/tts/act7_kaelen.wav',
-    url: '/assets/audio/tts/en/act7_kaelen.wav',
+    urlEN: 'assets/audio/tts/en/act7_kaelen.wav',
+    urlFR: 'assets/audio/tts/act7_kaelen.wav',
+    url: 'assets/audio/tts/en/act7_kaelen.wav',
     textEN:
       'Well done! The Darwinian ecosystem now awakens across the entire island. But beware the caldera Dragons: as long as we do not attack them, they leave us in peace!',
     textFR:
@@ -186,9 +186,9 @@ export const TTS_VOICE_CATALOG = {
     roleEN: 'Chief of Outrider Scouts',
     roleFR: 'Cheffe des Éclaireurs Hors-Frontière',
     speakerTitle: 'Chief of Outrider Scouts',
-    urlEN: '/assets/audio/tts/en/alert_patient_zero.wav',
-    urlFR: '/assets/audio/tts/alert_patient_zero.wav',
-    url: '/assets/audio/tts/en/alert_patient_zero.wav',
+    urlEN: 'assets/audio/tts/en/alert_patient_zero.wav',
+    urlFR: 'assets/audio/tts/alert_patient_zero.wav',
+    url: 'assets/audio/tts/en/alert_patient_zero.wav',
     textEN:
       'Scout Alert! A new mutant Patient Zero has been spotted in the wilds! Hunt it down before the next breeding cycle!',
     textFR:
@@ -206,9 +206,9 @@ export const TTS_VOICE_CATALOG = {
     roleEN: 'Chief of Outrider Scouts',
     roleFR: 'Cheffe des Éclaireurs Hors-Frontière',
     speakerTitle: 'Chief of Outrider Scouts',
-    urlEN: '/assets/audio/tts/en/alert_dragon_wrath.wav',
-    urlFR: '/assets/audio/tts/alert_dragon_wrath.wav',
-    url: '/assets/audio/tts/en/alert_dragon_wrath.wav',
+    urlEN: 'assets/audio/tts/en/alert_dragon_wrath.wav',
+    urlFR: 'assets/audio/tts/alert_dragon_wrath.wav',
+    url: 'assets/audio/tts/en/alert_dragon_wrath.wav',
     textEN:
       'Disaster! You have provoked a Sovereign Dragon! The entire species has entered a frenzy and is descending upon our Bastion!',
     textFR:
@@ -226,9 +226,9 @@ export const TTS_VOICE_CATALOG = {
     roleEN: 'Chief of Outrider Scouts',
     roleFR: 'Cheffe des Éclaireurs Hors-Frontière',
     speakerTitle: 'Chief of Outrider Scouts',
-    urlEN: '/assets/audio/tts/en/alert_shark_landing.wav',
-    urlFR: '/assets/audio/tts/alert_shark_landing.wav',
-    url: '/assets/audio/tts/en/alert_shark_landing.wav',
+    urlEN: 'assets/audio/tts/en/alert_shark_landing.wav',
+    urlFR: 'assets/audio/tts/alert_shark_landing.wav',
+    url: 'assets/audio/tts/en/alert_shark_landing.wav',
     textEN:
       'Coastal alert! Abyssal Sharks have evolved amphibious legs and are storming onto our beaches!',
     textFR:
@@ -246,9 +246,9 @@ export const TTS_VOICE_CATALOG = {
     roleEN: 'Chief of Outrider Scouts',
     roleFR: 'Cheffe des Éclaireurs Hors-Frontière',
     speakerTitle: 'Chief of Outrider Scouts',
-    urlEN: '/assets/audio/tts/en/alert_mole_eruption.wav',
-    urlFR: '/assets/audio/tts/alert_mole_eruption.wav',
-    url: '/assets/audio/tts/en/alert_mole_eruption.wav',
+    urlEN: 'assets/audio/tts/en/alert_mole_eruption.wav',
+    urlFR: 'assets/audio/tts/alert_mole_eruption.wav',
+    url: 'assets/audio/tts/en/alert_mole_eruption.wav',
     textEN:
       'Watch the ground beneath your feet! Burrowing Giant Moles are erupting from underground tunnels!',
     textFR:
@@ -266,9 +266,9 @@ export const TTS_VOICE_CATALOG = {
     roleEN: 'Chief of Outrider Scouts',
     roleFR: 'Cheffe des Éclaireurs Hors-Frontière',
     speakerTitle: 'Chief of Outrider Scouts',
-    urlEN: '/assets/audio/tts/en/alert_prey_crisis.wav',
-    urlFR: '/assets/audio/tts/alert_prey_crisis.wav',
-    url: '/assets/audio/tts/en/alert_prey_crisis.wav',
+    urlEN: 'assets/audio/tts/en/alert_prey_crisis.wav',
+    urlFR: 'assets/audio/tts/alert_prey_crisis.wav',
+    url: 'assets/audio/tts/en/alert_prey_crisis.wav',
     textEN:
       'Ecological alert! Our spells have decimated the herbivore prey! Without deer or rabbits, famine looms and the predators are going berserk!',
     textFR:
@@ -286,9 +286,9 @@ export const TTS_VOICE_CATALOG = {
     roleEN: 'Master Biologist & Bastion Forgemaster',
     roleFR: 'Maître Biologiste & Forgeron du Bastion',
     speakerTitle: 'Master Biologist & Bastion Forgemaster',
-    urlEN: '/assets/audio/tts/en/alert_relic_found.wav',
-    urlFR: '/assets/audio/tts/alert_relic_found.wav',
-    url: '/assets/audio/tts/en/alert_relic_found.wav',
+    urlEN: 'assets/audio/tts/en/alert_relic_found.wav',
+    urlFR: 'assets/audio/tts/alert_relic_found.wav',
+    url: 'assets/audio/tts/en/alert_relic_found.wav',
     textEN:
       'Eden Relic Fragment recovered! Gather all three ancient fragments to raise the Solar Shield Dome across the entire island!',
     textFR:
@@ -306,9 +306,9 @@ export const TTS_VOICE_CATALOG = {
     roleEN: 'Master Biologist & Bastion Forgemaster',
     roleFR: 'Maître Biologiste & Forgeron du Bastion',
     speakerTitle: 'Master Biologist & Bastion Forgemaster',
-    urlEN: '/assets/audio/tts/en/alert_island_victory.wav',
-    urlFR: '/assets/audio/tts/alert_island_victory.wav',
-    url: '/assets/audio/tts/en/alert_island_victory.wav',
+    urlEN: 'assets/audio/tts/en/alert_island_victory.wav',
+    urlFR: 'assets/audio/tts/alert_island_victory.wav',
+    url: 'assets/audio/tts/en/alert_island_victory.wav',
     textEN:
       'Victory! The Shield of Eden shines across the entire island and purifies the ecosystem! Our Bastion is unbreakable: prepare to set sail for the next island!',
     textFR:
@@ -326,9 +326,9 @@ export const TTS_VOICE_CATALOG = {
     roleEN: 'Master Biologist & Bastion Forgemaster',
     roleFR: 'Maître Biologiste & Forgeron du Bastion',
     speakerTitle: 'Master Biologist & Bastion Forgemaster',
-    urlEN: '/assets/audio/tts/en/alert_gameover_requiem.wav',
-    urlFR: '/assets/audio/tts/alert_gameover_requiem.wav',
-    url: '/assets/audio/tts/en/alert_gameover_requiem.wav',
+    urlEN: 'assets/audio/tts/en/alert_gameover_requiem.wav',
+    urlFR: 'assets/audio/tts/alert_gameover_requiem.wav',
+    url: 'assets/audio/tts/en/alert_gameover_requiem.wav',
     textEN:
       "The Guardian has fallen, and shadows close in upon the Bastion. In this unforgiving world, every death seals the fate of an expedition. Will you start anew for a fresh lineage, or invoke the Sanctuary's Grace to carry on?",
     textFR:
@@ -347,7 +347,7 @@ export const LYRIA_MUSIC_STEMS = {
     title: 'Sanctuary Parchment (Tutorial & Dialogue)',
     titleEN: 'Sanctuary Parchment (Tutorial & Dialogue)',
     titleFR: 'Parchemin du Sanctuaire (Tutoriel & Dialogue)',
-    url: '/assets/audio/music/lyria_tutorial_dialogue.mp3',
+    url: 'assets/audio/music/lyria_tutorial_dialogue.mp3',
     bpm: 85,
     baseVolume: 0.42,
     prompt:
@@ -358,7 +358,7 @@ export const LYRIA_MUSIC_STEMS = {
     title: 'Bastion Watch (Exploration & Camp)',
     titleEN: 'Bastion Watch (Exploration & Camp)',
     titleFR: 'Veillée du Bastion (Exploration & Camp)',
-    url: '/assets/audio/music/lyria_sanctuary_peace.mp3',
+    url: 'assets/audio/music/lyria_sanctuary_peace.mp3',
     bpm: 92,
     baseVolume: 0.44,
     prompt:
@@ -369,7 +369,7 @@ export const LYRIA_MUSIC_STEMS = {
     title: 'Wild Skirmish (Pack Combat)',
     titleEN: 'Wild Skirmish (Pack Combat)',
     titleFR: 'Escarmouche Sauvage (Combat de Meute)',
-    url: '/assets/audio/music/lyria_combat_pack.mp3',
+    url: 'assets/audio/music/lyria_combat_pack.mp3',
     bpm: 128,
     baseVolume: 0.50,
     prompt:
@@ -380,7 +380,7 @@ export const LYRIA_MUSIC_STEMS = {
     title: 'Patient Zero & Dragon Wrath (Critical Urgency)',
     titleEN: 'Patient Zero & Dragon Wrath (Critical Urgency)',
     titleFR: 'Patient Zéro & Courroux Draconique (Urgence Vitale)',
-    url: '/assets/audio/music/lyria_boss_mutation_wrath.mp3',
+    url: 'assets/audio/music/lyria_boss_mutation_wrath.mp3',
     bpm: 145,
     baseVolume: 0.56,
     prompt:
@@ -391,7 +391,7 @@ export const LYRIA_MUSIC_STEMS = {
     title: 'Requiem of Ashes (Game Over — 64 BPM)',
     titleEN: 'Requiem of Ashes (Game Over — 64 BPM)',
     titleFR: 'Requiem des Cendres (Game Over — 64 BPM)',
-    url: '/assets/audio/music/lyria_gameover_requiem.mp3',
+    url: 'assets/audio/music/lyria_gameover_requiem.mp3',
     bpm: 64,
     baseVolume: 0.62,
     prompt:
