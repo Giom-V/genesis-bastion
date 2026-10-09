@@ -44,7 +44,7 @@ npm run build
 | **`K`** | Ouvrir / Fermer l'**Armurerie des Artefacts Élémentaires (Feu, Glace, Foudre, Venin Symbiotique)** *(met le jeu en pause)* |
 | **`V`** | **Activer le Dôme-Bouclier Planétaire de l'Île** (`3/3` Reliques) & passer à l'**Île Suivante** *(met le jeu en pause)* |
 | **`H`** | Ouvrir / Fermer la modale **Architecte du Bastion (5 Bâtiments Niv. 0 $\rightarrow$ 3)** *(met le jeu en pause)* |
-| **`Q` / `E` ou Glisser Clic Droit** | Rotation orbitale de la caméra 3D tactique |
+| **`R` / `F` ou Glisser Clic Droit** | Rotation orbitale de la caméra 3D tactique *(découplée de `E` Récolte et `Q` Déplacement)* |
 | **`Molette Souris`** | Zoom / Dézoom tactique (vue rapprochée action $\leftrightarrow$ vue stratégique écosystème) |
 | **`Tab`** | Ouvrir / Fermer le **Codex de l'Arbre Phylogénétique & Génome** *(met le jeu 100% en pause)* |
 | **`P`** | Passer l'**Onboarding Guidé en 7 Actes** et éveiller immédiatement l'écosystème |
@@ -150,3 +150,14 @@ Pour garantir une progression tactique mesurée sans inflation de statistiques :
   - **Sorts 3D (Niv. 1 $\rightarrow$ 5)** : **`+8 %` dégâts** et **`+4 %` portée** par niveau (`-4 %` temps de recharge).
   - **Cartes Passives de Level-Up** : Bonus réalistes de **`+8 %` à `+12 %`** (`+10 %` mêlée, `+8 %` vitesse, `+10 %` cadence, `+12 %` élémentaire, `+15 PV max`).
   - **Armes Élémentaires Légendaires (`[K]`)** : **`+10 %` à `+12 %` de dégâts de base** et **`+15 %` contre leur clade cible**.
+
+---
+
+## Optimisation Ultra-Fluide 60 FPS & Découplage Clavier `[E]` / `[R-F]` (`v0.12.0`)
+
+Pour garantir une fluidité constante à **60 FPS** (y compris sous WebGL Cloudtop) :
+1. **Découplage Strict `[E]` Récolte / `[R-F]` Caméra** : La touche **`[E]`** est dédiée exclusivement à l'interaction contextuelle (récolter bois/cristal, ouvrir une cage, forger une arme, bâtir sur socle), tandis que la rotation clavier de la caméra est assignée à **`[R]` / `[F]`** (ou `Clic Droit + Glisser`).
+2. **Zéro DOM Thrashing 60 Hz (`HUDManager` & `Minimap`)** : Mémoïsation par signature d'état des listes de lignées (`_lastLineageListSig`) et de la bannière d'Onboarding (`_lastOnboardingBannerSig`), cadencement des panneaux lourds à `~7 Hz` (`140ms`) et du radar Minimap 2D à `~12 Hz` (`80ms`).
+3. **Cache Bilinéaire $O(1)$ de Hauteur & Biome (`Terrain.js`)** : Précalcul d'une grille `257x257` (`Float32Array`) pour `getHeightAt(x, z)` et `129x129` pour `getBiomeAt(x, z)`, éliminant des centaines d'évaluations FBM/Perlin par frame, avec géométrie d'île et d'océan allégée.
+4. **Modèles `.glb` Low-Poly Stylisés & Cache de Matériaux (`BlenderModelManager.js`)** : Réduction de **85 %** du nombre de sommets des 14 modèles `.glb` (`~450–1 200` sommets avec lissage de normales), mutualisation des matériaux PBR teintés (`materialCache`) et ombres portées limitées au tronc principal (`Body`).
+5. **Culling Spatial & LOD d'Animation (`EnemyManager.js`)** : Masquage et mise en veille d'animation des créatures éloignées (`> 95m` hors Patients Zéro), animation 1 frame sur 4 à moyenne distance (`> 48m`), et scan de fuite des herbivores cadencé à `4 Hz`.

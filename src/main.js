@@ -547,6 +547,7 @@ export class GenesisBastionGame {
     this.tutorialAct = act.actNumber;
     this.tutState.actTimer = 0;
     this.tutState.spawnedEnemies = [];
+    this._lastOnboardingBannerSig = null;
     this.hud.setTutorialHighlight(null);
 
     // Appliquer le dévoilement progressif du HUD
@@ -1071,7 +1072,7 @@ export class GenesisBastionGame {
       const doneCount = (this.tutState.reachedBeacon ? 1 : 0) + (this.tutState.cameraAdjusted ? 1 : 0);
       objectiveText = !this.tutState.reachedBeacon
         ? 'Marchez jusqu’à la balise dorée au Sud du Bastion (0, 12)'
-        : 'Tournez la caméra (Clic Droit / Q-E) ou zoomez (Molette)';
+        : 'Tournez la caméra (Clic Droit / R-F) ou zoomez (Molette)';
       progressText = `${doneCount} / 2`;
     } else if (this.tutorialAct === 2) {
       if (this.tutorialSubStep === '2A') {
@@ -1127,6 +1128,12 @@ export class GenesisBastionGame {
       isCompleted = true;
     }
 
+    const bannerSig = `${act.actNumber}|${this.tutorialSubStep}|${objectiveText}|${progressText}|${isCompleted ? 1 : 0}`;
+    if (this._lastOnboardingBannerSig === bannerSig) {
+      return;
+    }
+    this._lastOnboardingBannerSig = bannerSig;
+
     this.hud.updateOnboardingBanner({
       visible: true,
       actNumber: act.actNumber,
@@ -1152,6 +1159,12 @@ export class GenesisBastionGame {
     if (!this.player || !this.sceneManager || typeof this.sceneManager.worldToScreen !== 'function') {
       return;
     }
+
+    const nowMs = performance.now();
+    if (this._lastPromptCheckMs && nowMs - this._lastPromptCheckMs < 48) {
+      return;
+    }
+    this._lastPromptCheckMs = nowMs;
 
     const px = this.player.x;
     const pz = this.player.z;
@@ -2829,8 +2842,9 @@ export class GenesisBastionGame {
           this.handleLineageEradicated
         );
 
-        // 4B. Évaluation des Quêtes Dynamiques en 2 phases (Repérage Éclaireur -> Extermination)
-        if (this.questSystem) {
+        // 4B. Évaluation des Quêtes Dynamiques en 2 phases (~6 Hz pour éviter l'itération 60Hz)
+        if (this.questSystem && (!this._lastQuestEvalMs || safeNow - this._lastQuestEvalMs >= 160)) {
+          this._lastQuestEvalMs = safeNow;
           if (typeof this.questSystem.update === 'function') {
             const buildingLevels = this.bastionAndNpcs?.buildingLevels || {};
             const activeScoutMission =

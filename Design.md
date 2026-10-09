@@ -157,7 +157,16 @@ Afin d'éviter toute explosion exponentielle des multiplicateurs de dégâts en 
 
 ---
 
-## 8. Sécurité & Qualité Logicielle
+## 8. Architecture de Performance Temps Réel 60 FPS (`v0.12.0`)
+
+- **Cache Géométrique $O(1)$ (`Terrain.js`)** : `getHeightAt(x, z)` interpole bilinéairement sur une table `Float32Array(257 * 257)` précalculée au chargement et `getBiomeAt(x, z)` indexe une table `129x129`, supprimant les appels analytiques FBM en cours de frame.
+- **Rendu WebGL Direct & Ombres Optimisées (`SceneManager.js`)** : `pixelRatio` borné à `1.0`, `PCFShadowMap` `1024x1024`, et rendu direct `renderer.render(scene, camera)` par défaut (court-circuitant les 5 passes plein écran d'`EffectComposer` sauf activation explicite de `useBloom`).
+- **LOD d'Animation & Culling d'Entités (`EnemyManager.js` & `BlenderModelManager.js`)** : Maillages `.glb` low-poly lissés (`~450–1 200` sommets), `materialCache` partagé par signature génétique, culling d'affichage au-delà de `95` unités et décimation d'animation (`1/4` frame) au-delà de `48` unités.
+- **Zéro Mutation DOM Inutile (`HUDManager.js`, `Minimap.js`, `main.js`)** : Signature de diffing avant tout `replaceChildren()`, throttling des panneaux analytiques (`140ms`) et du canvas Minimap (`80ms`).
+
+---
+
+## 9. Sécurité & Qualité Logicielle
 
 - **Politique de Sécurité du Contenu (CSP)** : Définie dans `index.html`, interdisant tout script externe non approuvé.
 - **Zéro Injection DOM** : Aucune utilisation de `innerHTML`, `outerHTML`, `insertAdjacentHTML` ou `document.write`. Toute l'interface est construite via `document.createElement` et `textContent`.
