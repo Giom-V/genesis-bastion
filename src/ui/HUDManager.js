@@ -2135,6 +2135,23 @@ export class HUDManager {
       this.mutPill.classList.toggle('threat-active', activeLineagesCount > 0);
     }
 
+    // Tri : Lignées actives d'abord (par nombre de porteurs), puis éradiquées
+    lineages.sort((a, b) => {
+      if ((a.count > 0) !== (b.count > 0)) return a.count > 0 ? -1 : 1;
+      return b.count - a.count;
+    });
+
+    const sig = lineages
+      .map(
+        (l) =>
+          `${l.id}:${l.count}:${l.adultCount}:${l.babyCount}:${l.spottedCount}:${Math.round(l.minMaturationRem || 0)}:${this.selectedLineageId === l.id ? 1 : 0}`
+      )
+      .join('|');
+    if (this._lastLineageListSig === sig) {
+      return;
+    }
+    this._lastLineageListSig = sig;
+
     this.lineageListEl.replaceChildren();
 
     if (lineages.length === 0) {
@@ -2147,12 +2164,6 @@ export class HUDManager {
       );
       return;
     }
-
-    // Tri : Lignées actives d'abord (par nombre de porteurs), puis éradiquées
-    lineages.sort((a, b) => {
-      if ((a.count > 0) !== (b.count > 0)) return a.count > 0 ? -1 : 1;
-      return b.count - a.count;
-    });
 
     for (const item of lineages) {
       const isEradicated = item.count === 0 || item.status === 'eradicated';
@@ -2248,6 +2259,7 @@ export class HUDManager {
         trackBtn.addEventListener('click', (evt) => {
           evt.stopPropagation();
           this.selectedLineageId = item.id;
+          this._lastLineageListSig = null;
           if (this.callbacks.onSetScoutMission) {
             this.callbacks.onSetScoutMission('track_lineage', item.id);
           }
@@ -2265,6 +2277,7 @@ export class HUDManager {
 
       card.addEventListener('click', () => {
         this.selectedLineageId = this.selectedLineageId === item.id ? null : item.id;
+        this._lastLineageListSig = null;
         if (this.callbacks.onFocusWorldPos && item.patientZeroPos) {
           this.callbacks.onFocusWorldPos(
             item.patientZeroPos.x,
@@ -4452,6 +4465,12 @@ export class HUDManager {
     }
 
     // 2. Compte à rebours Eco-Tick & Population (Adultes vs Bébés)
+    const nowMs = performance.now();
+    const shouldRunSlowHud = !this._lastSlowHudMs || nowMs - this._lastSlowHudMs >= 140;
+    if (shouldRunSlowHud) {
+      this._lastSlowHudMs = nowMs;
+    }
+
     const enemies =
       enemyManager && typeof enemyManager.getEnemies === 'function'
         ? enemyManager.getEnemies()
@@ -4470,51 +4489,53 @@ export class HUDManager {
       this.ecoProgressFill.style.width = `${Math.round(prog * 100)}%`;
     }
 
-    let adultCount = 0;
-    let babyCount = 0;
-    let deerCount = 0;
-    let rabbitCount = 0;
-    let otherHerbivoreCount = 0;
-    for (const e of enemies) {
-      if (!e || e.dead || (typeof e.hp === 'number' && e.hp <= 0)) continue;
-      if (e.lifeStage === 'baby' || e.isAdult === false) babyCount++;
-      else adultCount++;
+    if (shouldRunSlowHud) {
+      let adultCount = 0;
+      let babyCount = 0;
+      let deerCount = 0;
+      let rabbitCount = 0;
+      let otherHerbivoreCount = 0;
+      for (const e of enemies) {
+        if (!e || e.dead || (typeof e.hp === 'number' && e.hp <= 0)) continue;
+        if (e.lifeStage === 'baby' || e.isAdult === false) babyCount++;
+        else adultCount++;
 
-      const spId = e.genome?.speciesId || '';
-      if (spId === 'deer') deerCount++;
-      else if (spId === 'rabbit') rabbitCount++;
-      else if (
-        e.aggroStance === 'prey_pacifist' ||
-        CONFIG.SPECIES?.[spId]?.clade === 'herbivore'
-      ) {
-        otherHerbivoreCount++;
+        const spId = e.genome?.speciesId || '';
+        if (spId === 'deer') deerCount++;
+        else if (spId === 'rabbit') rabbitCount++;
+        else if (
+          e.aggroStance === 'prey_pacifist' ||
+          CONFIG.SPECIES?.[spId]?.clade === 'herbivore'
+        ) {
+          otherHerbivoreCount++;
+        }
       }
-    }
-    const totalPop = adultCount + babyCount;
-    this.popValueEl.textContent = `${totalPop} (${adultCount} Ad. / ${babyCount} 🐣)`;
+      const totalPop = adultCount + babyCount;
+      this.popValueEl.textContent = `${totalPop} (${adultCount} Ad. / ${babyCount} 🐣)`;
 
-    const totalPrey = deerCount + rabbitCount + otherHerbivoreCount;
-    const isTutorialReserve = Boolean(enemyManager?.ecoPaused) && totalPop < 5 && totalPrey === 0;
-    if (this.preyHealthBadge) {
-      this.preyHealthBadge.classList.remove('is-healthy', 'is-warning', 'is-extinct');
-      if (isTutorialReserve) {
-        this.preyHealthBadge.classList.add('is-healthy');
-        this.preyHealthBadge.textContent = '🦌 Gibier: 11 (5 Biches / 6 Lapins)';
-      } else if (totalPrey === 0 || (deerCount < 2 && rabbitCount < 2)) {
-        this.preyHealthBadge.classList.add('is-extinct');
-        this.preyHealthBadge.textContent = `🚨 Gibier: ${totalPrey} (EXTINCTION !)`;
-      } else if (deerCount < 2 || rabbitCount < 2) {
-        this.preyHealthBadge.classList.add('is-warning');
-        this.preyHealthBadge.textContent = `⚠️ Gibier: ${totalPrey} (${deerCount} Biches / ${rabbitCount} Lapins)`;
-      } else {
-        this.preyHealthBadge.classList.add('is-healthy');
-        this.preyHealthBadge.textContent = `🦌 Gibier: ${totalPrey} (${deerCount} Biches / ${rabbitCount} Lapins)`;
+      const totalPrey = deerCount + rabbitCount + otherHerbivoreCount;
+      const isTutorialReserve = Boolean(enemyManager?.ecoPaused) && totalPop < 5 && totalPrey === 0;
+      if (this.preyHealthBadge) {
+        this.preyHealthBadge.classList.remove('is-healthy', 'is-warning', 'is-extinct');
+        if (isTutorialReserve) {
+          this.preyHealthBadge.classList.add('is-healthy');
+          this.preyHealthBadge.textContent = '🦌 Gibier: 11 (5 Biches / 6 Lapins)';
+        } else if (totalPrey === 0 || (deerCount < 2 && rabbitCount < 2)) {
+          this.preyHealthBadge.classList.add('is-extinct');
+          this.preyHealthBadge.textContent = `🚨 Gibier: ${totalPrey} (EXTINCTION !)`;
+        } else if (deerCount < 2 || rabbitCount < 2) {
+          this.preyHealthBadge.classList.add('is-warning');
+          this.preyHealthBadge.textContent = `⚠️ Gibier: ${totalPrey} (${deerCount} Biches / ${rabbitCount} Lapins)`;
+        } else {
+          this.preyHealthBadge.classList.add('is-healthy');
+          this.preyHealthBadge.textContent = `🦌 Gibier: ${totalPrey} (${deerCount} Biches / ${rabbitCount} Lapins)`;
+        }
       }
-    }
 
-    if (this.reintroducePreyBtn) {
-      const needsReintro = !isTutorialReserve && (deerCount < 2 || rabbitCount < 2);
-      this.reintroducePreyBtn.classList.toggle('is-urgent-reintroduce', needsReintro);
+      if (this.reintroducePreyBtn) {
+        const needsReintro = !isTutorialReserve && (deerCount < 2 || rabbitCount < 2);
+        this.reintroducePreyBtn.classList.toggle('is-urgent-reintroduce', needsReintro);
+      }
     }
 
     // 3. Statistiques & Ressources du Joueur (dont 🍖 Rations / Nourriture & ⚔️ Arme Élémentaire)
@@ -4572,7 +4593,9 @@ export class HUDManager {
 
       // Mise à jour de la Barre de Compétences Roguelike (4 Sorts 3D) et du Panneau des Maîtrises Adaptatives
       this._updateSkillBar(player);
-      this._updateMasteryPanel(player);
+      if (shouldRunSlowHud) {
+        this._updateMasteryPanel(player);
+      }
     }
 
     // 4. Bastion & PNJ Alliés (Éclaireurs en expédition lointaine, Gardes, Récolteurs, Bâtiments Niv. 0->3, Reliques X/3)
@@ -4585,73 +4608,77 @@ export class HUDManager {
       this.bastionHpText.textContent = `${bHp} / ${bMaxHp}`;
       this.bastionHpFill.style.width = `${Math.min(100, Math.round((bHp / bMaxHp) * 100))}%`;
 
-      const relicCount =
-        typeof bastionAndNpcs.getCollectedRelicCount === 'function'
-          ? bastionAndNpcs.getCollectedRelicCount()
-          : bastionAndNpcs.collectedRelicFragments || 0;
-      const maxRelics = RELIC_FRAGMENTS_SPEC?.totalRequired || 3;
-      const shieldReady = relicCount >= maxRelics || Boolean(bastionAndNpcs.islandShieldActive);
+      if (shouldRunSlowHud) {
+        const relicCount =
+          typeof bastionAndNpcs.getCollectedRelicCount === 'function'
+            ? bastionAndNpcs.getCollectedRelicCount()
+            : bastionAndNpcs.collectedRelicFragments || 0;
+        const maxRelics = RELIC_FRAGMENTS_SPEC?.totalRequired || 3;
+        const shieldReady = relicCount >= maxRelics || Boolean(bastionAndNpcs.islandShieldActive);
 
-      if (this.relicBadge) {
-        this.relicBadge.classList.toggle('is-complete', shieldReady);
-        this.relicBadge.textContent = bastionAndNpcs.islandShieldActive
-          ? `🛡️ Reliques: ${relicCount}/${maxRelics} (DÔME ACTIF [V])`
-          : `🧩 Reliques: ${relicCount}/${maxRelics}${shieldReady ? ' (PRÊT [V] !)' : ''}`;
+        if (this.relicBadge) {
+          this.relicBadge.classList.toggle('is-complete', shieldReady);
+          this.relicBadge.textContent = bastionAndNpcs.islandShieldActive
+            ? `🛡️ Reliques: ${relicCount}/${maxRelics} (DÔME ACTIF [V])`
+            : `🧩 Reliques: ${relicCount}/${maxRelics}${shieldReady ? ' (PRÊT [V] !)' : ''}`;
+        }
+        if (this.activateIslandShieldBtn) {
+          this.activateIslandShieldBtn.classList.toggle('is-ready-glow', shieldReady);
+          this.activateIslandShieldBtn.textContent = bastionAndNpcs.islandShieldActive
+            ? `⛵ Cap sur Île #${currentIslandNumber + 1} [V]`
+            : shieldReady
+              ? '🛡️ Activer Dôme & Île Suiv. [V] !'
+              : `🛡️ Bouclier & Île (${relicCount}/${maxRelics}) [V]`;
+        }
+
+        const counts =
+          typeof bastionAndNpcs.getRoleCounts === 'function'
+            ? bastionAndNpcs.getRoleCounts()
+            : { total: 2, scout: 1, guard: 0, harvester: 1 };
+
+        this.scoutCountEl.textContent = String(counts.scout ?? 0);
+        this.guardCountEl.textContent = String(counts.guard ?? 0);
+        this.harvesterCountEl.textContent = String(counts.harvester ?? 0);
+
+        // État d'expédition des Éclaireurs (ex. combien sont au-delà de la frontière 42u ou en fuite)
+        const npcs = bastionAndNpcs.npcs || [];
+        let scoutsDeepWilderness = 0;
+        let scoutsFleeing = 0;
+        for (const npc of npcs) {
+          if (!npc || npc.role !== 'scout' || (typeof npc.hp === 'number' && npc.hp <= 0)) continue;
+          const d = Math.hypot(npc.x || 0, npc.z || 0);
+          if (d >= (CONFIG.WORLD?.SAFE_SPAWN_RADIUS || 42)) scoutsDeepWilderness++;
+          if (npc.state === 'fleeing') scoutsFleeing++;
+        }
+        if (scoutsFleeing > 0) {
+          this.scoutMetaEl.textContent = `⚠️ ${scoutsFleeing} en fuite d'urgence ! (${scoutsDeepWilderness} hors-frontière)`;
+          this.scoutMetaEl.style.color = '#ffa502';
+        } else {
+          this.scoutMetaEl.textContent = `🧭 ${scoutsDeepWilderness}/${counts.scout || 0} en expédition lointaine (>42m)`;
+          this.scoutMetaEl.style.color = '';
+        }
+
+        const cages = bastionAndNpcs.cages || [];
+        const totalCages = cages.length || 6;
+        const rescuedCages = cages.filter((c) => c && (c.rescued || c.isRescued)).length;
+        this.rescueCounterEl.textContent = `PNJ: ${counts.total || 0} (${rescuedCages}/${totalCages} cages)`;
+
+        // Mise à jour des 5 Bâtiments du Bastion (Niv. 0 -> 3)
+        this._updateBastionBuildingsUI(bastionAndNpcs, player);
       }
-      if (this.activateIslandShieldBtn) {
-        this.activateIslandShieldBtn.classList.toggle('is-ready-glow', shieldReady);
-        this.activateIslandShieldBtn.textContent = bastionAndNpcs.islandShieldActive
-          ? `⛵ Cap sur Île #${currentIslandNumber + 1} [V]`
-          : shieldReady
-            ? '🛡️ Activer Dôme & Île Suiv. [V] !'
-            : `🛡️ Bouclier & Île (${relicCount}/${maxRelics}) [V]`;
-      }
-
-      const counts =
-        typeof bastionAndNpcs.getRoleCounts === 'function'
-          ? bastionAndNpcs.getRoleCounts()
-          : { total: 2, scout: 1, guard: 0, harvester: 1 };
-
-      this.scoutCountEl.textContent = String(counts.scout ?? 0);
-      this.guardCountEl.textContent = String(counts.guard ?? 0);
-      this.harvesterCountEl.textContent = String(counts.harvester ?? 0);
-
-      // État d'expédition des Éclaireurs (ex. combien sont au-delà de la frontière 42u ou en fuite)
-      const npcs = bastionAndNpcs.npcs || [];
-      let scoutsDeepWilderness = 0;
-      let scoutsFleeing = 0;
-      for (const npc of npcs) {
-        if (!npc || npc.role !== 'scout' || (typeof npc.hp === 'number' && npc.hp <= 0)) continue;
-        const d = Math.hypot(npc.x || 0, npc.z || 0);
-        if (d >= (CONFIG.WORLD?.SAFE_SPAWN_RADIUS || 42)) scoutsDeepWilderness++;
-        if (npc.state === 'fleeing') scoutsFleeing++;
-      }
-      if (scoutsFleeing > 0) {
-        this.scoutMetaEl.textContent = `⚠️ ${scoutsFleeing} en fuite d'urgence ! (${scoutsDeepWilderness} hors-frontière)`;
-        this.scoutMetaEl.style.color = '#ffa502';
-      } else {
-        this.scoutMetaEl.textContent = `🧭 ${scoutsDeepWilderness}/${counts.scout || 0} en expédition lointaine (>42m)`;
-        this.scoutMetaEl.style.color = '';
-      }
-
-      const cages = bastionAndNpcs.cages || [];
-      const totalCages = cages.length || 6;
-      const rescuedCages = cages.filter((c) => c && (c.rescued || c.isRescued)).length;
-      this.rescueCounterEl.textContent = `PNJ: ${counts.total || 0} (${rescuedCages}/${totalCages} cages)`;
-
-      // Mise à jour des 5 Bâtiments du Bastion (Niv. 0 -> 3)
-      this._updateBastionBuildingsUI(bastionAndNpcs, player);
     }
 
     // 5. Panneau droit : Radar Génétique, Lignées Mutantes & Opération / Quête Active
-    this._updateLineagesPanel(ecoSim, enemies);
-    this._updateQuestAndScoutMissionUI(bastionAndNpcs, enemies, questSystem);
+    if (shouldRunSlowHud) {
+      this._updateLineagesPanel(ecoSim, enemies);
+      this._updateQuestAndScoutMissionUI(bastionAndNpcs, enemies, questSystem);
 
-    if (this.isBastionModalOpen) {
-      this.renderBastionArchitectContent(bastionAndNpcs, player);
-    }
-    if (this.isWeaponModalOpen) {
-      this.renderWeaponForgeContent(player, bastionAndNpcs);
+      if (this.isBastionModalOpen) {
+        this.renderBastionArchitectContent(bastionAndNpcs, player);
+      }
+      if (this.isWeaponModalOpen) {
+        this.renderWeaponForgeContent(player, bastionAndNpcs);
+      }
     }
   }
 }
