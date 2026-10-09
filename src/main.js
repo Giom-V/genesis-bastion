@@ -103,8 +103,16 @@ export class GenesisBastionGame {
       onFocusWorldPos: (wx, wz, lineageId) => this.focusWorldPosition(wx, wz, lineageId),
       onSelectUpgrade: (upgrade) => this.handleSelectUpgrade(upgrade),
       onSkipTutorial: () => this.skipTutorial(),
+      onSetCombatMode: (mode) => this.handleSetCombatMode(mode),
+      onCastSpellSlot: (slotIndex) => this.handleCastSpellSlot(slotIndex),
     });
     this.hud.registerExtraUpgrades(DESIGNED_UPGRADES);
+
+    // Initialiser le mode de combat par défaut ('vampire_survivors' avec Lames Orbitales 3D)
+    if (this.player && typeof this.player.setCombatMode === 'function') {
+      this.player.setCombatMode('vampire_survivors', true);
+      this.hud.setCombatMode(this.player.combatMode, false);
+    }
 
     /** @type {Minimap} */
     this.minimap = new Minimap(this.hud.root, {
@@ -1159,7 +1167,7 @@ export class GenesisBastionGame {
       };
     }
 
-    // Montée de niveau Roguelike du joueur
+    // Montée de niveau Roguelike & Maîtrises Adaptatives du joueur
     if (this.player) {
       this.player.onLevelUp = () => {
         const enemies = this.enemyManager.getEnemies();
@@ -1176,12 +1184,73 @@ export class GenesisBastionGame {
           }
         }
         this.hud.showLevelUpModal(null, (upgrade) => this.handleSelectUpgrade(upgrade), {
+          player: this.player,
           hasActivePyro,
           activeMutantCount,
           starvingCount,
         });
       };
+
+      this.player.onMasteryRankUp = (notif) => {
+        if (!notif) return;
+        if (this.sceneManager && typeof this.sceneManager.worldToScreen === 'function') {
+          const screenPos = this.sceneManager.worldToScreen(
+            new THREE.Vector3(this.player.x, this.player.y, this.player.z),
+            2.9
+          );
+          this.hud.spawnFloatingNumber(
+            screenPos,
+            `🧬 ${notif.badgeText || notif.title || 'Maîtrise +1'}`,
+            'dmg-mastery'
+          );
+        }
+        this.hud.refreshLogFeed();
+      };
     }
+  }
+
+  /**
+   * Change le mode de gameplay de combat (`'vampire_survivors'` Auto-Cast vs `'diablo_action'` Actif `[1-4]`).
+   * Débloque automatiquement le sort de départ du mode choisi s'il n'est pas encore acquis.
+   * @param {'vampire_survivors'|'diablo_action'} mode
+   */
+  handleSetCombatMode(mode) {
+    if (!this.player) return;
+    if (typeof this.player.setCombatMode === 'function') {
+      this.player.setCombatMode(mode, true);
+    } else {
+      this.player.combatMode = mode;
+    }
+
+    // Garantir que le joueur dispose du sort signature du mode choisi
+    if (
+      mode === 'diablo_action' &&
+      typeof this.player.unlockOrUpgradeAbility === 'function' &&
+      !this.player.abilities?.has('pyro_nova')
+    ) {
+      this.player.unlockOrUpgradeAbility('pyro_nova');
+    } else if (
+      mode === 'vampire_survivors' &&
+      typeof this.player.unlockOrUpgradeAbility === 'function' &&
+      !this.player.abilities?.has('spinning_blades')
+    ) {
+      this.player.unlockOrUpgradeAbility('spinning_blades');
+    }
+
+    this.hud.refreshLogFeed();
+  }
+
+  /**
+   * Déclenche le Sort 3D équipé dans l'emplacement `slotIndex` (`0..3`, touches `[1]..[4]` ou clic Skill Bar).
+   * @param {number} slotIndex
+   * @returns {boolean}
+   */
+  handleCastSpellSlot(slotIndex) {
+    if (!this.player || this.hud.isModalPaused) return false;
+    if (typeof this.player.triggerAbilitySlot === 'function') {
+      return this.player.triggerAbilitySlot(slotIndex, this.enemyManager);
+    }
+    return false;
   }
 
   /**
@@ -1307,12 +1376,12 @@ export class GenesisBastionGame {
   }
 
   /**
-   * Applique une carte d'amélioration Roguelike choisie par le joueur.
+   * Applique une carte d'amélioration Roguelike (Sort 3D ou Adaptation Passive) choisie par le joueur.
    * @param {Object} upgrade
    */
   handleSelectUpgrade(upgrade) {
     if (!upgrade || !this.player) return;
-    this.player.applyUpgrade(upgrade.id || upgrade.legacyId);
+    this.player.applyUpgrade(upgrade);
     this.tutState.upgradePickedInAct2 = true;
     this.hud.refreshLogFeed();
   }
@@ -1337,9 +1406,20 @@ export class GenesisBastionGame {
         if (this.tutorialActive) {
           this.skipTutorial();
         }
+      } else if (evt.code === 'KeyC' && !evt.ctrlKey && !evt.metaKey) {
+        this.hud.toggleCombatMode();
+      } else if (evt.code === 'KeyB' && !evt.ctrlKey && !evt.metaKey) {
+        if (this.hud.isCombatModeModalOpen) {
+          this.hud.hideCombatModeModal();
+        } else {
+          this.hud.showCombatModeModal();
+        }
       } else if (evt.code === 'Escape') {
         if (this.hud.isCodexOpen) {
           this.hud.toggleCodexModal(false);
+        }
+        if (this.hud.isCombatModeModalOpen) {
+          this.hud.hideCombatModeModal();
         }
         this.hud.hideAlertBanner();
       } else if (evt.code === 'KeyT' && !evt.ctrlKey && !evt.metaKey) {
@@ -1349,10 +1429,30 @@ export class GenesisBastionGame {
       } else if (evt.code === 'KeyG' && !evt.ctrlKey && !evt.metaKey) {
         this.minimap.toggleConwayOverlay();
       } else if (evt.code === 'Digit1') {
-        this.handleBuildStructure('watchtower');
+        if (
+          this.tutorialActive &&
+          this.tutorialAct === 4 &&
+          this.tutorialSubStep === '4A' &&
+          !this.tutState.watchtowerBuiltInAct4
+        ) {
+          this.handleBuildStructure('watchtower');
+        } else {
+          this.handleCastSpellSlot(0);
+        }
       } else if (evt.code === 'Digit2') {
-        this.handleBuildStructure('palisade');
+        this.handleCastSpellSlot(1);
       } else if (evt.code === 'Digit3') {
+        this.handleCastSpellSlot(2);
+      } else if (evt.code === 'Digit4') {
+        this.handleCastSpellSlot(3);
+      } else if (evt.code === 'F1') {
+        evt.preventDefault();
+        this.handleBuildStructure('watchtower');
+      } else if (evt.code === 'F2') {
+        evt.preventDefault();
+        this.handleBuildStructure('palisade');
+      } else if (evt.code === 'F3') {
+        evt.preventDefault();
         this.handleBuildStructure('biolab');
       }
     });
@@ -1360,6 +1460,10 @@ export class GenesisBastionGame {
 
   /**
    * Exécute un pas de simulation et de rendu (`requestAnimationFrame`).
+   * Si une modale tactique est ouverte (`this.hud.isModalPaused === true` : Level-Up, Mode de Combat,
+   * ou Codex Phylogénétique), toute la simulation de gameplay est mise en PAUSE STRICTE afin que
+   * le joueur puisse lire et choisir ses compétences sans subir d'attaques.
+   *
    * @param {number} nowMs - Timestamp haute précision fourni par `requestAnimationFrame`.
    */
   tickFrame(nowMs) {
@@ -1368,46 +1472,52 @@ export class GenesisBastionGame {
     const rawDt = (nowMs - this.lastFrameTime) * 0.001;
     this.lastFrameTime = nowMs;
     const dt = Math.min(Math.max(rawDt, 0.001), 0.1);
-    this.elapsedTime += dt;
 
-    const camYaw =
-      typeof this.sceneManager.getCameraYaw === 'function'
-        ? this.sceneManager.getCameraYaw()
-        : this.sceneManager.cameraYaw || 0;
+    const isPaused = Boolean(this.hud.isModalPaused);
 
-    // 1. Mise à jour du Joueur
-    this.player.update(dt, this.elapsedTime, this.enemyManager, this.bastionAndNpcs, camYaw);
+    if (!isPaused) {
+      this.elapsedTime += dt;
 
-    // 2. Mise à jour du Bastion, des Gardes, Récolteurs et Éclaireurs (Scouts hors-frontière)
-    if (this.bastionAndNpcs && typeof this.bastionAndNpcs.update === 'function') {
-      this.bastionAndNpcs.update(
+      const camYaw =
+        typeof this.sceneManager.getCameraYaw === 'function'
+          ? this.sceneManager.getCameraYaw()
+          : this.sceneManager.cameraYaw || 0;
+
+      // 1. Mise à jour du Joueur (Mouvement, Auto-Cast Vampire Survivors ou Sorts Actifs Diablo)
+      this.player.update(dt, this.elapsedTime, this.enemyManager, this.bastionAndNpcs, camYaw);
+
+      // 2. Mise à jour du Bastion, des Gardes, Récolteurs et Éclaireurs (Scouts hors-frontière)
+      if (this.bastionAndNpcs && typeof this.bastionAndNpcs.update === 'function') {
+        this.bastionAndNpcs.update(
+          dt,
+          this.elapsedTime,
+          this.enemyManager,
+          this.player,
+          this.handleScoutDiscovery
+        );
+      }
+
+      // 3. Progression du Tutoriel Guidé en 7 Actes & Bulles Contextuelles 3D->2D
+      this._updateTutorialAndWorldPrompts(dt);
+
+      // 4. Mise à jour des Créatures Sauvages, Meutes, Croissance Bébé -> Adulte & Eco-Ticks
+      this.enemyManager.update(
         dt,
         this.elapsedTime,
-        this.enemyManager,
         this.player,
-        this.handleScoutDiscovery
+        this.bastionAndNpcs,
+        this.handleLineageEradicated
       );
     }
 
-    // 3. Progression du Tutoriel Guidé en 7 Actes & Bulles Contextuelles 3D->2D
-    this._updateTutorialAndWorldPrompts(dt);
-
-    // 4. Mise à jour des Créatures Sauvages, Meutes, Croissance Bébé -> Adulte & Eco-Ticks
-    this.enemyManager.update(
-      dt,
-      this.elapsedTime,
-      this.player,
-      this.bastionAndNpcs,
-      this.handleLineageEradicated
-    );
-
-    // 5. Mise à jour de l'Océan, de la Végétation et des Particules / Balises 3D
+    // 5. Mise à jour de l'Océan, de la Végétation et des Particules / Balises 3D (dt = 0 en pause)
+    const renderDt = isPaused ? 0 : dt;
     const sunDir = this.sceneManager.getSunDirection();
-    this.terrain.update(dt, this.elapsedTime, sunDir);
-    this.vfx.update(dt, this.elapsedTime);
+    this.terrain.update(renderDt, this.elapsedTime, sunDir);
+    this.vfx.update(renderDt, this.elapsedTime);
 
     // 6. Mise à jour de la Caméra 3D Tactique / Isométrique & Rendu Post-Processing
-    this.sceneManager.update(dt, this.elapsedTime, this.player.position);
+    this.sceneManager.update(renderDt, this.elapsedTime, this.player.position);
 
     // 7. Mise à jour du HUD et du Radar Minimap 2D
     this.hud.update({
@@ -1465,6 +1575,10 @@ function bootstrapGenesisBastion() {
       startTutorialAct: (actNum) => gameInstance.startTutorialAct(actNum),
       toggleCodex: () =>
         gameInstance.hud.toggleCodexModal(undefined, gameInstance.enemyManager.getEnemies()),
+      setCombatMode: (mode) => gameInstance.hud.setCombatMode(mode, true),
+      toggleCombatMode: () => gameInstance.hud.toggleCombatMode(),
+      openCombatModeModal: () => gameInstance.hud.showCombatModeModal(),
+      castSpellSlot: (slotIdx) => gameInstance.handleCastSpellSlot(slotIdx),
     };
   }
   gameInstance.start();

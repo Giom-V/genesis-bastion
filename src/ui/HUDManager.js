@@ -30,6 +30,12 @@ import {
   DESIGNED_UPGRADES,
   pickCounterAdaptationUpgrades,
 } from '../ecosystem/BalanceAndPacing.js';
+import {
+  COMBAT_MODES,
+  ROGUELIKE_ABILITIES_BY_ID,
+  getAbilityStatsAtLevel,
+  drawRoguelikeLevelUpChoices,
+} from '../ecosystem/RoguelikeAbilitiesAndMastery.js';
 import { logger } from '../utils/logger.js';
 import { getCardinalLabelFR, dist2D } from '../utils/math.js';
 
@@ -71,6 +77,92 @@ function svgEl(tag, attrs = {}, text = '') {
   return node;
 }
 
+/**
+ * Catalogue de secours des 8 Compétences / Sorts 3D Roguelike pour affichage riche dans la Skill Bar et Level-Up.
+ */
+export const FALLBACK_ROGUELIKE_ABILITIES = {
+  spinning_blades: {
+    id: 'spinning_blades',
+    name: 'Lames Orbitales',
+    icon: '🗡️',
+    category: 'Sort 3D Orbital',
+    cooldown: 0,
+    description:
+      '2 à 5 lames spectrales tournent en orbite permanente autour du Gardien et tranchent tout ennemi au contact.',
+    counterTarget: 'Meutes denses & Gobelins',
+  },
+  pyro_nova: {
+    id: 'pyro_nova',
+    name: 'Nova Pyroclastique',
+    icon: '🔥',
+    category: 'Sort 3D Zone (Feu)',
+    cooldown: 5.5,
+    description:
+      'Déchaîne une onde circulaire de magma incandescent autour du héros qui calcine tous les ennemis proches.',
+    counterTarget: 'Meutes en famine & Bêtes',
+  },
+  chain_lightning: {
+    id: 'chain_lightning',
+    name: 'Arc Foudroyant',
+    icon: '⚡',
+    category: 'Sort 3D Chaîne',
+    cooldown: 3.8,
+    description:
+      'Frappe la cible la plus proche d’un éclair voltaïque qui rebondit automatiquement de monstre en monstre (3 à 6 cibles).',
+    counterTarget: 'Groupes d’Orcs & Hybrides',
+  },
+  frost_spear: {
+    id: 'frost_spear',
+    name: 'Javelot Cryogénique',
+    icon: '❄️',
+    category: 'Sort 3D Contrôle (Glace)',
+    cooldown: 3.2,
+    description:
+      'Projette une lance de glace perforante qui inflige de lourds dégâts et ralentit la cible de 50% pendant 4s.',
+    counterTarget: 'Patient Zéro en fuite & Trolls',
+  },
+  venom_volley: {
+    id: 'venom_volley',
+    name: 'Salve Venimeuse',
+    icon: '🧪',
+    category: 'Sort 3D Cône (Poison)',
+    cooldown: 4.0,
+    description:
+      'Tire un éventail de 5 dagues toxiques corrodant l’armure et infligeant de lourds dégâts de poison sur la durée (DoT).',
+    counterTarget: 'Carapaces Ostéo & Trolls',
+  },
+  meteor_strike: {
+    id: 'meteor_strike',
+    name: 'Météore d’Ambre',
+    icon: '☄️',
+    category: 'Sort 3D Frappe Apex',
+    cooldown: 7.0,
+    description:
+      'Invoque un météore céleste ciblant automatiquement la créature au plus haut Fitness Score à portée.',
+    counterTarget: 'Patients Zéro & Prédateurs Apex',
+  },
+  soul_siphon: {
+    id: 'soul_siphon',
+    name: 'Siphon Vampirique',
+    icon: '🩸',
+    category: 'Sort 3D Drain & Soin',
+    cooldown: 5.0,
+    description:
+      'canalise un rayon cramoisi qui draine la vitalité des ennemis proches et restaure immédiatement les PV du Gardien.',
+    counterTarget: 'Survie prolongée hors-Bastion',
+  },
+  seismic_slam: {
+    id: 'seismic_slam',
+    name: 'Onde Sismique',
+    icon: '🌋',
+    category: 'Sort 3D Onde de Choc',
+    cooldown: 6.0,
+    description:
+      'Frappe le sol avec une force tellurique qui repousse violemment (knockback) et étourdit les ennemis proches.',
+    counterTarget: 'Encerclement & Charges d’Orcs',
+  },
+};
+
 export class HUDManager {
   /**
    * Initialise le HUDManager et construit tous les panneaux dans `#hud-root`.
@@ -82,6 +174,8 @@ export class HUDManager {
    * @param {Function} [callbacks.onFocusWorldPos] - `(x, z, lineageId)` Centre la caméra/radar sur une cible.
    * @param {Function} [callbacks.onSelectUpgrade] - `(upgrade)` Applique une amélioration roguelike.
    * @param {Function} [callbacks.onSkipTutorial] - Passe immédiatement le tutoriel et déverrouille tout le HUD.
+   * @param {Function} [callbacks.onChangeCombatMode] - `(mode)` Bascule entre `'vampire_survivors'` et `'diablo_action'`.
+   * @param {Function} [callbacks.onCastAbilitySlot] - `(slotIndex)` Lance manuellement le sort du slot `0..3`.
    */
   constructor(callbacks = {}) {
     /** @type {Object} */
@@ -95,6 +189,10 @@ export class HUDManager {
     this.isCodexOpen = false;
     /** @type {boolean} */
     this.isLevelUpOpen = false;
+    /** @type {boolean} */
+    this.isCombatModeModalOpen = false;
+    /** @type {'vampire_survivors'|'diablo_action'} */
+    this.combatMode = 'vampire_survivors';
     /** @type {number} */
     this.lastKnownPlayerLevel = 1;
     /** @type {number|null} */
@@ -102,13 +200,17 @@ export class HUDManager {
     /** @type {{x: number, z: number, lineageId?: string}|null} */
     this.currentAlertTarget = null;
     /** @type {Array<Object>} */
-    this.extraUpgrades = [];
+    this.extraUpgrades = Object.values(FALLBACK_ROGUELIKE_ABILITIES);
     /** @type {Record<string, boolean>} */
     this.previousUnlockedHud = {};
     /** @type {string} */
     this._lastPromptSignature = '';
     /** @type {string} */
     this._lastOnboardingKeySig = '';
+    /** @type {string} */
+    this._lastMasterySig = '';
+    /** @type {Array<Object>} */
+    this.skillSlotEls = [];
 
     // Nettoyage initial du conteneur
     this.root.replaceChildren();
@@ -122,6 +224,7 @@ export class HUDManager {
     this._buildBottomCenterControls();
     this._buildCodexModal();
     this._buildLevelUpModal();
+    this._buildCombatModeModal();
 
     // Abonnement temps réel au logger pour le fil d'évolution
     this._unsubscribeLogger = logger.subscribe(() => {
@@ -131,13 +234,63 @@ export class HUDManager {
   }
 
   /**
-   * Enregistre des cartes d'améliorations supplémentaires (ex. issues de `BalanceAndPacing.js`).
+   * Indique si le jeu doit être mis en pause totale (`true` dès que la modale de Montée de Niveau,
+   * la modale de Choix du Mode de Combat ou le Codex Phylogénétique `[Tab]` est ouvert).
+   * @returns {boolean}
+   */
+  get isModalPaused() {
+    return Boolean(this.isLevelUpOpen || this.isCodexOpen || this.isCombatModeModalOpen);
+  }
+
+  /**
+   * Enregistre des cartes d'améliorations supplémentaires (ex. issues de `BalanceAndPacing.js` ou `RoguelikeAbilitiesAndMastery.js`).
    * @param {Array<Object>} upgrades
    */
   registerExtraUpgrades(upgrades) {
     if (Array.isArray(upgrades)) {
-      this.extraUpgrades = upgrades;
+      const mergedMap = new Map();
+      for (const u of [...Object.values(FALLBACK_ROGUELIKE_ABILITIES), ...this.extraUpgrades, ...upgrades]) {
+        if (u && u.id) mergedMap.set(u.id, u);
+      }
+      this.extraUpgrades = Array.from(mergedMap.values());
     }
+  }
+
+  /**
+   * Définit le mode de combat actif (`'vampire_survivors'` Auto-Cast vs `'diablo_action'` Sorts Actifs `[1-4]`).
+   * @param {'vampire_survivors'|'diablo_action'} mode
+   * @param {boolean} [notify=true]
+   */
+  setCombatMode(mode, notify = true) {
+    const normalized = mode === 'diablo_action' ? 'diablo_action' : 'vampire_survivors';
+    this.combatMode = normalized;
+    const isVS = normalized === 'vampire_survivors';
+
+    if (this.combatModeSwitchBtn) {
+      this.combatModeSwitchBtn.textContent = isVS
+        ? '⚡ Mode : Auto (Vampire Survivors) [C]'
+        : '⚔️ Mode : Actif [1-4] (Diablo) [C]';
+      this.combatModeSwitchBtn.classList.toggle('is-vs-mode', isVS);
+    }
+
+    if (this.vsModeCardEl && this.diabloModeCardEl) {
+      this.vsModeCardEl.classList.toggle('is-active-mode', isVS);
+      this.diabloModeCardEl.classList.toggle('is-active-mode', !isVS);
+    }
+
+    if (notify && typeof this.callbacks.onChangeCombatMode === 'function') {
+      this.callbacks.onChangeCombatMode(normalized);
+    }
+  }
+
+  /**
+   * Bascule à tout moment entre `'vampire_survivors'` (Auto-Cast) et `'diablo_action'` (Sorts Actifs `[1-4]`).
+   * @returns {'vampire_survivors'|'diablo_action'}
+   */
+  toggleCombatMode() {
+    const next = this.combatMode === 'vampire_survivors' ? 'diablo_action' : 'vampire_survivors';
+    this.setCombatMode(next, true);
+    return next;
   }
 
   /* ==========================================================================
@@ -186,7 +339,7 @@ export class HUDManager {
    *
    * @param {{x: number, y: number, visible: boolean}|null} screenPos - Coordonnées 2D écran.
    * @param {string} text - Texte à afficher (ex. `'-32'`, `'+45 XP'`).
-   * @param {'dmg-normal'|'dmg-crit'|'dmg-xp'|'dmg-heal'} [variant='dmg-normal'] - Variante CSS.
+   * @param {'dmg-normal'|'dmg-crit'|'dmg-xp'|'dmg-heal'|'dmg-mastery'} [variant='dmg-normal'] - Variante CSS.
    */
   spawnFloatingNumber(screenPos, text, variant = 'dmg-normal') {
     if (!this.worldOverlayLayer || !screenPos || !screenPos.visible || !text) return;
@@ -201,7 +354,7 @@ export class HUDManager {
       if (node.parentNode) {
         node.parentNode.removeChild(node);
       }
-    }, 920);
+    }, 980);
   }
 
   /* ==========================================================================
@@ -210,11 +363,24 @@ export class HUDManager {
   _buildTopBar() {
     this.topBar = el('header', 'hud-top-bar hud-interactive');
 
-    // Marque + Horloge Jour/Nuit
+    // Marque + Horloge Jour/Nuit + Bouton Switch Mode [C]
     const brandGroup = el('div', 'hud-brand-group');
     const brandTitle = el('h1', 'hud-brand-title', 'Genesis Bastion');
     this.clockBadge = el('div', 'hud-clock-badge', '☀️ Jour 1 — 08h00 (Jour)');
-    brandGroup.append(brandTitle, this.clockBadge);
+
+    this.combatModeSwitchBtn = el(
+      'button',
+      'hud-mode-switch-btn is-vs-mode',
+      '⚡ Mode : Auto (Vampire Survivors) [C]'
+    );
+    this.combatModeSwitchBtn.type = 'button';
+    this.combatModeSwitchBtn.title =
+      'Basculer entre le mode Auto-Cast (Vampire Survivors) et le mode Sorts Actifs [1-4] (Diablo) [Raccourci : C]';
+    this.combatModeSwitchBtn.addEventListener('click', () => {
+      this.toggleCombatMode();
+    });
+
+    brandGroup.append(brandTitle, this.clockBadge, this.combatModeSwitchBtn);
 
     // Barre de progression Eco-Tick
     this.ecoGroup = el('div', 'hud-ecotick-group');
@@ -1105,18 +1271,138 @@ export class HUDManager {
   }
 
   /* ==========================================================================
-     5. FIL D'ÉVOLUTION ET DE COMBAT EN DIRECT (BAS-GAUCHE) & BARRE D'ACTIONS
+     5. FIL D'ÉVOLUTION ET DE COMBAT EN DIRECT (BAS-GAUCHE), MAÎTRISES & SKILL BAR
      ========================================================================== */
   _buildBottomLeftLogFeed() {
     this.bottomLeft = el('section', 'hud-bottom-left hud-interactive');
+
+    // Section 5A : Apprentissage Adaptatif & Résistances Dynamiques du Héros
+    const masteryHeader = el('div', 'hud-panel-header');
+    masteryHeader.append(
+      el('span', 'hud-panel-title', '🧬 Maîtrises & Résistances Adaptatives'),
+      (this.masteryCountBadgeEl = el('span', 'hud-panel-subtitle', '0 adaptation'))
+    );
+    this.masteryListEl = el('div', 'hud-mastery-list');
+    this.masteryListEl.appendChild(
+      el(
+        'div',
+        'hud-mastery-empty',
+        'Combattez des espèces/mutants (+12% à +15% dégâts/rang) ou encaissez des éléments (-9% dégâts reçus/rang) pour vous adapter.'
+      )
+    );
+
+    // Section 5B : Journal Évolution & Alerte en Temps Réel
     const header = el('div', 'hud-panel-header');
+    header.style.marginTop = '4px';
     header.append(
       el('span', 'hud-panel-title', '📜 Journal Évolution & Alerte'),
       el('span', 'hud-panel-subtitle', 'Temps réel')
     );
     this.logListEl = el('div', 'hud-log-list');
-    this.bottomLeft.append(header, this.logListEl);
+    this.bottomLeft.append(masteryHeader, this.masteryListEl, header, this.logListEl);
     this.root.appendChild(this.bottomLeft);
+  }
+
+  /**
+   * Met à jour le panneau des Maîtrises Offensives (Tueur d'Espèce / Anti-Mutation)
+   * et des Résistances Élémentaires/Physiques acquises par l'action (`AdaptiveMasterySystem`).
+   * @param {Object} player - Instance `PlayerController`.
+   */
+  _updateMasteryPanel(player) {
+    if (!this.masteryListEl || !player) return;
+    const ms = player.masterySystem || player.mastery || player.adaptiveMastery || null;
+    if (!ms) return;
+
+    const summary =
+      typeof ms.getSummaryForHUD === 'function'
+        ? ms.getSummaryForHUD()
+        : {
+            speciesMasteries: [],
+            mutationMasteries: [],
+            resistances: [],
+            totalAdaptationsCount: 0,
+          };
+
+    const pills = [];
+
+    // 1. Maîtrises d'Espèce (Rangs débloqués ou progression en cours)
+    for (const sp of summary.speciesMasteries || []) {
+      if (sp.rank > 0) {
+        pills.push({
+          cls: 'mastery-species',
+          text: `🗡️ Chasseur ${sp.name} Rg.${sp.rank}`,
+          val: `+${sp.bonusPct}% Dégâts (${sp.kills} tués)`,
+        });
+      } else if (sp.kills > 0) {
+        pills.push({
+          cls: 'mastery-species',
+          text: `🎯 Traque ${sp.name}`,
+          val: `${sp.kills}/${sp.nextThreshold} tués → Rg.1 (+12%)`,
+        });
+      }
+    }
+
+    // 2. Maîtrises Anti-Mutation
+    for (const mut of summary.mutationMasteries || []) {
+      if (mut.rank > 0) {
+        pills.push({
+          cls: 'mastery-mutation',
+          text: `🧬 Purge ${mut.name} Rg.${mut.rank}`,
+          val: `+${mut.bonusPct}% Dégâts`,
+        });
+      } else if (mut.kills > 0) {
+        pills.push({
+          cls: 'mastery-mutation',
+          text: `🧬 Étude ${mut.name}`,
+          val: `${mut.kills}/2 tués → Rg.1 (+15%)`,
+        });
+      }
+    }
+
+    // 3. Résistances Élémentaires & Physiques
+    for (const res of summary.resistances || []) {
+      if (res.rank > 0) {
+        pills.push({
+          cls: 'mastery-resist',
+          text: `${res.icon || '🛡️'} Rés. ${res.name} Rg.${res.rank}`,
+          val: `-${res.reductionPct}% Dégâts reçus`,
+        });
+      } else if (res.hits > 0) {
+        pills.push({
+          cls: 'mastery-resist',
+          text: `${res.icon || '🛡️'} Immunité ${res.name}`,
+          val: `${res.hits}/${res.nextThreshold} coups → Rg.1`,
+        });
+      }
+    }
+
+    const activeRanks = summary.totalAdaptationsCount || 0;
+    if (this.masteryCountBadgeEl) {
+      this.masteryCountBadgeEl.textContent = `${activeRanks} rang${activeRanks > 1 ? 's' : ''} actif${activeRanks > 1 ? 's' : ''}`;
+    }
+
+    // Éviter de reconstruire le DOM si la signature n'a pas changé
+    const sig = JSON.stringify(pills);
+    if (this._lastMasterySig === sig) return;
+    this._lastMasterySig = sig;
+
+    this.masteryListEl.replaceChildren();
+    if (pills.length === 0) {
+      this.masteryListEl.appendChild(
+        el(
+          'div',
+          'hud-mastery-empty',
+          'Combattez des espèces/mutants (+12% à +15% dégâts/rang) ou encaissez des éléments (-9% dégâts reçus/rang) pour vous adapter.'
+        )
+      );
+      return;
+    }
+
+    for (const p of pills.slice(0, 8)) {
+      const badge = el('span', `hud-mastery-pill ${p.cls}`);
+      badge.append(el('span', '', p.text), el('span', 'hud-mastery-val', p.val));
+      this.masteryListEl.appendChild(badge);
+    }
   }
 
   /**
@@ -1144,17 +1430,56 @@ export class HUDManager {
   }
 
   _buildBottomCenterControls() {
+    this.bottomStack = el('div', 'hud-bottom-stack');
+
+    // 1. Barre de Compétences Roguelike à 4 Emplacements (`[1][2][3][4]` ou `AUTO`)
+    this.skillBarWrap = el('div', 'hud-skill-bar-wrap hud-interactive');
+    this.skillSlotEls = [];
+
+    for (let i = 0; i < 4; i++) {
+      const slotBtn = el('button', 'hud-skill-slot is-empty');
+      slotBtn.type = 'button';
+      slotBtn.dataset.slotIndex = String(i);
+
+      const cdFillEl = el('div', 'hud-skill-cooldown-fill');
+      cdFillEl.style.height = '0%';
+      const keyEl = el('span', 'hud-skill-key', String(i + 1));
+      const lvlEl = el('span', 'hud-skill-level', '');
+      const iconEl = el('span', 'hud-skill-icon', '🔒');
+      const nameEl = el('span', 'hud-skill-name', 'Emplacement Vide');
+      const cdTextEl = el('span', 'hud-skill-cd-text', '');
+
+      slotBtn.append(cdFillEl, keyEl, lvlEl, iconEl, nameEl, cdTextEl);
+      slotBtn.addEventListener('click', () => {
+        if (this.callbacks.onCastSpellSlot) {
+          this.callbacks.onCastSpellSlot(i);
+        }
+      });
+
+      this.skillBarWrap.appendChild(slotBtn);
+      this.skillSlotEls.push({
+        slotBtn,
+        cdFillEl,
+        keyEl,
+        lvlEl,
+        iconEl,
+        nameEl,
+        cdTextEl,
+      });
+    }
+
+    // 2. Barre des Raccourcis Clavier
     this.bottomCenter = el('nav', 'hud-bottom-center hud-interactive');
 
     const controls = [
       { key: 'ZQSD / WASD', label: 'Déplacer' },
       { key: 'Clic / Espace', label: 'Fente Cleave' },
+      { key: '1-4', label: 'Sorts 3D' },
+      { key: 'C', label: 'Mode Auto/Actif' },
       { key: 'Shift', label: 'Esquive' },
       { key: 'E', label: 'Secourir / Récolter' },
-      { key: 'Q/E / Molette', label: 'Caméra 3D Iso' },
       { key: 'Tab', label: 'Codex Génétique' },
       { key: 'T', label: 'Eco-Tick' },
-      { key: 'M', label: 'Troll de Feu' },
     ];
 
     for (const c of controls) {
@@ -1163,7 +1488,89 @@ export class HUDManager {
       this.bottomCenter.appendChild(hint);
     }
 
-    this.root.appendChild(this.bottomCenter);
+    this.bottomStack.append(this.skillBarWrap, this.bottomCenter);
+    this.root.appendChild(this.bottomStack);
+  }
+
+  /**
+   * Met à jour l'affichage des 4 emplacements de Sorts 3D (`[1][2][3][4]` / `AUTO`) et leurs temps de recharge.
+   * @param {Object} player - Instance `PlayerController`.
+   */
+  _updateSkillBar(player) {
+    if (!this.skillSlotEls || this.skillSlotEls.length === 0) return;
+
+    const mode = player?.combatMode || this.combatMode || 'vampire_survivors';
+    const isAuto = mode === 'vampire_survivors';
+
+    // Synchroniser le bouton de mode en haut si le joueur a changé de mode
+    if (player?.combatMode && player.combatMode !== this.combatMode) {
+      this.combatMode = player.combatMode;
+      this._refreshCombatModeSwitchLabel();
+    }
+
+    // Récupérer les jusqu'à 4 sorts équipés du joueur via getSkillBarState()
+    let equippedList = [];
+    if (player && typeof player.getSkillBarState === 'function') {
+      equippedList = player.getSkillBarState();
+    } else if (player && typeof player.getEquippedSpellsForHUD === 'function') {
+      equippedList = player.getEquippedSpellsForHUD();
+    } else if (Array.isArray(player?.equippedSpells) && player.equippedSpells.length > 0) {
+      equippedList = player.equippedSpells;
+    } else if (Array.isArray(player?.spellSlots) && player.spellSlots.length > 0) {
+      equippedList = player.spellSlots;
+    } else if (player?.abilityLevels && typeof player.abilityLevels === 'object') {
+      equippedList = Object.entries(player.abilityLevels)
+        .filter(([, lvl]) => lvl > 0)
+        .map(([id, level]) => ({ id, level }));
+    }
+
+    for (let i = 0; i < 4; i++) {
+      const ui = this.skillSlotEls[i];
+      const rawEntry = equippedList[i] || null;
+      const spellId = typeof rawEntry === 'string' ? rawEntry : rawEntry?.id || null;
+      const meta = spellId
+        ? ROGUELIKE_ABILITIES_BY_ID[spellId] || FALLBACK_ROGUELIKE_ABILITIES[spellId] || rawEntry
+        : null;
+
+      ui.keyEl.textContent = isAuto ? `AUTO ${i + 1}` : `[${i + 1}]`;
+      ui.keyEl.classList.toggle('is-auto', isAuto);
+
+      if (!spellId || !meta) {
+        ui.slotBtn.className = 'hud-skill-slot is-empty';
+        ui.iconEl.textContent = '🔒';
+        ui.nameEl.textContent = 'Niveau Sup.';
+        ui.lvlEl.textContent = '';
+        ui.cdFillEl.style.height = '0%';
+        ui.cdTextEl.textContent = '';
+        continue;
+      }
+
+      const level =
+        typeof rawEntry === 'object' && rawEntry.level
+          ? rawEntry.level
+          : player?.abilityLevels?.[spellId] || 1;
+
+      const stats = getAbilityStatsAtLevel(spellId, level);
+      const maxCd =
+        typeof rawEntry === 'object' && typeof rawEntry.maxCooldown === 'number'
+          ? rawEntry.maxCooldown
+          : stats?.cooldown ?? meta.cooldown ?? 4.0;
+      const remCd =
+        typeof rawEntry === 'object' && typeof rawEntry.cooldownRemaining === 'number'
+          ? rawEntry.cooldownRemaining
+          : player?.abilityCooldowns?.[spellId] ?? 0;
+
+      const onCd = remCd > 0.05 && maxCd > 0;
+      const cdPct = onCd ? Math.min(100, Math.round((remCd / maxCd) * 100)) : 0;
+
+      ui.slotBtn.className = `hud-skill-slot${isAuto ? ' is-auto-mode' : ' is-ready'}`;
+      ui.iconEl.textContent = meta.icon || '⚡';
+      ui.nameEl.textContent = meta.name || spellId;
+      ui.lvlEl.textContent = `Niv.${level}`;
+      ui.cdFillEl.style.height = `${cdPct}%`;
+      ui.cdTextEl.textContent = onCd ? `${remCd.toFixed(1)}s` : '';
+      ui.slotBtn.title = `${meta.name} (Niv. ${level}) — ${meta.description || ''}`;
+    }
   }
 
   /* ==========================================================================
@@ -1487,27 +1894,40 @@ export class HUDManager {
   }
 
   /* ==========================================================================
-     7. MODALE ROGUELIKE DE MONTÉE DE NIVEAU
+     7. MODALE ROGUELIKE DE MONTÉE DE NIVEAU & MODALE DE CHOIX DU MODE DE COMBAT
      ========================================================================== */
   _buildLevelUpModal() {
     this.levelUpBackdrop = el('div', 'hud-modal-backdrop is-hidden hud-interactive');
     const dialog = el('div', 'hud-modal-dialog');
-    dialog.style.maxWidth = '820px';
+    dialog.style.maxWidth = '860px';
 
     const header = el('div', 'hud-modal-header');
     this.levelUpTitleEl = el(
       'h2',
       'hud-modal-title',
-      '⚡ MONTÉE DE NIVEAU — CHOISISSEZ UNE ADAPTATION TACTIQUE'
+      '⚡ MONTÉE DE NIVEAU — CHOISISSEZ UN SORT 3D OU UNE ADAPTATION'
     );
     header.appendChild(this.levelUpTitleEl);
 
     const body = el('div', 'hud-modal-body');
+
+    // Bannière explicite de Pause Totale de la simulation 3D
+    this.levelUpPauseBanner = el('div', 'hud-pause-banner');
+    this.levelUpPauseBanner.append(
+      el('span', 'hud-pause-banner-icon', '⏸️'),
+      el(
+        'span',
+        '',
+        'JEU EN PAUSE — Le monde 3D est figé. Prenez tout votre temps pour lire et choisir votre compétence.'
+      )
+    );
+    body.appendChild(this.levelUpPauseBanner);
+
     body.appendChild(
       el(
         'p',
         'codex-item-desc',
-        'Face à l’évolution darwinienne des meutes sauvages, renforcez vos capacités de traque, vos Éclaireurs ou les défenses du Bastion :'
+        'Débloquez de nouveaux Sorts 3D (jusqu’à 4 emplacements actifs/auto-cast évoluant du Niv. 1 au Niv. 5) ou des contre-mesures passives adaptées aux mutations ennemies :'
       )
     );
     this.levelUpCardsGrid = el('div', 'levelup-cards-grid');
@@ -1519,9 +1939,137 @@ export class HUDManager {
   }
 
   /**
-   * Affiche la modale Roguelike de sélection d'amélioration (3 cartes).
+   * Construit la modale de sélection du Mode de Gameplay de Combat :
+   * - `vampire_survivors` : Auto-Attack & Auto-Cast des Sorts 3D dès que rechargés
+   * - `diablo_action` : Fente manuelle (`Clic Gauche / Espace`) & Sorts actifs sur `[1] [2] [3] [4]`
+   */
+  _buildCombatModeModal() {
+    this.combatModeBackdrop = el('div', 'hud-modal-backdrop is-hidden hud-interactive');
+    const dialog = el('div', 'hud-modal-dialog');
+    dialog.style.maxWidth = '840px';
+
+    const header = el('div', 'hud-modal-header');
+    header.append(
+      el('h2', 'hud-modal-title', '⚔️ STYLE DE COMBAT ROGUELIKE — VAMPIRE SURVIVORS OU DIABLO ?'),
+      el('span', 'hud-panel-subtitle', 'Modifiable à tout moment via [C]')
+    );
+
+    const body = el('div', 'hud-modal-body');
+
+    const pauseBanner = el('div', 'hud-pause-banner');
+    pauseBanner.append(
+      el('span', 'hud-pause-banner-icon', '⏸️'),
+      el(
+        'span',
+        '',
+        'JEU EN PAUSE — Choisissez comment contrôler les attaques et les Sorts 3D de votre Gardien :'
+      )
+    );
+    body.appendChild(pauseBanner);
+
+    const grid = el('div', 'combat-mode-cards-grid');
+
+    // Carte 1 : Mode Vampire Survivors (Auto-Cast)
+    const vsCard = el('div', 'combat-mode-card mode-vs');
+    const vsHeader = el('div', 'combat-mode-card-header');
+    vsHeader.append(
+      el('span', 'combat-mode-icon', '⚡'),
+      el('div', 'combat-mode-title', 'Mode Vampire Survivors (Auto-Cast)')
+    );
+    const vsBadge = el(
+      'span',
+      'hud-lineage-badge badge-spread',
+      'Recommandé • Concentration Tactique & Positionnement'
+    );
+    const vsDesc = el(
+      'p',
+      'combat-mode-desc',
+      'Votre Gardien frappe automatiquement les ennemis à portée d’épée et déclenche automatiquement tous vos Sorts 3D équipés dès que leur temps de recharge est prêt. Idéal pour vous concentrer sur l’esquive, le sauvetage des Éclaireurs et la traque du Patient Zéro.'
+    );
+    const vsPerks = el('div', 'combat-mode-perks');
+    vsPerks.append(
+      el('div', 'combat-mode-perk-item', '🗡️ Sort 3D de départ : Lames Orbitales (Niv. 1)'),
+      el('div', 'combat-mode-perk-item', '🔄 Sorts [1-4] lancés automatiquement dès recharge'),
+      el('div', 'combat-mode-perk-item', '🎯 Clic Gauche / Espace reste utilisable à volonté')
+    );
+    const vsBtn = el(
+      'button',
+      'hud-btn hud-btn-biomass',
+      '⚡ Jouer en Mode Auto (Vampire Survivors)'
+    );
+    vsBtn.type = 'button';
+    vsCard.append(vsHeader, vsBadge, vsDesc, vsPerks, vsBtn);
+    vsCard.addEventListener('click', () => {
+      this.setCombatMode('vampire_survivors', true);
+      this.hideCombatModeModal();
+    });
+
+    // Carte 2 : Mode Diablo / Action-RPG (Actif 1-4)
+    const diabloCard = el('div', 'combat-mode-card mode-diablo');
+    const diabloHeader = el('div', 'combat-mode-card-header');
+    diabloHeader.append(
+      el('span', 'combat-mode-icon', '⚔️'),
+      el('div', 'combat-mode-title', 'Mode Diablo / Action-RPG (Actif 1-4)')
+    );
+    const diabloBadge = el(
+      'span',
+      'hud-lineage-badge badge-pz',
+      'Contrôle Total • Timing & Combos Manuels'
+    );
+    const diabloDesc = el(
+      'p',
+      'combat-mode-desc',
+      'Vous déclenchez manuellement vos coups d’épée Runique (Clic Gauche / Espace) et choisissez l’instant exact où lancer chacun de vos 4 Sorts 3D avec les touches [1], [2], [3], [4] (ou en cliquant sur la barre de compétences).'
+    );
+    const diabloPerks = el('div', 'combat-mode-perks');
+    diabloPerks.append(
+      el('div', 'combat-mode-perk-item', '🔥 Sort 3D de départ : Nova Pyroclastique (Niv. 1)'),
+      el('div', 'combat-mode-perk-item', '⌨️ Touches [1] [2] [3] [4] pour lancer vos Sorts 3D'),
+      el('div', 'combat-mode-perk-item', '🏰 Raccourcis Bâtiments Bastion déplacés sur [F1-F3]')
+    );
+    const diabloBtn = el(
+      'button',
+      'hud-btn hud-btn-amber',
+      '⚔️ Jouer en Mode Actif [1-4] (Diablo)'
+    );
+    diabloBtn.type = 'button';
+    diabloCard.append(diabloHeader, diabloBadge, diabloDesc, diabloPerks, diabloBtn);
+    diabloCard.addEventListener('click', () => {
+      this.setCombatMode('diablo_action', true);
+      this.hideCombatModeModal();
+    });
+
+    grid.append(vsCard, diabloCard);
+    body.appendChild(grid);
+    dialog.append(header, body);
+    this.combatModeBackdrop.appendChild(dialog);
+    this.root.appendChild(this.combatModeBackdrop);
+  }
+
+  /**
+   * Ouvre la modale de choix du mode de combat (`Vampire Survivors` vs `Diablo`) et met le jeu en pause.
+   */
+  showCombatModeModal() {
+    if (!this.combatModeBackdrop) return;
+    this.isCombatModeModalOpen = true;
+    this.combatModeBackdrop.classList.remove('is-hidden');
+  }
+
+  /**
+   * Ferme la modale de choix du mode de combat et reprend la simulation.
+   */
+  hideCombatModeModal() {
+    this.isCombatModeModalOpen = false;
+    if (this.combatModeBackdrop) {
+      this.combatModeBackdrop.classList.add('is-hidden');
+    }
+  }
+
+  /**
+   * Affiche la modale Roguelike de sélection d'amélioration (3 cartes) et met le jeu en pause (`isLevelUpOpen = true`).
    * @param {Array<Object>} [customChoices] - Liste optionnelle de 3 améliorations.
    * @param {Function} [onSelect] - Callback `(upgrade)` appelé lors du choix.
+   * @param {Object} [ecoContext={}] - Contexte écologique et/ou joueur pour pondérer les choix.
    */
   showLevelUpModal(customChoices = null, onSelect = null, ecoContext = {}) {
     if (!this.levelUpBackdrop || !this.levelUpCardsGrid) return;
@@ -1529,6 +2077,20 @@ export class HUDManager {
     let choices = [];
     if (Array.isArray(customChoices) && customChoices.length > 0) {
       choices = customChoices.slice(0, 3);
+    } else if (typeof drawRoguelikeLevelUpChoices === 'function') {
+      const playerRef = ecoContext?.player || this.lastPlayerRef || null;
+      const ownedMap =
+        playerRef && typeof playerRef.getOwnedAbilitiesMap === 'function'
+          ? playerRef.getOwnedAbilitiesMap()
+          : playerRef?.abilityLevels || {};
+      choices = drawRoguelikeLevelUpChoices({
+        abilityLevels: ownedMap,
+        chosenPassives: this.chosenUpgradeIds || playerRef?.upgrades || [],
+        masterySystem: playerRef?.masterySystem || playerRef?.mastery || null,
+        ecoContext,
+        combatMode: this.combatMode,
+        count: 3,
+      });
     } else if (typeof pickCounterAdaptationUpgrades === 'function') {
       choices = pickCounterAdaptationUpgrades(this.chosenUpgradeIds || [], ecoContext, 3);
     } else {
@@ -1540,16 +2102,28 @@ export class HUDManager {
 
     for (const upg of choices) {
       const card = el('div', 'levelup-card');
+      if (upg.isSpell && upg.colorCss) {
+        card.style.borderColor = upg.colorCss;
+      }
+
       const top = el('div', '');
       const iconAndTitle = el(
         'div',
         'levelup-card-title',
         `${upg.icon || '⚡'} ${upg.name}`
       );
+
+      let badgeLabel = upg.category || 'Adaptation';
+      if (upg.isSpell) {
+        badgeLabel = upg.isNewSpell
+          ? `✨ NOUVEAU SORT 3D (Niv. 1/${upg.maxLevel || 5})`
+          : `⬆️ AMÉLIORATION SORT (Niv. ${upg.currentLevel} → ${upg.nextLevel})`;
+      }
+
       const categoryBadge = el(
         'span',
-        'hud-lineage-badge badge-spread',
-        upg.category || 'Adaptation'
+        `hud-lineage-badge ${upg.isSpell ? 'badge-pz' : 'badge-spread'}`,
+        badgeLabel
       );
       const desc = el('p', 'levelup-card-desc', upg.description || '');
 
@@ -1558,8 +2132,23 @@ export class HUDManager {
         top.appendChild(
           el('div', 'codex-item-stats', `Contre-mesure : ${upg.counterTarget}`)
         );
+      } else if (upg.statsAtNextLevel) {
+        const st = upg.statsAtNextLevel;
+        top.appendChild(
+          el(
+            'div',
+            'codex-item-stats',
+            `Dégâts: ${st.damage} · Portée: ${st.range}m · Recharge: ${st.cooldown > 0 ? `${st.cooldown}s` : 'Permanent'}`
+          )
+        );
       }
-      const chooseBtn = el('button', 'hud-btn hud-btn-amber', 'Choisir cette Adaptation');
+
+      const btnLabel = upg.isSpell
+        ? upg.isNewSpell
+          ? '✨ Débloquer ce Sort 3D'
+          : `⬆️ Améliorer au Niv. ${upg.nextLevel}`
+        : '🛡️ Choisir cette Adaptation';
+      const chooseBtn = el('button', 'hud-btn hud-btn-amber', btnLabel);
       chooseBtn.type = 'button';
 
       const handlePick = () => {
@@ -1613,6 +2202,10 @@ export class HUDManager {
       player = null,
       bastionAndNpcs = null,
     } = state;
+
+    if (player) {
+      this.lastPlayerRef = player;
+    }
 
     // 1. Horloge Jour / Nuit
     if (sceneManager && typeof sceneManager.getTimeOfDay === 'function') {
@@ -1670,7 +2263,7 @@ export class HUDManager {
       if (lvl > this.lastKnownPlayerLevel) {
         this.lastKnownPlayerLevel = lvl;
         if (!this.isLevelUpOpen) {
-          this.showLevelUpModal();
+          this.showLevelUpModal(null, null, { player });
         }
       }
 
@@ -1678,6 +2271,10 @@ export class HUDManager {
       this.woodBadge.textContent = `🪵 Bois: ${Math.floor(res.wood ?? 0)}`;
       this.crystalBadge.textContent = `💎 Cristal: ${Math.floor(res.crystal ?? 0)}`;
       this.biomassBadge.textContent = `🌿 Biomasse: ${Math.floor(res.biomass ?? 0)}`;
+
+      // Mise à jour de la Barre de Compétences Roguelike (4 Sorts 3D) et du Panneau des Maîtrises Adaptatives
+      this._updateSkillBar(player);
+      this._updateMasteryPanel(player);
     }
 
     // 4. Bastion & PNJ Alliés (Éclaireurs en expédition lointaine, Gardes, Récolteurs)

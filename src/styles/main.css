@@ -1386,24 +1386,37 @@ body {
   animation: floatUpAndFade 1.05s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
-.hud-floating-number.num-damage {
+.hud-floating-number.num-damage,
+.hud-floating-number.dmg-normal {
   color: #ff5e6c;
   font-size: 16px;
 }
 
-.hud-floating-number.num-crit {
+.hud-floating-number.num-crit,
+.hud-floating-number.dmg-crit {
   color: #ffd285;
   font-size: 18px;
 }
 
-.hud-floating-number.num-xp {
+.hud-floating-number.num-xp,
+.hud-floating-number.dmg-xp {
   color: #7ef0ae;
   font-size: 14px;
 }
 
-.hud-floating-number.num-resource {
+.hud-floating-number.num-resource,
+.hud-floating-number.dmg-heal {
   color: #70c4ff;
   font-size: 13.5px;
+}
+
+.hud-floating-number.dmg-mastery {
+  color: #ffe08a;
+  font-size: 15px;
+  background: rgba(15, 22, 30, 0.88);
+  border: 1px solid var(--accent-amber);
+  padding: 2px 8px;
+  border-radius: 99px;
 }
 
 @keyframes floatUpAndFade {
@@ -1420,4 +1433,298 @@ body {
     transform: translate(-50%, -175%) scale(0.95);
   }
 }
+
+/* ============================================================================
+   10. PHASE 3 : PAUSE LEVEL-UP, MODE VAMPIRE SURVIVORS vs DIABLO, SKILL BAR & MAÎTRISES
+   ============================================================================ */
+
+/* Bandeau rassurant de Pause Totale dans la modale de Montée de Niveau */
+.hud-pause-banner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 9px 14px;
+  border-radius: var(--radius-sm);
+  background: linear-gradient(90deg, rgba(46, 213, 115, 0.16), rgba(230, 161, 69, 0.22), rgba(46, 213, 115, 0.16));
+  border: 1px solid rgba(230, 161, 69, 0.65);
+  color: #ffe6a3;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-align: center;
+  box-shadow: 0 0 18px rgba(230, 161, 69, 0.2);
+}
+
+/* Sélecteur initial de Mode de Gameplay (Vampire Survivors Auto-Cast vs Diablo Action-RPG) */
+.combat-mode-cards-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+}
+
+.combat-mode-card {
+  background: linear-gradient(160deg, rgba(24, 35, 48, 0.96), rgba(13, 19, 26, 0.98));
+  border: 2px solid var(--border-amber);
+  border-radius: var(--radius-md);
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 12px;
+  cursor: pointer;
+  transition: transform 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease;
+}
+
+.combat-mode-card:hover,
+.combat-mode-card.is-active-mode {
+  transform: translateY(-3px);
+  border-color: var(--accent-amber-bright);
+  box-shadow: var(--shadow-glow-amber);
+}
+
+.combat-mode-card.mode-vs {
+  border-color: rgba(56, 193, 114, 0.65);
+}
+
+.combat-mode-card.mode-vs:hover,
+.combat-mode-card.mode-vs.is-active-mode {
+  border-color: #55efc4;
+  box-shadow: var(--shadow-glow-green);
+}
+
+.combat-mode-card-title {
+  font-family: var(--font-display);
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--text-primary);
+}
+
+.combat-mode-card-desc {
+  font-size: 12.5px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.combat-mode-card-bullets {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--accent-amber-bright);
+  background: rgba(8, 12, 18, 0.65);
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-subtle);
+}
+
+/* Bouton de bascule rapide du Mode de Combat [C] dans la barre supérieure / inférieure */
+.hud-mode-switch-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 11px;
+  border-radius: 999px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  background: rgba(230, 161, 69, 0.16);
+  border: 1px solid var(--border-amber);
+  color: #ffe299;
+  transition: all 0.15s ease;
+}
+
+.hud-mode-switch-btn:hover {
+  background: rgba(230, 161, 69, 0.3);
+  border-color: var(--accent-amber-bright);
+  box-shadow: var(--shadow-glow-amber);
+}
+
+.hud-mode-switch-btn.is-vs-mode {
+  background: rgba(56, 193, 114, 0.18);
+  border-color: rgba(56, 193, 114, 0.7);
+  color: #7ef0ae;
+}
+
+/* Barre de Compétences Roguelike (Skill Bar [1][2][3][4] / AUTO) en bas au centre */
+.hud-bottom-stack {
+  grid-column: 2;
+  grid-row: 3;
+  align-self: end;
+  justify-self: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 7px;
+  z-index: 15;
+}
+
+.hud-skill-bar-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--bg-obsidian);
+  border: 1px solid var(--border-amber);
+  border-radius: var(--radius-md);
+  padding: 6px 10px;
+  box-shadow: var(--shadow-panel);
+  backdrop-filter: blur(8px);
+}
+
+.hud-skill-slot {
+  position: relative;
+  width: 118px;
+  min-height: 52px;
+  background: rgba(15, 22, 31, 0.92);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 5px 7px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  cursor: pointer;
+  overflow: hidden;
+  transition: border-color 0.14s ease, transform 0.12s ease;
+}
+
+.hud-skill-slot:hover {
+  border-color: var(--accent-amber-bright);
+  transform: translateY(-2px);
+}
+
+.hud-skill-slot.is-ready {
+  border-color: rgba(230, 161, 69, 0.75);
+  box-shadow: inset 0 0 10px rgba(230, 161, 69, 0.12);
+}
+
+.hud-skill-slot.is-empty {
+  opacity: 0.58;
+  cursor: default;
+}
+
+.hud-skill-cooldown-fill {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 100%;
+  height: 0%;
+  background: rgba(255, 71, 87, 0.25);
+  pointer-events: none;
+  transition: height 0.08s linear;
+}
+
+.hud-skill-top {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+}
+
+.hud-skill-key {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  font-weight: 800;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: rgba(230, 161, 69, 0.22);
+  border: 1px solid var(--border-amber);
+  color: var(--accent-amber-bright);
+}
+
+.hud-skill-key.is-auto {
+  background: rgba(56, 193, 114, 0.22);
+  border-color: rgba(56, 193, 114, 0.65);
+  color: #7ef0ae;
+}
+
+.hud-skill-lvl {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  color: var(--text-secondary);
+}
+
+.hud-skill-main {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 2px;
+}
+
+.hud-skill-icon {
+  font-size: 15px;
+}
+
+.hud-skill-name {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.hud-skill-cd-text {
+  position: relative;
+  z-index: 1;
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  color: var(--text-muted);
+  text-align: right;
+}
+
+/* Panneau / Encart Maîtrises & Résistances Adaptatives ("Plus tu fais/subis X, plus tu es fort/résistant à X") */
+.hud-mastery-list {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  max-height: 145px;
+  overflow-y: auto;
+}
+
+.hud-mastery-pill {
+  background: rgba(15, 22, 31, 0.88);
+  border: 1px solid var(--border-subtle);
+  border-left: 3px solid var(--accent-amber);
+  border-radius: var(--radius-sm);
+  padding: 5px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.hud-mastery-pill.mastery-defense {
+  border-left-color: #38c172;
+}
+
+.hud-mastery-pill.mastery-mutation {
+  border-left-color: #ff4757;
+}
+
+.hud-mastery-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.hud-mastery-bonus {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--accent-amber-bright);
+}
+
+.hud-mastery-pill.mastery-defense .hud-mastery-bonus {
+  color: #7ef0ae;
+}
+
 
