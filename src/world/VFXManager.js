@@ -723,10 +723,26 @@ export class VFXManager {
       case 'mastery_rank_up':
         this.spawnMasteryEffect(originPos, options?.colorHex || 0xffd700);
         break;
+      case 'dragon_wrath':
+      case 'species_wrath':
+        this.spawnWrathEffect(originPos, options?.colorHex || 0xff2200);
+        break;
       default:
         this.spawnHitEffect(originPos, options?.colorHex || 0x44ddff);
         break;
     }
+  }
+
+  /**
+   * Spawns a massive crimson-magma shockwave & ascending wrath pillar when a Peaceful Sovereign
+   * species (e.g. Dragon) is provoked into Collective Species Wrath.
+   *
+   * @param {THREE.Vector3|{x: number, y?: number, z: number}} pos - Provoked creature world position.
+   * @param {number|string} [colorHex=0xff2200] - Wrath color.
+   */
+  spawnWrathEffect(pos, colorHex = 0xff2200) {
+    this.spawnPyroNova(pos, { radius: 12.5, colorHex });
+    this.spawnBirthEffect(pos, true, true, colorHex);
   }
 
   /**
