@@ -250,6 +250,11 @@ async function runDryRunSimulation() {
     const isAdult = lifeStage === 'adult';
     const statMult = isAdult ? 1.0 : CONFIG.ECO.BABY_STAT_MULT;
     const baseMaxHp = Math.round((genome.genes?.maxHp || 100) * statMult);
+    const spCfg = CONFIG.SPECIES[speciesId] || CONFIG.SPECIES.orc;
+    const gestationTime =
+      genome.genes?.gestationTime || spCfg.baseGestationTime || CONFIG.ECO.TICK_INTERVAL || 12;
+    const maturationTime =
+      spCfg.baseMaturationTime || CONFIG.ECO.MATURATION_TIME || 20;
 
     const entity = {
       id: `sim_enemy_${nextEnemyId++}`,
@@ -263,8 +268,13 @@ async function runDryRunSimulation() {
       genome,
       lifeStage,
       isAdult,
-      age: isAdult ? CONFIG.ECO.MATURATION_TIME : 0,
-      maturationTime: CONFIG.ECO.MATURATION_TIME,
+      age: isAdult ? maturationTime : 0,
+      maturationTime,
+      gestationTime,
+      reproTimer: isAdult ? gestationTime : 0,
+      aggressiveness:
+        genome.genes?.aggressiveness ?? spCfg.baseAggressiveness ?? 0.75,
+      aggroStance: spCfg.aggroStance || 'hostile',
       scaleMultiplier: isAdult ? 1.0 : CONFIG.ECO.BABY_SCALE,
       starving: false,
       lonely: false,
@@ -344,22 +354,26 @@ async function runDryRunSimulation() {
   let totalStarvationDeaths = 0;
 
   for (let tick = 1; tick <= opts.ticks; tick++) {
-    // 1. Age existing babies by TICK_INTERVAL (12s); babies mature at MATURATION_TIME (20s)
+    // 1. Age existing babies by TICK_INTERVAL (12s) and advance adult gestation reproTimer
     let maturedThisTick = 0;
     for (const e of enemies) {
       e.age = (e.age || 0) + CONFIG.ECO.TICK_INTERVAL;
-      if (!e.isAdult && e.age >= CONFIG.ECO.MATURATION_TIME) {
+      const reqMaturation = e.maturationTime || CONFIG.ECO.MATURATION_TIME;
+      if (!e.isAdult && e.age >= reqMaturation) {
         e.isAdult = true;
         e.lifeStage = 'adult';
         e.scaleMultiplier = 1.0;
         e.maxHp = Math.round(e.genome.genes?.maxHp || 100);
         e.hp = e.maxHp;
         e.damage = e.genome.genes?.strength || 12;
+        e.reproTimer = e.gestationTime || CONFIG.ECO.TICK_INTERVAL;
         maturedThisTick++;
         totalMaturedToAdult++;
       } else if (!e.isAdult) {
-        const progress = clamp(e.age / CONFIG.ECO.MATURATION_TIME, 0, 1);
+        const progress = clamp(e.age / reqMaturation, 0, 1);
         e.scaleMultiplier = lerp(CONFIG.ECO.BABY_SCALE, 1.0, progress);
+      } else {
+        e.reproTimer = (e.reproTimer || 0) + CONFIG.ECO.TICK_INTERVAL;
       }
     }
 
