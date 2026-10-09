@@ -2589,3 +2589,152 @@ body {
   }
 }
 
+/* ============================================================================
+   14. PHASE 7 : ÉMERGENCE PROGRESSIVE (REQUINS, TAUPES) & ÉCOLOGIE DU GIBIER
+   ============================================================================ */
+
+/* 14A. Badges Rations (🍖) & Santé Écologique du Gibier (🦌 Biches/Lapins) dans la Top Bar */
+.hud-resource-badge.res-food {
+  border-left: 3px solid #f6b93b;
+  transition: all 0.2s ease;
+}
+
+.hud-resource-badge.res-food.is-well-fed {
+  border-color: rgba(246, 185, 59, 0.58);
+  border-left: 3px solid #f6b93b;
+  background: rgba(246, 185, 59, 0.13);
+  color: #ffeaa7;
+}
+
+.hud-resource-badge.res-food.is-famine {
+  border-color: #ff4757;
+  border-left: 3px solid #ff4757;
+  background: rgba(255, 71, 87, 0.24);
+  color: #ff9aa2;
+  animation: famineAlertPulse 0.9s ease-in-out infinite;
+}
+
+.hud-resource-badge.res-prey {
+  border-left: 3px solid #a3cb38;
+  transition: all 0.2s ease;
+}
+
+.hud-resource-badge.res-prey.is-healthy {
+  border-color: rgba(163, 203, 56, 0.45);
+  border-left: 3px solid #a3cb38;
+  background: rgba(163, 203, 56, 0.11);
+  color: #dcf8a3;
+}
+
+.hud-resource-badge.res-prey.is-warning {
+  border-color: #ffa502;
+  border-left: 3px solid #ffa502;
+  background: rgba(255, 165, 2, 0.18);
+  color: #ffd166;
+}
+
+.hud-resource-badge.res-prey.is-extinct {
+  border-color: #ff4757;
+  border-left: 3px solid #ff4757;
+  background: rgba(255, 71, 87, 0.26);
+  color: #ff9aa2;
+  animation: famineAlertPulse 0.85s ease-in-out infinite;
+}
+
+@keyframes famineAlertPulse {
+  0%, 100% {
+    box-shadow: 0 0 0 rgba(255, 71, 87, 0);
+    transform: scale(1);
+  }
+  50% {
+    box-shadow: 0 0 14px rgba(255, 71, 87, 0.65);
+    transform: scale(1.03);
+  }
+}
+
+/* 14B. Variantes Bannières d'Alerte : Débarquement Requins, Éruption Taupes & Crise du Gibier */
+.hud-scout-alert-banner.is-shark-landing {
+  border-color: #00d2d3;
+  background: linear-gradient(135deg, rgba(8, 28, 38, 0.96), rgba(12, 46, 58, 0.94));
+  box-shadow: 0 0 28px rgba(0, 210, 211, 0.45), var(--shadow-panel);
+}
+
+.hud-scout-alert-banner.is-mole-eruption {
+  border-color: #e58e26;
+  background: linear-gradient(135deg, rgba(32, 20, 10, 0.96), rgba(48, 28, 12, 0.94));
+  box-shadow: 0 0 28px rgba(229, 142, 38, 0.45), var(--shadow-panel);
+}
+
+.hud-scout-alert-banner.is-prey-crisis {
+  border-color: #ff6b6b;
+  background: linear-gradient(135deg, rgba(38, 12, 16, 0.96), rgba(46, 24, 10, 0.94));
+  box-shadow: 0 0 30px rgba(255, 107, 107, 0.55), var(--shadow-panel);
+}
+
+/* 14C. Grille compacte du Laboratoire Génétique & Boutons d'Émergence / Réintroduction */
+.hud-sim-lab-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 5px;
+}
+
+.hud-sim-lab-grid .hud-btn {
+  font-size: 10.5px;
+  padding: 6px 7px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.hud-sim-lab-grid .hud-btn.is-full-span {
+  grid-column: 1 / -1;
+}
+
+.hud-btn-abyss {
+  background: linear-gradient(180deg, rgba(0, 168, 181, 0.28), rgba(0, 108, 128, 0.36));
+  border-color: rgba(0, 210, 211, 0.55);
+  color: #9ef6f7;
+}
+
+.hud-btn-abyss:hover:not(:disabled) {
+  background: rgba(0, 210, 211, 0.36);
+  border-color: #00d2d3;
+}
+
+.hud-btn-earth {
+  background: linear-gradient(180deg, rgba(211, 122, 34, 0.28), rgba(145, 78, 18, 0.36));
+  border-color: rgba(229, 142, 38, 0.55);
+  color: #ffd59e;
+}
+
+.hud-btn-earth:hover:not(:disabled) {
+  background: rgba(229, 142, 38, 0.36);
+  border-color: #e58e26;
+}
+
+.hud-btn-prey {
+  background: linear-gradient(180deg, rgba(138, 184, 38, 0.26), rgba(88, 126, 20, 0.36));
+  border-color: rgba(163, 203, 56, 0.58);
+  color: #e2fba8;
+}
+
+.hud-btn-prey:hover:not(:disabled) {
+  background: rgba(163, 203, 56, 0.36);
+  border-color: #a3cb38;
+}
+
+.hud-btn-prey.is-urgent-reintroduce {
+  border-color: #ff6b6b;
+  background: linear-gradient(180deg, rgba(255, 71, 87, 0.34), rgba(163, 203, 56, 0.3));
+  color: #fff3b0;
+  animation: famineAlertPulse 0.9s ease-in-out infinite;
+}
+
+/* 14D. Badge Stance Gibier Pacifique dans le Codex */
+.codex-stance-badge.stance-prey_pacifist {
+  background: rgba(163, 203, 56, 0.18);
+  border: 1px solid rgba(163, 203, 56, 0.55);
+  color: #d8f886;
+}
+
+

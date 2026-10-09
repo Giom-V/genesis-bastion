@@ -97,6 +97,14 @@ export class GenesisBastionGame {
     if (typeof this.player.setQuestSystem === 'function') {
       this.player.setQuestSystem(this.questSystem);
     }
+    if (this.player && this.player.resources) {
+      if (typeof this.player.resources.food !== 'number') {
+        this.player.resources.food = CONFIG.PLAYER?.INITIAL_FOOD ?? 60;
+      }
+      if (typeof this.player.resources.maxFood !== 'number') {
+        this.player.resources.maxFood = CONFIG.PLAYER?.MAX_FOOD ?? 150;
+      }
+    }
 
     /** @type {BastionAndNPCs} */
     this.bastionAndNpcs = new BastionAndNPCs(
@@ -121,6 +129,9 @@ export class GenesisBastionGame {
     this.hud = new HUDManager({
       onForceEcoTick: () => this.forceEcoTick(),
       onSpawnFireTroll: () => this.spawnTestFireTroll(),
+      onTriggerSharkLanding: () => this.triggerSharkLanding(),
+      onTriggerMoleEruption: () => this.triggerMoleEruption(),
+      onReintroducePrey: () => this.handleReintroducePrey(),
       onAssignRole: (targetRole) => this.handleRoleAssignment(targetRole),
       onBuildStructure: (structId) => this.handleBuildStructure(structId),
       onFocusWorldPos: (wx, wz, lineageId) => this.focusWorldPosition(wx, wz, lineageId),
@@ -624,6 +635,7 @@ export class GenesisBastionGame {
       } else if (this.enemyManager.getEnemies().length < 15) {
         this.enemyManager.spawnInitialPopulation(CONFIG.ECO?.INITIAL_POPULATION || 42);
       }
+      this._ensurePhase7EcosystemPopulated();
       this.ecoSim.stepEcoTick(this.enemyManager.getEnemies(), (x, z) =>
         this.terrain.getBiomeAt(x, z)
       );
@@ -635,6 +647,52 @@ export class GenesisBastionGame {
     }
 
     this._refreshOnboardingBannerUI();
+  }
+
+  /**
+   * Garantit la présence des troupeaux d'herbivores (`deer`, `rabbit`) et des Requins au large (`shark`)
+   * lors de l'activation du mode Survie Ouvert (Phase 7).
+   * @private
+   */
+  _ensurePhase7EcosystemPopulated() {
+    if (!this.enemyManager || typeof this.enemyManager._spawnSingleCreature !== 'function') return;
+    const enemies = this.enemyManager.getEnemies();
+    const deerCount = enemies.filter((e) => e && e.hp > 0 && e.genome?.speciesId === 'deer').length;
+    const rabbitCount = enemies.filter((e) => e && e.hp > 0 && e.genome?.speciesId === 'rabbit').length;
+    const sharkCount = enemies.filter((e) => e && e.hp > 0 && e.genome?.speciesId === 'shark').length;
+
+    if (deerCount < 3) {
+      const toSpawn = 5 - deerCount;
+      for (let i = 0; i < toSpawn; i++) {
+        const a = (i / Math.max(1, toSpawn)) * Math.PI * 2 + 0.4;
+        const d = this.enemyManager._spawnSingleCreature('deer', Math.cos(a) * 34, Math.sin(a) * 34);
+        if (d) {
+          d.aggroStance = 'prey_pacifist';
+          d.damage = 0;
+        }
+      }
+    }
+    if (rabbitCount < 3) {
+      const toSpawn = 6 - rabbitCount;
+      for (let i = 0; i < toSpawn; i++) {
+        const a = (i / Math.max(1, toSpawn)) * Math.PI * 2 + 1.1;
+        const r = this.enemyManager._spawnSingleCreature('rabbit', Math.cos(a) * 26, Math.sin(a) * 26);
+        if (r) {
+          r.aggroStance = 'prey_pacifist';
+          r.damage = 0;
+        }
+      }
+    }
+    if (sharkCount === 0) {
+      for (let i = 0; i < 4; i++) {
+        const a = (i / 4) * Math.PI * 2 + 0.25;
+        const s = this.enemyManager._spawnSingleCreature('shark', Math.cos(a) * 112, Math.sin(a) * 112);
+        if (s) {
+          s.isAquatic = true;
+          s.hasLandedOnBeach = false;
+        }
+      }
+    }
   }
 
   /**
@@ -677,6 +735,7 @@ export class GenesisBastionGame {
     } else if (this.enemyManager.getEnemies().length < 15) {
       this.enemyManager.spawnInitialPopulation(CONFIG.ECO?.INITIAL_POPULATION || 42);
     }
+    this._ensurePhase7EcosystemPopulated();
     this.ecoSim.stepEcoTick(this.enemyManager.getEnemies(), (x, z) =>
       this.terrain.getBiomeAt(x, z)
     );
@@ -1252,6 +1311,98 @@ export class GenesisBastionGame {
 
     this.enemyManager.onSpeciesWrathTriggered = this.handleSpeciesWrath;
 
+    // Callbacks Phase 7 : Débarquement Amphibie des Requins, Éruption des Taupes Géantes & Écologie du Gibier
+    this.handleSharkBeachLanding = (eventData = {}) => {
+      const shark = eventData.enemy || eventData.sharks?.[0] || null;
+      const ex = eventData.x ?? shark?.x ?? 68;
+      const ey = eventData.y ?? shark?.y ?? 0;
+      const ez = eventData.z ?? shark?.z ?? 32;
+
+      if (this.ecoSim && typeof this.ecoSim.recordSharkLanding === 'function') {
+        this.ecoSim.recordSharkLanding(eventData.count || eventData.sharks?.length || 1);
+      }
+      if (this.vfx && typeof this.vfx.spawnBeachLandingSplash === 'function') {
+        this.vfx.spawnBeachLandingSplash(new THREE.Vector3(ex, ey, ez));
+      }
+      if (this.sound && typeof this.sound.playSharkLanding === 'function') {
+        this.sound.playSharkLanding(!this.tutorialActive);
+      }
+      if (this.hud && typeof this.hud.showSharkLandingAlert === 'function') {
+        this.hud.showSharkLandingAlert(eventData);
+      }
+      if (this.minimap && typeof this.minimap.pingLocation === 'function') {
+        this.minimap.pingLocation(ex, ez, 'REQUINS MARCHEURS', 9000);
+      }
+      this.hud?.refreshLogFeed?.();
+    };
+
+    this.handleMoleSubterraneanEruption = (eventData = {}) => {
+      const mole = eventData.enemy || eventData.moles?.[0] || null;
+      const ex = eventData.x ?? mole?.x ?? -48;
+      const ey = eventData.y ?? mole?.y ?? 0;
+      const ez = eventData.z ?? mole?.z ?? 44;
+
+      if (this.ecoSim && typeof this.ecoSim.recordMoleEruption === 'function') {
+        this.ecoSim.recordMoleEruption(eventData.count || eventData.moles?.length || 1);
+      }
+      if (this.vfx && typeof this.vfx.spawnBurrowEruption === 'function') {
+        this.vfx.spawnBurrowEruption(new THREE.Vector3(ex, ey, ez));
+      }
+      if (this.sound && typeof this.sound.playMoleEruption === 'function') {
+        this.sound.playMoleEruption(!this.tutorialActive);
+      }
+      if (this.hud && typeof this.hud.showMoleEruptionAlert === 'function') {
+        this.hud.showMoleEruptionAlert(eventData);
+      }
+      if (this.minimap && typeof this.minimap.pingLocation === 'function') {
+        this.minimap.pingLocation(ex, ez, 'TAUPES GÉANTES', 9000);
+      }
+      this.hud?.refreshLogFeed?.();
+    };
+
+    this.handlePreyEcologicalCrisis = (crisisData = {}) => {
+      if (this.sound && typeof this.sound.playPreyWarning === 'function') {
+        this.sound.playPreyWarning(!this.tutorialActive);
+      }
+      if (this.hud && typeof this.hud.showPreyEcologicalCrisisAlert === 'function') {
+        this.hud.showPreyEcologicalCrisisAlert(crisisData);
+      }
+      this.hud?.refreshLogFeed?.();
+    };
+
+    this.handlePreyKilled = (enemy, remainingPreyCount = 0, wasKilledBySpell = false) => {
+      const spId = enemy?.genome?.speciesId || 'deer';
+      const foodGain =
+        CONFIG.SPECIES?.[spId]?.foodYield ?? (spId === 'deer' ? 35 : 18);
+      const ex = enemy?.x ?? this.player?.x ?? 0;
+      const ey = enemy?.y ?? this.player?.y ?? 0;
+      const ez = enemy?.z ?? this.player?.z ?? 0;
+
+      if (this.sceneManager && typeof this.sceneManager.worldToScreen === 'function') {
+        const screenPos = this.sceneManager.worldToScreen(new THREE.Vector3(ex, ey + 0.8, ez), 2.3);
+        this.hud.spawnFloatingNumber(screenPos, `+${foodGain} 🍖 Rations`, 'dmg-heal');
+
+        if (wasKilledBySpell || remainingPreyCount <= 3) {
+          const warnPos = this.sceneManager.worldToScreen(new THREE.Vector3(ex, ey + 1.5, ez), 2.7);
+          this.hud.spawnFloatingNumber(
+            warnPos,
+            `⚠️ Gibier touché (${remainingPreyCount} restant) !`,
+            'dmg-crit'
+          );
+        }
+      }
+
+      if (wasKilledBySpell && remainingPreyCount > 1 && this.sound && typeof this.sound.playPreyWarning === 'function') {
+        this.sound.playPreyWarning(false);
+      }
+      this.hud?.refreshLogFeed?.();
+    };
+
+    this.enemyManager.onSharkBeachLanding = this.handleSharkBeachLanding;
+    this.enemyManager.onMoleSubterraneanEruption = this.handleMoleSubterraneanEruption;
+    this.enemyManager.onPreyEcologicalCrisis = this.handlePreyEcologicalCrisis;
+    this.enemyManager.onPreyKilled = this.handlePreyKilled;
+
     // Interception non-intrusive de `enemyManager.damageEnemy` pour faire jaillir les dégâts flottants 3D->2D + SFX d'impact
     const origDamageEnemy = this.enemyManager.damageEnemy.bind(this.enemyManager);
     this.enemyManager.damageEnemy = (enemyIdOrObj, amount, knockbackDir, onEradicated) => {
@@ -1260,6 +1411,7 @@ export class GenesisBastionGame {
       const tx = targetRef ? targetRef.x : 0;
       const ty = targetRef ? targetRef.y : 0;
       const tz = targetRef ? targetRef.z : 0;
+      const prevFood = this.player?.resources?.food ?? 60;
 
       const wasPeacefulDragon =
         Boolean(targetRef) &&
@@ -1279,8 +1431,36 @@ export class GenesisBastionGame {
         }
       }
 
-      if (res && res.killed && targetRef && this.questSystem && typeof this.questSystem.recordEnemyKilled === 'function') {
-        this.questSystem.recordEnemyKilled(targetRef);
+      if (res && res.killed && targetRef) {
+        if (this.questSystem && typeof this.questSystem.recordEnemyKilled === 'function') {
+          this.questSystem.recordEnemyKilled(targetRef);
+        }
+
+        // Si la créature tuée est du Gibier Herbivore (Biche / Lapin) et que EnemyManager n'a pas encore crédité les Rations
+        const spId = targetRef.genome?.speciesId || '';
+        const isPrey =
+          spId === 'deer' ||
+          spId === 'rabbit' ||
+          targetRef.aggroStance === 'prey_pacifist' ||
+          CONFIG.SPECIES?.[spId]?.clade === 'herbivore';
+        if (isPrey && this.player?.resources && this.player.resources.food === prevFood) {
+          const foodYield = CONFIG.SPECIES?.[spId]?.foodYield ?? (spId === 'deer' ? 35 : 18);
+          const healYield = CONFIG.SPECIES?.[spId]?.healYield ?? (spId === 'deer' ? 25 : 12);
+          const maxFood = this.player.resources.maxFood || 150;
+          this.player.resources.food = Math.min(maxFood, (this.player.resources.food || 0) + foodYield);
+          this.player.hp = Math.min(this.player.maxHp || 160, (this.player.hp || 100) + healYield);
+
+          const remainingSpeciesPrey = this.enemyManager
+            .getEnemies()
+            .filter((e) => e && !e.dead && e.hp > 0 && e.genome?.speciesId === spId).length;
+          this.handlePreyKilled(targetRef, remainingSpeciesPrey, false);
+          if (remainingSpeciesPrey < 2) {
+            this.handlePreyEcologicalCrisis({
+              speciesId: spId,
+              remainingPrey: remainingSpeciesPrey,
+            });
+          }
+        }
       }
 
       if (targetRef) {
@@ -1288,7 +1468,7 @@ export class GenesisBastionGame {
         const isMut = Boolean(targetRef.genome?.isHybrid) || muts.length > 0;
         let hitElem = 'physical';
         if (muts.includes('pyro_gland') || targetRef.genome?.speciesId === 'dragon') hitElem = 'fire';
-        else if (muts.includes('cryo_blood')) hitElem = 'ice';
+        else if (muts.includes('cryo_blood') || muts.includes('amphibious_lungs')) hitElem = 'ice';
         else if (muts.includes('venom_sacs')) hitElem = 'venom';
 
         if (this.sound && typeof this.sound.playHitImpact === 'function') {
@@ -1592,6 +1772,136 @@ export class GenesisBastionGame {
   }
 
   /**
+   * Déclenche immédiatement l'évolution amphibie (`amphibious_lungs`) et le débarquement côtier
+   * des Requins Marcheurs des Abysses (`shark`) sur les plages de l'île (Phase 7).
+   * @returns {Object|Array}
+   */
+  triggerSharkLanding() {
+    if (this.enemyManager && typeof this.enemyManager.triggerSharkBeachLanding === 'function') {
+      const res = this.enemyManager.triggerSharkBeachLanding();
+      const firstShark = Array.isArray(res) ? res[0] : res?.enemy || res?.sharks?.[0] || res;
+      if (!this.enemyManager.onSharkBeachLanding) {
+        this.handleSharkBeachLanding({
+          enemy: firstShark,
+          sharks: Array.isArray(res) ? res : res?.sharks || (firstShark ? [firstShark] : []),
+          count: Array.isArray(res) ? res.length : res?.count || 2,
+          x: firstShark?.x ?? 68,
+          z: firstShark?.z ?? 32,
+        });
+      }
+      return res;
+    }
+
+    // Fallback direct si EnemyManager utilise forceSpawnMutant
+    const shark = this.enemyManager?.forceSpawnMutant?.('amphibious_lungs', 'shark');
+    if (shark) {
+      shark.spottedByScout = true;
+      shark.isAquatic = false;
+      shark.hasLandedOnBeach = true;
+    }
+    this.handleSharkBeachLanding({
+      enemy: shark,
+      sharks: shark ? [shark] : [],
+      count: shark ? 2 : 1,
+      x: shark?.x ?? 68,
+      z: shark?.z ?? 32,
+    });
+    return shark;
+  }
+
+  /**
+   * Déclenche immédiatement l'éruption souterraine d'une colonie de Taupes Géantes Fouisseuses (`giant_mole`)
+   * à la surface de l'île (Phase 7).
+   * @returns {Object|Array}
+   */
+  triggerMoleEruption() {
+    if (this.enemyManager && typeof this.enemyManager.triggerMoleSubterraneanEruption === 'function') {
+      const res = this.enemyManager.triggerMoleSubterraneanEruption();
+      const firstMole = Array.isArray(res) ? res[0] : res?.enemy || res?.moles?.[0] || res;
+      if (!this.enemyManager.onMoleSubterraneanEruption) {
+        this.handleMoleSubterraneanEruption({
+          enemy: firstMole,
+          moles: Array.isArray(res) ? res : res?.moles || (firstMole ? [firstMole] : []),
+          count: Array.isArray(res) ? res.length : res?.count || 2,
+          x: firstMole?.x ?? -48,
+          z: firstMole?.z ?? 44,
+        });
+      }
+      return res;
+    }
+
+    // Fallback direct via forceSpawnMutant
+    const mole = this.enemyManager?.forceSpawnMutant?.('chitin_shell', 'giant_mole');
+    if (mole) {
+      mole.spottedByScout = true;
+      mole.hasErupted = true;
+    }
+    this.handleMoleSubterraneanEruption({
+      enemy: mole,
+      moles: mole ? [mole] : [],
+      count: mole ? 2 : 1,
+      x: mole?.x ?? -48,
+      z: mole?.z ?? 44,
+    });
+    return mole;
+  }
+
+  /**
+   * Réintroduit des troupeaux d'herbivores (`deer` Biches Sylvestres & `rabbit` Lapins des Plaines)
+   * contre 25 Biomasse depuis le Bio-Labo du Bastion (Phase 7).
+   * @returns {boolean}
+   */
+  handleReintroducePrey() {
+    const cost = 25;
+    const currentBiomass = this.player?.resources?.biomass ?? 0;
+    if (currentBiomass < cost) {
+      logger.warn('ECO', 'Biomasse insuffisante pour réintroduire le Gibier (25 Biomasse requis).', {
+        currentBiomass,
+        requiredBiomass: cost,
+      });
+      return false;
+    }
+
+    if (this.enemyManager && typeof this.enemyManager.reintroducePreyHerds === 'function') {
+      const ok = this.enemyManager.reintroducePreyHerds(this.player?.resources);
+      if (ok) {
+        if (this.sound && typeof this.sound.playBuildOrUpgrade === 'function') {
+          this.sound.playBuildOrUpgrade(2);
+        }
+        this.hud?.hideAlertBanner?.();
+        this.hud?.refreshLogFeed?.();
+        return true;
+      }
+    }
+
+    // Déduction directe et repeuplement si reintroducePreyHerds n'a pas encore consommé la Biomasse
+    if (this.player?.resources) {
+      this.player.resources.biomass = Math.max(0, currentBiomass - cost);
+    }
+    if (this.enemyManager && typeof this.enemyManager.spawnInitialPopulation === 'function') {
+      if (typeof this.enemyManager._spawnSingleCreature === 'function') {
+        for (let i = 0; i < 3; i++) {
+          this.enemyManager._spawnSingleCreature('deer', 32 + i * 6, -24 + i * 5);
+        }
+        for (let i = 0; i < 4; i++) {
+          this.enemyManager._spawnSingleCreature('rabbit', -28 + i * 5, 26 - i * 4);
+        }
+      }
+    }
+    logger.info(
+      'ECO',
+      '🌿 Réintroduction écologique réussie : nouveaux troupeaux de Biches Sylvestres et Lapins des Plaines relâchés !',
+      { biomassSpent: cost }
+    );
+    if (this.sound && typeof this.sound.playBuildOrUpgrade === 'function') {
+      this.sound.playBuildOrUpgrade(2);
+    }
+    this.hud?.hideAlertBanner?.();
+    this.hud?.refreshLogFeed?.();
+    return true;
+  }
+
+  /**
    * Gère l'allocation ou le recrutement d'un PNJ vers le rôle demandé (`scout`, `guard`, `harvester`).
    * @param {string} targetRole
    */
@@ -1815,7 +2125,20 @@ export class GenesisBastionGame {
             : this.sceneManager.cameraYaw || 0;
 
         // 1. Mise à jour du Joueur (Mouvement, Auto-Cast Vampire Survivors ou Sorts Actifs Diablo)
+        const foodBefore = this.player?.resources?.food;
         this.player.update(dt, this.elapsedTime, this.enemyManager, this.bastionAndNpcs, camYaw);
+        // Métabolisme passif des Rations si PlayerController ne l'a pas encore décrémenté sur cette frame
+        if (
+          this.player?.resources &&
+          typeof foodBefore === 'number' &&
+          this.player.resources.food === foodBefore &&
+          !this.tutorialActive
+        ) {
+          this.player.resources.food = Math.max(0, foodBefore - dt * 0.65);
+          if (this.player.resources.food >= 10 && this.player.hp > 0 && this.player.hp < this.player.maxHp) {
+            this.player.hp = Math.min(this.player.maxHp, this.player.hp + dt * 2.5);
+          }
+        }
 
         // 2. Mise à jour du Bastion, des Gardes, Récolteurs et Éclaireurs (Scouts hors-frontière)
         if (this.bastionAndNpcs && typeof this.bastionAndNpcs.update === 'function') {
@@ -2024,6 +2347,9 @@ function bootstrapGenesisBastion() {
       minimap: gameInstance.minimap,
       forceEcoTick: () => gameInstance.forceEcoTick(),
       spawnFireTroll: () => gameInstance.spawnTestFireTroll(),
+      triggerSharkLanding: () => gameInstance.triggerSharkLanding(),
+      triggerMoleEruption: () => gameInstance.triggerMoleEruption(),
+      reintroducePreyHerds: () => gameInstance.handleReintroducePrey(),
       skipTutorial: () => gameInstance.skipTutorial(),
       startTutorialAct: (actNum) => gameInstance.startTutorialAct(actNum),
       playTutorialVoice: (actOrKey) => gameInstance.sound?.playTutorialVoice?.(actOrKey),

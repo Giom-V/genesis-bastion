@@ -641,17 +641,25 @@ export class Minimap {
       }
 
       // Anneau pulsant cramoisi pour les Patients Zéro / Mutants repérés par un Éclaireur
-      const isDragon =
-        genome.speciesId === 'dragon' || enemy.aggroStance === 'pacifist_apex';
+      const spId = genome.speciesId || '';
+      const isDragon = spId === 'dragon' || enemy.aggroStance === 'pacifist_apex';
       const isEnragedDragon = Boolean(
         isDragon && (enemy.enraged || enemy.state === 'wrath_raid')
       );
+      const isHerbivorePrey =
+        spId === 'deer' ||
+        spId === 'rabbit' ||
+        enemy.aggroStance === 'prey_pacifist' ||
+        CONFIG.SPECIES?.[spId]?.clade === 'herbivore';
+      const isShark = spId === 'shark';
+      const isMole = spId === 'giant_mole';
 
       if (isEnragedDragon) {
         // Trajectoire de Courroux Draconique droit vers le Bastion (0, 0)
+        const half = this.size * 0.5;
         ctx.beginPath();
         ctx.moveTo(px, py);
-        ctx.lineTo(this.half, this.half);
+        ctx.lineTo(half, half);
         ctx.strokeStyle = `rgba(255, 71, 87, ${0.55 + pulse * 0.4})`;
         ctx.lineWidth = 1.6;
         ctx.setLineDash([4, 3]);
@@ -668,6 +676,31 @@ export class Minimap {
         ctx.beginPath();
         ctx.arc(px, py, 4.8, 0, Math.PI * 2);
         ctx.strokeStyle = 'rgba(255, 209, 102, 0.72)';
+        ctx.lineWidth = 1.2;
+        ctx.stroke();
+      } else if (isHerbivorePrey) {
+        // Gibier pacifique (Biche / Lapin) en vert tendre pour éviter les dégâts collatéraux de sorts
+        ctx.beginPath();
+        ctx.arc(px, py, isBaby ? 1.8 : spId === 'deer' ? 2.7 : 2.1, 0, Math.PI * 2);
+        ctx.fillStyle = '#a3cb38';
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(220, 248, 163, 0.8)';
+        ctx.lineWidth = 0.75;
+        ctx.stroke();
+        continue;
+      } else if (isShark) {
+        // Requin des Abysses : aileron cyan en mer vs anneau amphibie sur terre
+        const landed = enemy.isAquatic === false || enemy.hasLandLegs || enemy.isAmphibiousLanded;
+        ctx.beginPath();
+        ctx.arc(px, py, landed ? 4.2 + pulse * 2.0 : 3.4, 0, Math.PI * 2);
+        ctx.strokeStyle = landed ? '#00d2d3' : 'rgba(0, 210, 211, 0.65)';
+        ctx.lineWidth = landed ? 1.6 : 1.1;
+        ctx.stroke();
+      } else if (isMole) {
+        // Taupe Géante Fouisseuse : halo tellurique cuivré
+        ctx.beginPath();
+        ctx.arc(px, py, 3.8, 0, Math.PI * 2);
+        ctx.strokeStyle = 'rgba(229, 142, 38, 0.78)';
         ctx.lineWidth = 1.2;
         ctx.stroke();
       }
@@ -693,18 +726,22 @@ export class Minimap {
       } else {
         // Point d'ennemi standard coloré selon l'espèce (plus petit si Bébé juvénile, plus grand si Dragon)
         const spColor =
-          CONFIG.SPECIES?.[genome.speciesId]?.color ||
-          (isHybrid ? '#e6a145' : '#9fb1c1');
+          CONFIG.SPECIES?.[spId]?.color ||
+          (isShark ? '#00d2d3' : isMole ? '#e58e26' : isHybrid ? '#e6a145' : '#9fb1c1');
         ctx.beginPath();
-        const dotR = isBaby ? 1.5 : isDragon ? 3.3 : hasMutation ? 2.8 : 2.1;
+        const dotR = isBaby ? 1.5 : isDragon ? 3.3 : isShark || isMole ? 2.9 : hasMutation ? 2.8 : 2.1;
         ctx.arc(px, py, dotR, 0, Math.PI * 2);
         ctx.fillStyle = isEnragedDragon
           ? '#ff4757'
           : isDragon
             ? '#ff9436'
-            : hasMutation
-              ? '#ff6b6b'
-              : spColor;
+            : isShark
+              ? '#00d2d3'
+              : isMole
+                ? '#e58e26'
+                : hasMutation
+                  ? '#ff6b6b'
+                  : spColor;
         ctx.fill();
       }
     }

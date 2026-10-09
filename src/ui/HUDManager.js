@@ -153,6 +153,65 @@ export const SPECIES_CYCLE_AND_AGGRO_DEFAULTS = {
     baseDamage: 58,
     baseSpeed: 8.2,
   },
+  shark: {
+    baseGestationTime: 22,
+    baseMaturationTime: 24,
+    baseAggressiveness: 0.85,
+    aggroStance: 'hostile',
+    repopulationCooldown: 35,
+    repopulationHabitatLabel: 'Fosses abyssales & débarquement sur les plages (40s+)',
+    baseHp: 135,
+    baseDamage: 22,
+    baseSpeed: 7.8,
+  },
+  giant_mole: {
+    baseGestationTime: 20,
+    baseMaturationTime: 22,
+    baseAggressiveness: 0.78,
+    aggroStance: 'hostile',
+    repopulationCooldown: 40,
+    repopulationHabitatLabel: 'Galeries telluriques souterraines (éruption 65s+)',
+    baseHp: 150,
+    baseDamage: 21,
+    baseSpeed: 6.4,
+  },
+  rabbit: {
+    baseGestationTime: 7.5,
+    baseMaturationTime: 9.5,
+    baseAggressiveness: 0.0,
+    aggroStance: 'prey_pacifist',
+    autoRepopulate: false,
+    foodYield: 18,
+    repopulationCooldown: 0,
+    repopulationHabitatLabel: '⚠️ AUCUN REPEUPLEMENT AUTO (<2 = Extinction ! Bio-Labo 25 Biomasse)',
+    baseHp: 26,
+    baseDamage: 0,
+    baseSpeed: 9.8,
+  },
+  deer: {
+    baseGestationTime: 15,
+    baseMaturationTime: 17,
+    baseAggressiveness: 0.0,
+    aggroStance: 'prey_pacifist',
+    autoRepopulate: false,
+    foodYield: 35,
+    repopulationCooldown: 0,
+    repopulationHabitatLabel: '⚠️ AUCUN REPEUPLEMENT AUTO (<2 = Extinction ! Bio-Labo 25 Biomasse)',
+    baseHp: 54,
+    baseDamage: 0,
+    baseSpeed: 10.5,
+  },
+  storm_harpy: {
+    baseGestationTime: 16,
+    baseMaturationTime: 18,
+    baseAggressiveness: 0.76,
+    aggroStance: 'hostile',
+    repopulationCooldown: 35,
+    repopulationHabitatLabel: 'Nuées d’orage au-delà de l’horizon (90s+)',
+    baseHp: 82,
+    baseDamage: 16,
+    baseSpeed: 10.8,
+  },
 };
 
 /**
@@ -558,12 +617,34 @@ export class HUDManager {
 
     vitalsGroup.append(hpBox, xpBox);
 
-    // Ressources (Bois, Cristal, Biomasse)
+    // Ressources (Bois, Cristal, Biomasse, Rations 🍖 & Santé Écologique du Gibier 🦌)
     this.resGroup = el('div', 'hud-resources-group');
     this.woodBadge = el('div', 'hud-resource-badge res-wood', '🪵 Bois: 40');
     this.crystalBadge = el('div', 'hud-resource-badge res-crystal', '💎 Cristal: 20');
     this.biomassBadge = el('div', 'hud-resource-badge res-biomass', '🌿 Biomasse: 15');
-    this.resGroup.append(this.woodBadge, this.crystalBadge, this.biomassBadge);
+    this.foodBadge = el(
+      'div',
+      'hud-resource-badge res-food is-well-fed',
+      '🍖 Rations: 60/150'
+    );
+    this.foodBadge.title =
+      'Rations du Bastion (>25 : Rassasié +3 PV/s & +10% vitesse | 0 : Famine ! Chassez 1 Biche/Lapin sans exterminer le troupeau)';
+
+    this.preyHealthBadge = el(
+      'div',
+      'hud-resource-badge res-prey is-healthy',
+      '🦌 Gibier: 11 (Biches/Lapins)'
+    );
+    this.preyHealthBadge.title =
+      'Santé écologique du Gibier Herbivore (Biches Sylvestres & Lapins des Plaines). Attention : vos sorts de zone peuvent les décimer (<2 = Extinction !)';
+
+    this.resGroup.append(
+      this.woodBadge,
+      this.crystalBadge,
+      this.biomassBadge,
+      this.foodBadge,
+      this.preyHealthBadge
+    );
 
     this.topBar.append(brandGroup, this.ecoGroup, this.statsCluster, vitalsGroup, this.resGroup);
     this.root.appendChild(this.topBar);
@@ -751,33 +832,81 @@ export class HUDManager {
 
     this.buildSection.append(buildHeaderRow, bastionHint, this.bastionBuildingsListEl);
 
-    // Laboratoire de Simulation / Actions de Test Directes
+    // Laboratoire de Simulation / Actions de Test Directes (Phase 7 : Émergences & Réintroduction Gibier)
     this.simLab = el('div', 'hud-sim-lab');
-    this.simLab.appendChild(el('div', 'hud-section-label', '🧪 Laboratoire Génétique (Actions Test)'));
+    this.simLab.appendChild(
+      el('div', 'hud-section-label', '🧪 Laboratoire Génétique & Émergence')
+    );
 
-    const forceTickBtn = el(
+    const simGrid = el('div', 'hud-sim-lab-grid');
+
+    this.forceTickBtn = el(
       'button',
       'hud-btn hud-btn-biomass',
-      '⚡ Forcer Eco-Tick Génétique [T]'
+      '⚡ Forcer Eco-Tick [T]'
     );
-    forceTickBtn.type = 'button';
-    forceTickBtn.addEventListener('click', () => {
+    this.forceTickBtn.type = 'button';
+    this.forceTickBtn.title = 'Forcer immédiatement un cycle écologique de Conway + Génétique [T]';
+    this.forceTickBtn.addEventListener('click', () => {
       if (this.callbacks.onForceEcoTick) this.callbacks.onForceEcoTick();
     });
 
-    const spawnFireTrollBtn = el(
+    this.spawnFireTrollBtn = el(
       'button',
       'hud-btn hud-btn-threat',
-      '🔥 Spawner Troll de Feu (Test) [M]'
+      '🔥 Troll de Feu [M]'
     );
-    spawnFireTrollBtn.type = 'button';
-    spawnFireTrollBtn.addEventListener('click', () => {
+    this.spawnFireTrollBtn.type = 'button';
+    this.spawnFireTrollBtn.title = 'Faire apparaître un Troll de Feu Patient Zéro [M]';
+    this.spawnFireTrollBtn.addEventListener('click', () => {
       if (this.callbacks.onSpawnFireTroll) this.callbacks.onSpawnFireTroll();
+    });
+
+    this.sharkLandingBtn = el(
+      'button',
+      'hud-btn hud-btn-abyss',
+      '🦈 Débarquement Requins'
+    );
+    this.sharkLandingBtn.type = 'button';
+    this.sharkLandingBtn.title =
+      'Faire muter les Requins de l’océan (Pattes Amphibies) et déclencher leur débarquement sur la plage !';
+    this.sharkLandingBtn.addEventListener('click', () => {
+      if (this.callbacks.onTriggerSharkLanding) {
+        this.callbacks.onTriggerSharkLanding();
+      }
+    });
+
+    this.moleEruptionBtn = el(
+      'button',
+      'hud-btn hud-btn-earth',
+      '🕳️ Éruption Taupes'
+    );
+    this.moleEruptionBtn.type = 'button';
+    this.moleEruptionBtn.title =
+      'Déclencher une éruption souterraine de Taupes Géantes Fouisseuses à travers l’île !';
+    this.moleEruptionBtn.addEventListener('click', () => {
+      if (this.callbacks.onTriggerMoleEruption) {
+        this.callbacks.onTriggerMoleEruption();
+      }
+    });
+
+    this.reintroducePreyBtn = el(
+      'button',
+      'hud-btn hud-btn-prey is-full-span',
+      '🌿 Réintroduire Gibier (25 Biomasse)'
+    );
+    this.reintroducePreyBtn.type = 'button';
+    this.reintroducePreyBtn.title =
+      'Réintroduire 3 Biches Sylvestres et 4 Lapins des Plaines si vos sorts ont décimé le gibier (Coût : 25 Biomasse)';
+    this.reintroducePreyBtn.addEventListener('click', () => {
+      if (this.callbacks.onReintroducePrey) {
+        this.callbacks.onReintroducePrey();
+      }
     });
 
     this.openCodexBtn = el(
       'button',
-      'hud-btn hud-btn-scout',
+      'hud-btn hud-btn-scout is-full-span',
       '🧬 Ouvrir Arbre Phylogénétique [Tab]'
     );
     this.openCodexBtn.type = 'button';
@@ -785,7 +914,15 @@ export class HUDManager {
       this.toggleCodexModal();
     });
 
-    this.simLab.append(forceTickBtn, spawnFireTrollBtn, this.openCodexBtn);
+    simGrid.append(
+      this.forceTickBtn,
+      this.spawnFireTrollBtn,
+      this.sharkLandingBtn,
+      this.moleEruptionBtn,
+      this.reintroducePreyBtn,
+      this.openCodexBtn
+    );
+    this.simLab.appendChild(simGrid);
 
     this.leftPanel.append(header, bastionHpSection, rolesSection, this.buildSection, this.simLab);
     this.root.appendChild(this.leftPanel);
@@ -959,6 +1096,13 @@ export class HUDManager {
     );
     this.trackPatientZeroBtn.type = 'button';
     this.trackPatientZeroBtn.addEventListener('click', () => {
+      if (this.currentAlertTarget?.actionType === 'reintroduce_prey') {
+        if (typeof this.callbacks.onReintroducePrey === 'function') {
+          this.callbacks.onReintroducePrey();
+        }
+        this.hideAlertBanner();
+        return;
+      }
       if (this.currentAlertTarget && this.callbacks.onFocusWorldPos) {
         this.callbacks.onFocusWorldPos(
           this.currentAlertTarget.x,
@@ -1198,7 +1342,7 @@ export class HUDManager {
 
   /**
    * Applique la configuration de portrait Nano Banana et d'animation « simagrée » à la bannière d'alerte.
-   * @param {'patient_zero'|'eradicated'|'dragon_wrath'} alertType
+   * @param {'patient_zero'|'eradicated'|'dragon_wrath'|'shark_landing'|'mole_eruption'|'prey_crisis'} alertType
    * @private
    */
   _applyAlertBannerPortrait(alertType = 'patient_zero') {
@@ -1222,13 +1366,35 @@ export class HUDManager {
       if (alertPres.specimenPortraitUrl && alertType !== 'dragon_wrath') {
         this.alertSpecimenPipImg.src = alertPres.specimenPortraitUrl;
         this.alertSpecimenPipImg.classList.remove('is-hidden');
-      } else if (alertType === 'dragon_wrath' && alertPres.secondaryExpressionUrl) {
+      } else if (
+        (alertType === 'dragon_wrath' ||
+          alertType === 'shark_landing' ||
+          alertType === 'mole_eruption' ||
+          alertType === 'prey_crisis') &&
+        alertPres.secondaryExpressionUrl
+      ) {
         this.alertSpecimenPipImg.src = alertPres.secondaryExpressionUrl;
         this.alertSpecimenPipImg.classList.remove('is-hidden');
       } else {
         this.alertSpecimenPipImg.classList.add('is-hidden');
       }
     }
+  }
+
+  /**
+   * Nettoie toutes les classes de variantes visuelles de `this.alertBanner`.
+   * @private
+   */
+  _resetAlertBannerVariantClasses() {
+    if (!this.alertBanner) return;
+    this.alertBanner.classList.remove(
+      'is-hidden',
+      'is-eradicated',
+      'is-dragon-wrath',
+      'is-shark-landing',
+      'is-mole-eruption',
+      'is-prey-crisis'
+    );
   }
 
   /**
@@ -1273,8 +1439,9 @@ export class HUDManager {
     };
 
     this._applyAlertBannerPortrait('patient_zero');
-    this.alertBanner.classList.remove('is-hidden', 'is-eradicated', 'is-dragon-wrath');
+    this._resetAlertBannerVariantClasses();
     this.alertIconWrap.textContent = '🦅';
+    this.trackPatientZeroBtn.className = 'hud-btn hud-btn-threat';
     this.trackPatientZeroBtn.textContent = '🎯 TRAQUER LE PATIENT ZÉRO';
     this.trackPatientZeroBtn.style.display = 'inline-flex';
 
@@ -1306,7 +1473,7 @@ export class HUDManager {
     const speciesName = lastEnemy?.genome?.speciesName || 'Porteur';
 
     this._applyAlertBannerPortrait('eradicated');
-    this.alertBanner.classList.remove('is-hidden', 'is-dragon-wrath');
+    this._resetAlertBannerVariantClasses();
     this.alertBanner.classList.add('is-eradicated');
     this.alertIconWrap.textContent = '✨';
     this.trackPatientZeroBtn.style.display = 'none';
@@ -1340,9 +1507,10 @@ export class HUDManager {
     };
 
     this._applyAlertBannerPortrait('dragon_wrath');
-    this.alertBanner.classList.remove('is-hidden', 'is-eradicated');
+    this._resetAlertBannerVariantClasses();
     this.alertBanner.classList.add('is-dragon-wrath');
     this.alertIconWrap.textContent = '🐉';
+    this.trackPatientZeroBtn.className = 'hud-btn hud-btn-threat';
     this.trackPatientZeroBtn.textContent = '🏰 DÉFENDRE LE BASTION';
     this.trackPatientZeroBtn.style.display = 'inline-flex';
 
@@ -1355,6 +1523,124 @@ export class HUDManager {
     this.alertTimeoutId = window.setTimeout(() => {
       this.hideAlertBanner();
     }, 14000);
+  }
+
+  /**
+   * Affiche la bannière d'émergence abyssale lorsque les Requins de l'océan développent des pattes
+   * (`amphibious_lungs`) et débarquent en marchant sur la plage !
+   * @param {Object} [eventData={}]
+   */
+  showSharkLandingAlert(eventData = {}) {
+    if (!this.alertBanner) return;
+    const shark = eventData.enemy || eventData.sharks?.[0] || {};
+    const ex = eventData.x ?? shark.x ?? 68;
+    const ez = eventData.z ?? shark.z ?? 32;
+    const sector = getCardinalLabelFR(ex, ez);
+    const dist = Math.round(Math.hypot(ex, ez));
+    const count = eventData.count || eventData.sharks?.length || 1;
+
+    this.currentAlertTarget = {
+      x: ex,
+      z: ez,
+      lineageId: 'amphibious_lungs',
+    };
+
+    this._applyAlertBannerPortrait('shark_landing');
+    this._resetAlertBannerVariantClasses();
+    this.alertBanner.classList.add('is-shark-landing');
+    this.alertIconWrap.textContent = '🦈';
+    this.trackPatientZeroBtn.className = 'hud-btn hud-btn-abyss';
+    this.trackPatientZeroBtn.textContent = '🦈 CIBLER LA PLAGE';
+    this.trackPatientZeroBtn.style.display = 'inline-flex';
+
+    this.alertTitleEl.textContent = `🦈 ÉMERGENCE ABYSSALE : ${count > 1 ? `${count} REQUINS MARCHEURS DÉBARQUENT` : 'UN REQUIN MARCHEUR DÉBARQUE'} AU ${sector.toUpperCase()} !`;
+    this.alertDescEl.textContent = `Les squales de l’océan (${dist}m) ont muté [Pattes & Branchies Amphibies] : ils sortent des vagues sur leurs pattes griffues, marchent sur la plage et peuvent s’hybrider avec les Loups ("Squale-Garou") !`;
+
+    if (this.alertTimeoutId) {
+      clearTimeout(this.alertTimeoutId);
+    }
+    this.alertTimeoutId = window.setTimeout(() => {
+      this.hideAlertBanner();
+    }, 12500);
+  }
+
+  /**
+   * Affiche la bannière d'éruption souterraine lorsque des Taupes Géantes Fouisseuses surgissent des profondeurs.
+   * @param {Object} [eventData={}]
+   */
+  showMoleEruptionAlert(eventData = {}) {
+    if (!this.alertBanner) return;
+    const mole = eventData.enemy || eventData.moles?.[0] || {};
+    const ex = eventData.x ?? mole.x ?? -48;
+    const ez = eventData.z ?? mole.z ?? 44;
+    const sector = getCardinalLabelFR(ex, ez);
+    const dist = Math.round(Math.hypot(ex, ez));
+    const count = eventData.count || eventData.moles?.length || 1;
+
+    this.currentAlertTarget = {
+      x: ex,
+      z: ez,
+      lineageId: 'giant_mole',
+    };
+
+    this._applyAlertBannerPortrait('mole_eruption');
+    this._resetAlertBannerVariantClasses();
+    this.alertBanner.classList.add('is-mole-eruption');
+    this.alertIconWrap.textContent = '🕳️';
+    this.trackPatientZeroBtn.className = 'hud-btn hud-btn-earth';
+    this.trackPatientZeroBtn.textContent = '🕳️ CIBLER LA GALERIE';
+    this.trackPatientZeroBtn.style.display = 'inline-flex';
+
+    this.alertTitleEl.textContent = `🕳️ ÉRUPTION SOUTERRAINE : ${count > 1 ? `${count} TAUPES GÉANTES FOUISSEUSES` : 'TAUPE GÉANTE FOUISSEUSE'} AU ${sector.toUpperCase()} !`;
+    this.alertDescEl.textContent = `Une galerie tellurique vient de s’ouvrir (${dist}m) ! Ces colosses souterrains aux griffes métalliques peuvent s’hybrider avec les Trolls ("Taupe-Colosse") : interceptez-les !`;
+
+    if (this.alertTimeoutId) {
+      clearTimeout(this.alertTimeoutId);
+    }
+    this.alertTimeoutId = window.setTimeout(() => {
+      this.hideAlertBanner();
+    }, 12500);
+  }
+
+  /**
+   * Affiche la bannière d'alerte écologique lorsque les sorts de zone du joueur déciment le gibier
+   * (`deer` Biche Sylvestre / `rabbit` Lapin des Plaines) ou provoquent une crise de famine.
+   * @param {Object} [crisisData={}]
+   */
+  showPreyEcologicalCrisisAlert(crisisData = {}) {
+    if (!this.alertBanner) return;
+    const speciesId = crisisData.speciesId || 'deer';
+    const spName =
+      speciesId === 'rabbit'
+        ? 'Lapins des Plaines'
+        : speciesId === 'deer'
+          ? 'Biches Sylvestres'
+          : 'Troupeaux de Gibier';
+    const remaining = crisisData.remainingPrey ?? crisisData.remainingCount ?? 0;
+
+    this.currentAlertTarget = {
+      x: 0,
+      z: 0,
+      actionType: 'reintroduce_prey',
+    };
+
+    this._applyAlertBannerPortrait('prey_crisis');
+    this._resetAlertBannerVariantClasses();
+    this.alertBanner.classList.add('is-prey-crisis');
+    this.alertIconWrap.textContent = '🦌';
+    this.trackPatientZeroBtn.className = 'hud-btn hud-btn-prey is-urgent-reintroduce';
+    this.trackPatientZeroBtn.textContent = '🌿 RÉINTRODUIRE GIBIER (25 BIO)';
+    this.trackPatientZeroBtn.style.display = 'inline-flex';
+
+    this.alertTitleEl.textContent = `⚠️ ALERTE ÉCOLOGIQUE : ${spName.toUpperCase()} DÉCIMÉS PAR VOS SORTS (${remaining} RESTANT) !`;
+    this.alertDescEl.textContent = `Contrairement aux monstres, les Biches et Lapins ne réapparaissent PAS tout seuls (<2 = Extinction) ! Sans gibier, vos Rations (🍖) tombent à zéro et tous les prédateurs affamés fondent sur le Bastion !`;
+
+    if (this.alertTimeoutId) {
+      clearTimeout(this.alertTimeoutId);
+    }
+    this.alertTimeoutId = window.setTimeout(() => {
+      this.hideAlertBanner();
+    }, 14500);
   }
 
   /**
@@ -2303,14 +2589,31 @@ export class HUDManager {
       )
     );
 
-    // Section 2B : Cycles de Gestation, Agressivité & Étendue Génétique des 7 Espèces Fondatrices
+    // Section 2B : Cycles de Gestation, Agressivité & Étendue Génétique des 11 Espèces
+    const baseOrder = [
+      'goblin',
+      'wolf',
+      'vulture',
+      'orc',
+      'lion',
+      'troll',
+      'dragon',
+      'shark',
+      'giant_mole',
+      'deer',
+      'rabbit',
+    ];
+    const allConfigSpecies = Object.keys(CONFIG.SPECIES || {});
+    const orderedSpeciesIds = Array.from(new Set([...baseOrder, ...allConfigSpecies])).filter(
+      (id) => CONFIG.SPECIES?.[id] || SPECIES_CYCLE_AND_AGGRO_DEFAULTS[id]
+    );
+
     const speciesTitle = el(
       'div',
       'hud-section-label',
-      'Cycles de Gestation, Agressivité & Étendue Génétique [Papa, Maman] ± 10% des 7 Espèces'
+      `Cycles de Gestation, Agressivité, Émergence & Gibier (${orderedSpeciesIds.length} Espèces)`
     );
     const speciesGrid = el('div', 'codex-species-grid');
-    const orderedSpeciesIds = ['goblin', 'wolf', 'vulture', 'orc', 'lion', 'troll', 'dragon'];
 
     for (const spId of orderedSpeciesIds) {
       const spConf = CONFIG.SPECIES?.[spId] || {};
@@ -2322,6 +2625,13 @@ export class HUDManager {
       const baseMat = spConf.baseMaturationTime ?? spDef.baseMaturationTime ?? 20;
       const baseAggro = spConf.baseAggressiveness ?? spDef.baseAggressiveness ?? 0.7;
       const stance = spConf.aggroStance || spDef.aggroStance || 'hostile';
+      const autoRepop =
+        spConf.autoRepopulate !== undefined
+          ? Boolean(spConf.autoRepopulate)
+          : spDef.autoRepopulate !== undefined
+            ? Boolean(spDef.autoRepopulate)
+            : true;
+      const foodYield = spConf.foodYield ?? spDef.foodYield ?? 0;
       const repopCd = spConf.repopulationCooldown ?? spDef.repopulationCooldown ?? 15;
       const habitat =
         spConf.repopulationHabitatLabel || spDef.repopulationHabitatLabel || 'Terres sauvages';
@@ -2341,6 +2651,9 @@ export class HUDManager {
       if (isWrath) {
         stanceLabel = '🔥 COURROUX DRACONIQUE (100%)';
         stanceCls = 'stance-wrath';
+      } else if (stance === 'prey_pacifist' || spConf.clade === 'herbivore') {
+        stanceLabel = `🦌 Gibier Pacifique (+${foodYield || 25} 🍖)`;
+        stanceCls = 'stance-prey_pacifist';
       } else if (stance === 'pacifist_apex') {
         stanceLabel = `👑 Souverain Pacifique (${avgAggroPct}%)`;
         stanceCls = 'stance-pacifist_apex';
@@ -2348,6 +2661,19 @@ export class HUDManager {
         stanceLabel = `🛡️ Territorial (${avgAggroPct}%)`;
         stanceCls = 'stance-territorial';
       }
+
+      const spIcon =
+        spId === 'dragon'
+          ? '🐉 '
+          : spId === 'shark'
+            ? '🦈 '
+            : spId === 'giant_mole'
+              ? '🕳️ '
+              : spId === 'deer'
+                ? '🦌 '
+                : spId === 'rabbit'
+                  ? '🐇 '
+                  : '';
 
       const spCard = el(
         'div',
@@ -2360,7 +2686,7 @@ export class HUDManager {
         el(
           'span',
           'codex-item-title',
-          `${spId === 'dragon' ? '🐉 ' : ''}${name} (${sc ? `${sc.adults} Ad. / ${sc.babies} 🐣` : '0 en vie'})`
+          `${spIcon}${name} (${sc ? `${sc.adults} Ad. / ${sc.babies} 🐣` : '0 en vie'})`
         ),
         el('span', `codex-stance-badge ${stanceCls}`, stanceLabel)
       );
@@ -2394,11 +2720,10 @@ export class HUDManager {
         `🧬 Étendue [Papa,Maman]±10% : PV ${hpRange} · Force ${dmgRange} · Vit ${spdRange} · Gest. ${gestRange}`
       );
 
-      const repopLine = el(
-        'div',
-        'codex-repop-pill',
-        `🕳️ Repeuplement auto (<2 indiv., ${repopCd}s) : ${habitat}`
-      );
+      const repopText = !autoRepop
+        ? `⚠️ PAS DE REPEUPLEMENT AUTO (<2 indiv. = EXTINCTION ! Réintroduction Bio-Labo : 25 🌿 Biomasse)`
+        : `🕳️ Repeuplement auto (<2 indiv., ${repopCd}s) : ${habitat}`;
+      const repopLine = el('div', 'codex-repop-pill', repopText);
 
       spCard.append(spHeader, cycleLine, scopeBox, repopLine);
       speciesGrid.appendChild(spCard);
@@ -2477,7 +2802,7 @@ export class HUDManager {
   }
 
   /**
-   * Construit le graphe SVG des 7 espèces de base groupées par Clade et leurs ponts d'hybridation.
+   * Construit le graphe SVG des espèces groupées par Clade et leurs ponts d'hybridation.
    * @param {Object} graphData
    * @param {Record<string, number>} speciesCounts
    * @returns {SVGElement}
@@ -2486,30 +2811,37 @@ export class HUDManager {
   _buildPhylogenySvg(graphData, speciesCounts) {
     const svg = svgEl('svg', {
       class: 'phylo-svg',
-      viewBox: '0 0 880 265',
+      viewBox: '0 0 980 305',
       role: 'img',
-      'aria-label': 'Graphe Phylogénétique des 7 espèces et ponts d’hybridation',
+      'aria-label': 'Graphe Phylogénétique des espèces et ponts d’hybridation',
     });
 
-    // Positions fixes par Clade pour une lisibilité cartographique parfaite
+    // Positions fixes par Clade pour une lisibilité cartographique parfaite (11 espèces)
     const nodePositions = {
-      // Clade Peaux-Vertes (Gauche)
-      goblin: { x: 115, y: 75, cladeLabel: 'Peaux-Vertes' },
-      orc: { x: 245, y: 135, cladeLabel: 'Peaux-Vertes' },
-      troll: { x: 155, y: 215, cladeLabel: 'Peaux-Vertes' },
-      // Clade Bêtes Sauvages (Centre)
-      wolf: { x: 455, y: 75, cladeLabel: 'Bêtes Sauvages' },
-      lion: { x: 585, y: 135, cladeLabel: 'Bêtes Sauvages' },
-      vulture: { x: 495, y: 215, cladeLabel: 'Bêtes Sauvages' },
-      // Clade Apex (Droite)
-      dragon: { x: 775, y: 165, cladeLabel: 'Prédateurs Apex' },
+      // Clade Peaux-Vertes & Fouisseurs (Gauche)
+      goblin: { x: 95, y: 72, cladeLabel: 'Peaux-Vertes' },
+      orc: { x: 215, y: 125, cladeLabel: 'Peaux-Vertes' },
+      troll: { x: 115, y: 195, cladeLabel: 'Peaux-Vertes' },
+      giant_mole: { x: 225, y: 255, cladeLabel: 'Émergents' },
+      // Clade Bêtes Sauvages & Abysses (Centre)
+      wolf: { x: 405, y: 72, cladeLabel: 'Bêtes Sauvages' },
+      lion: { x: 525, y: 128, cladeLabel: 'Bêtes Sauvages' },
+      vulture: { x: 425, y: 198, cladeLabel: 'Bêtes Sauvages' },
+      shark: { x: 535, y: 255, cladeLabel: 'Abysses' },
+      // Clade Apex (Centre-Droit)
+      dragon: { x: 705, y: 155, cladeLabel: 'Prédateurs Apex' },
+      storm_harpy: { x: 695, y: 255, cladeLabel: 'Nuées' },
+      // Clade Faune Herbivore / Gibier (Droite)
+      deer: { x: 885, y: 105, cladeLabel: 'Gibier Herbivore' },
+      rabbit: { x: 885, y: 215, cladeLabel: 'Gibier Herbivore' },
     };
 
-    // Titres des 3 Clades
+    // Titres des 4 Clades
     const cladeHeaders = [
-      { x: 170, y: 24, text: 'CLADE : PEAUX-VERTES', color: '#4caf50' },
-      { x: 515, y: 24, text: 'CLADE : BÊTES SAUVAGES', color: '#d99b38' },
-      { x: 775, y: 24, text: 'CLADE : APEX', color: '#e04038' },
+      { x: 160, y: 24, text: 'PEAUX-VERTES & PROFONDEURS', color: '#4caf50' },
+      { x: 470, y: 24, text: 'BÊTES & REQUINS ABYSSAUX', color: '#00d2d3' },
+      { x: 705, y: 24, text: 'CLADE : APEX', color: '#e04038' },
+      { x: 885, y: 24, text: 'GIBIER HERBIVORE', color: '#a3cb38' },
     ];
     for (const ch of cladeHeaders) {
       svg.appendChild(
@@ -2520,7 +2852,7 @@ export class HUDManager {
             y: ch.y,
             fill: ch.color,
             'font-family': 'Cinzel, serif',
-            'font-size': '12',
+            'font-size': '11.5',
             'font-weight': '700',
             'text-anchor': 'middle',
           },
@@ -2564,7 +2896,7 @@ export class HUDManager {
             y: my,
             fill: '#f0ead6',
             'font-family': 'JetBrains Mono, monospace',
-            'font-size': '9.5',
+            'font-size': '9.0',
             'text-anchor': 'middle',
           },
           `${edge.hybridName} (d=${edge.distance}, ${probPct}%)`
@@ -2572,7 +2904,7 @@ export class HUDManager {
       );
     }
 
-    // 2. Nœuds des 7 espèces de base
+    // 2. Nœuds des espèces de base
     for (const node of graphData.nodes) {
       const pos = nodePositions[node.id];
       if (!pos) continue;
@@ -3333,15 +3665,52 @@ export class HUDManager {
 
     let adultCount = 0;
     let babyCount = 0;
+    let deerCount = 0;
+    let rabbitCount = 0;
+    let otherHerbivoreCount = 0;
     for (const e of enemies) {
       if (!e || e.dead || (typeof e.hp === 'number' && e.hp <= 0)) continue;
       if (e.lifeStage === 'baby' || e.isAdult === false) babyCount++;
       else adultCount++;
+
+      const spId = e.genome?.speciesId || '';
+      if (spId === 'deer') deerCount++;
+      else if (spId === 'rabbit') rabbitCount++;
+      else if (
+        e.aggroStance === 'prey_pacifist' ||
+        CONFIG.SPECIES?.[spId]?.clade === 'herbivore'
+      ) {
+        otherHerbivoreCount++;
+      }
     }
     const totalPop = adultCount + babyCount;
     this.popValueEl.textContent = `${totalPop} (${adultCount} Ad. / ${babyCount} 🐣)`;
 
-    // 3. Statistiques & Ressources du Joueur
+    const totalPrey = deerCount + rabbitCount + otherHerbivoreCount;
+    const isTutorialReserve = Boolean(enemyManager?.ecoPaused) && totalPop < 5 && totalPrey === 0;
+    if (this.preyHealthBadge) {
+      this.preyHealthBadge.classList.remove('is-healthy', 'is-warning', 'is-extinct');
+      if (isTutorialReserve) {
+        this.preyHealthBadge.classList.add('is-healthy');
+        this.preyHealthBadge.textContent = '🦌 Gibier: 11 (5 Biches / 6 Lapins)';
+      } else if (totalPrey === 0 || (deerCount < 2 && rabbitCount < 2)) {
+        this.preyHealthBadge.classList.add('is-extinct');
+        this.preyHealthBadge.textContent = `🚨 Gibier: ${totalPrey} (EXTINCTION !)`;
+      } else if (deerCount < 2 || rabbitCount < 2) {
+        this.preyHealthBadge.classList.add('is-warning');
+        this.preyHealthBadge.textContent = `⚠️ Gibier: ${totalPrey} (${deerCount} Biches / ${rabbitCount} Lapins)`;
+      } else {
+        this.preyHealthBadge.classList.add('is-healthy');
+        this.preyHealthBadge.textContent = `🦌 Gibier: ${totalPrey} (${deerCount} Biches / ${rabbitCount} Lapins)`;
+      }
+    }
+
+    if (this.reintroducePreyBtn) {
+      const needsReintro = !isTutorialReserve && (deerCount < 2 || rabbitCount < 2);
+      this.reintroducePreyBtn.classList.toggle('is-urgent-reintroduce', needsReintro);
+    }
+
+    // 3. Statistiques & Ressources du Joueur (dont 🍖 Rations / Nourriture)
     if (player) {
       const hp = Math.max(0, Math.round(player.hp ?? 160));
       const maxHp = Math.max(1, Math.round(player.maxHp ?? 160));
@@ -3367,6 +3736,24 @@ export class HUDManager {
       this.woodBadge.textContent = `🪵 Bois: ${Math.floor(res.wood ?? 0)}`;
       this.crystalBadge.textContent = `💎 Cristal: ${Math.floor(res.crystal ?? 0)}`;
       this.biomassBadge.textContent = `🌿 Biomasse: ${Math.floor(res.biomass ?? 0)}`;
+
+      if (this.foodBadge) {
+        const foodVal = Math.max(
+          0,
+          Math.round(res.food ?? player.food ?? CONFIG.PLAYER?.INITIAL_FOOD ?? 60)
+        );
+        const maxFood = Math.max(100, Math.round(res.maxFood ?? player.maxFood ?? 150));
+        this.foodBadge.classList.remove('is-well-fed', 'is-famine');
+        if (foodVal <= 0) {
+          this.foodBadge.classList.add('is-famine');
+          this.foodBadge.textContent = `⚠️ Rations: 0/${maxFood} (FAMINE !)`;
+        } else if (foodVal > 25) {
+          this.foodBadge.classList.add('is-well-fed');
+          this.foodBadge.textContent = `🍖 Rations: ${foodVal}/${maxFood}`;
+        } else {
+          this.foodBadge.textContent = `🍖 Rations: ${foodVal}/${maxFood}`;
+        }
+      }
 
       // Mise à jour de la Barre de Compétences Roguelike (4 Sorts 3D) et du Panneau des Maîtrises Adaptatives
       this._updateSkillBar(player);
