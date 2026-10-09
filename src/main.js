@@ -49,6 +49,7 @@ import { EnemyManager } from './entities/EnemyManager.js';
 import { PlayerController } from './entities/PlayerController.js';
 import { BastionAndNPCs } from './entities/BastionAndNPCs.js';
 import { buildCreatureMesh } from './entities/CreatureMeshBuilder.js';
+import { blenderModelManager } from './entities/BlenderModelManager.js';
 import { HUDManager } from './ui/HUDManager.js';
 import { Minimap } from './ui/Minimap.js';
 import { SoundManager } from './audio/SoundManager.js';
@@ -67,6 +68,15 @@ export class GenesisBastionGame {
 
     /** @type {HTMLElement} */
     this.appContainer = document.getElementById('app') || document.body;
+
+    // 0. Préchargement asynchrone des 14 modèles 3D .glb générés par Blender 5.0 MCP
+    /** @type {import('./entities/BlenderModelManager.js').BlenderModelManager} */
+    this.blenderModelManager = blenderModelManager;
+    this.blenderModelManager.preloadAll().catch((err) => {
+      logger.warn('BLENDER_3D', 'Avertissement lors du préchargement des modèles .glb Blender', {
+        error: String(err),
+      });
+    });
 
     // 1. Moteur 3D Three.js, Terrain insulaire & Effets visuels (VFX)
     /** @type {SceneManager} */
@@ -162,8 +172,17 @@ export class GenesisBastionGame {
       onTriggerGameOverTest: () => this.triggerGameOverForTest(),
       onRestartFromZero: () => this.restartFromZero(),
       onContinueAfterGameOver: () => this.continueAfterGameOver(),
+      onToggleBlenderModels: () => this.toggleBlenderModels(),
     });
     this.hud.registerExtraUpgrades(DESIGNED_UPGRADES);
+    if (typeof this.hud.setBlenderModeUI === 'function') {
+      this.hud.setBlenderModeUI(this.blenderModelManager.isBlenderModeEnabled());
+    }
+    this.blenderModelManager.onModeChange((enabled) => {
+      if (this.hud && typeof this.hud.setBlenderModeUI === 'function') {
+        this.hud.setBlenderModeUI(enabled);
+      }
+    });
 
     // Initialiser le mode de combat par défaut ('vampire_survivors' avec Lames Orbitales 3D)
     if (this.player && typeof this.player.setCombatMode === 'function') {
@@ -2610,6 +2629,28 @@ export class GenesisBastionGame {
   }
 
   /**
+   * Bascule en temps réel entre les 14 Modèles 3D Blender 5.0 (`.glb` PBR subdivisés)
+   * et les Maillages Procéduraux Classiques (Phase 10 — touche `[J]` ou bouton HUD).
+   * @param {boolean} [forceState]
+   * @returns {boolean} Nouvel état `blenderMode` (`true` = Blender `.glb`, `false` = Procédural).
+   */
+  toggleBlenderModels(forceState) {
+    const enabled =
+      typeof forceState === 'boolean'
+        ? this.blenderModelManager.setBlenderMode(forceState)
+        : this.blenderModelManager.toggleBlenderMode();
+
+    if (this.hud && typeof this.hud.setBlenderModeUI === 'function') {
+      this.hud.setBlenderModeUI(enabled);
+    }
+    if (this.sound && typeof this.sound.playUiClick === 'function') {
+      this.sound.playUiClick();
+    }
+    this.hud?.refreshLogFeed?.();
+    return enabled;
+  }
+
+  /**
    * Configure les raccourcis clavier globaux de la session.
    * @private
    */
@@ -2645,6 +2686,9 @@ export class GenesisBastionGame {
         } else {
           this.triggerGameOverForTest();
         }
+      } else if (evt.code === 'KeyJ' && !evt.ctrlKey && !evt.metaKey) {
+        evt.preventDefault();
+        this.toggleBlenderModels();
       } else if (evt.code === 'KeyP' && !evt.ctrlKey && !evt.metaKey) {
         if (this.tutorialActive) {
           this.skipTutorial();
@@ -2922,6 +2966,7 @@ export class GenesisBastionGame {
         bastionAndNpcs: this.bastionAndNpcs,
         questSystem: this.questSystem,
         sound: this.sound,
+        isBlenderMode: this.blenderModelManager?.isBlenderModeEnabled?.() ?? true,
       });
 
       this.minimap.update({
@@ -2960,6 +3005,7 @@ function bootstrapGenesisBastion() {
       config: CONFIG,
       logger,
       sound: gameInstance.sound,
+      blenderModelManager: gameInstance.blenderModelManager,
       sceneManager: gameInstance.sceneManager,
       terrain: gameInstance.terrain,
       vfx: gameInstance.vfx,
@@ -2970,6 +3016,8 @@ function bootstrapGenesisBastion() {
       bastionAndNpcs: gameInstance.bastionAndNpcs,
       hud: gameInstance.hud,
       minimap: gameInstance.minimap,
+      toggleBlenderModels: (forceState) => gameInstance.toggleBlenderModels(forceState),
+      setBlenderMode: (enabled) => gameInstance.toggleBlenderModels(Boolean(enabled)),
       forceEcoTick: () => gameInstance.forceEcoTick(),
       spawnFireTroll: () => gameInstance.spawnTestFireTroll(),
       triggerSharkLanding: () => gameInstance.triggerSharkLanding(),

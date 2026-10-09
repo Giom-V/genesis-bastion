@@ -130,7 +130,18 @@ flowchart TD
 
 ---
 
-## 6. Sécurité & Qualité Logicielle
+## 6. Pipeline 3D Blender 5.0 MCP (`.glb` PBR) & Décoration Hybride (`v0.10.0`)
+
+La branche `blender-3d-models` (`v0.10.0-blender-mcp-3d-models`) associe la génération 3D sous **Blender 5.0.1 MCP** (`/google/bin/releases/gemini-agents-blender/blender_cli`) à la morphologie génétique dynamique de Three.js :
+1. **Génération & Export Blender 5.0 (`scripts/generate-blender-models.py`)** :
+   - 14 modèles `.glb` PBR subdivisés (`SUBSURF` + `BEVEL` + `shade_smooth`) exportés dans `public/assets/models/` avec `export_yup=True` (pieds à `Y=0`, orientation avant `+Z`, sous-nœuds articulés `Body`, `Head`, `LeftArm`, `RightArm`, `LeftLeg`, `RightLeg`, `LeftWing`, `RightWing`, `Tail`, `Weapon`).
+2. **Décoration Génétique & Bascule Temps Réel (`src/entities/BlenderModelManager.js`)** :
+   - `blenderModelManager.decorateCreatureGroup(group, params)` attache une instance clonée du modèle `.glb` dans chaque entité tout en conservant les greffes mendéliennes (cristaux de feu `pyro_gland`, sacs à venin, plaques osseuses, ailes, couronne Patient Zéro) et l'animation procédurale des membres.
+   - `blenderModelManager.toggleBlenderMode()` (touche **`[J]`** ou bouton HUD) bascule instantanément en temps réel entre les **Modèles Blender 3D (`.glb`)** et les **Maillages Procéduraux Classiques**, tandis que la version classique dédiée reste accessible en parallèle sur le port `5174`.
+
+---
+
+## 7. Sécurité & Qualité Logicielle
 
 - **Politique de Sécurité du Contenu (CSP)** : Définie dans `index.html`, interdisant tout script externe non approuvé.
 - **Zéro Injection DOM** : Aucune utilisation de `innerHTML`, `outerHTML`, `insertAdjacentHTML` ou `document.write`. Toute l'interface est construite via `document.createElement` et `textContent`.

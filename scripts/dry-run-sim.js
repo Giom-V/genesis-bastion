@@ -20,9 +20,19 @@
  *   node scripts/dry-run-sim.js --dry-run [--ticks=30] [--seed=20261009] [--verbose]
  */
 
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { CONFIG } from '../src/config.js';
 import { logger } from '../src/utils/logger.js';
 import { SeededRNG, dist2D, clamp, lerp, getCardinalLabelFR } from '../src/utils/math.js';
+import {
+  blenderModelManager,
+  BLENDER_MODEL_MANIFEST,
+} from '../src/entities/BlenderModelManager.js';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const PROJECT_ROOT = path.resolve(__dirname, '..');
 
 /**
  * Parses CLI flags from `process.argv`.
@@ -611,9 +621,50 @@ async function runDryRunSimulation() {
     console.log('  - EcosystemSimulator.resetForNewRoguelikeRun() : READY (fallback verified)');
   }
   console.log('  - Game Over Choices        : [Repartir à Zéro (Niv.1, Île #1)] & [Continuer (Grâce 100% PV)]');
+
+  // Phase 10 verification: 14 Blender 5.0 .glb models on disk + headless preloadAll() + real-time [J] toggle
+  console.log('----------------------------------------------------------------------------------------');
+  console.log('[5] PHASE 10 VERIFICATION: BLENDER 5.0 MCP 3D (.GLB) MODELS & REAL-TIME TOGGLE [J]');
+  const manifestEntries = Object.entries(BLENDER_MODEL_MANIFEST);
+  let missingGlb = [];
+  let totalGlbBytes = 0;
+  for (const [modelId, relUrl] of manifestEntries) {
+    const cleanRel = relUrl.replace(/^\//, '');
+    const fullPath = path.join(PROJECT_ROOT, 'public', cleanRel);
+    if (!fs.existsSync(fullPath)) {
+      missingGlb.push(modelId);
+    } else {
+      const stat = fs.statSync(fullPath);
+      totalGlbBytes += stat.size;
+      if (stat.size < 1024) {
+        missingGlb.push(`${modelId} (empty)`);
+      }
+    }
+  }
+  await blenderModelManager.preloadAll();
+  const initialMode = blenderModelManager.isBlenderModeEnabled();
+  const toggledOff = blenderModelManager.toggleBlenderMode();
+  const toggledOn = blenderModelManager.toggleBlenderMode();
+  const toggleVerified = initialMode === true && toggledOff === false && toggledOn === true;
+
+  console.log(
+    `  - Blender 5.0 .glb Assets  : ${manifestEntries.length - missingGlb.length}/${
+      manifestEntries.length
+    } verified (${(totalGlbBytes / 1024).toFixed(1)} KB total)`
+  );
+  console.log(
+    `  - Real-Time Toggle [J]     : ${
+      toggleVerified ? 'PASS' : 'FAIL'
+    } (Blender .glb <-> Classic Procedural)`
+  );
   console.log('========================================================================================');
   if (!resetVerified) {
     throw new Error('Phase 9 EcosystemSimulator.resetForNewRoguelikeRun verification failed');
+  }
+  if (missingGlb.length > 0 || !toggleVerified) {
+    throw new Error(
+      `Phase 10 Blender 3D verification failed: missing=[${missingGlb.join(', ')}], toggle=${toggleVerified}`
+    );
   }
   console.log('DRY-RUN STATUS: PASS');
 }

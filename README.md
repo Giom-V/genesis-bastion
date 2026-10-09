@@ -52,6 +52,7 @@ npm run build
 | **`T`** | **[Labo Test]** Forcer immédiatement un **Cycle Écologique (Eco-Tick)** |
 | **`M`** | **[Labo Test]** Faire apparaître un **Patient Zéro (Troll de Feu)** dans la nature |
 | **`X`** | **[Labo Test]** Tester l'**Écran Game Over Roguelike** & la musique triste **Lyria « Requiem des Cendres » (64 BPM)** |
+| **`J`** | **Basculer en direct entre les Modèles 3D Blender 5.0 (`.glb`) et les Maillages Procéduraux Classiques** |
 | **`F1`..`F5`** | Construire / Améliorer les **5 Bâtiments du Bastion** (Tour de Guet, Scierie, Bio-Labo, Guilde des Éclaireurs, Cœur) |
 
 ---
@@ -67,8 +68,10 @@ genesis-bastion/
 ├── vite.config.js                    # Serveur Vite lié exclusivement à 127.0.0.1
 ├── README.md                         # Guide utilisateur, commandes et vue d'ensemble
 ├── Design.md                         # Spécifications mathématiques, génétiques et IA
+├── public/assets/models/             # 14 modèles 3D PBR subdivisés (.glb) générés via Blender 5.0 MCP
 ├── scripts/
-│   └── dry-run-sim.js                # Simulateur CLI headless (--dry-run) sur 30 cycles + test Game Over Reset
+│   ├── generate-blender-models.py    # Script Python Blender 5.0 (bpy) sculptant et exportant les 14 modèles .glb
+│   └── dry-run-sim.js                # Simulateur CLI headless (--dry-run) sur 30 cycles + test Game Over & Blender 3D
 └── src/
     ├── config.js                     # Configuration centralisée (WORLD, ECO, SPECIES, PHYLOGENY_DIST, MUTATIONS...)
     ├── main.js                       # Boucle principale requestAnimationFrame, Game Over Roguelike & orchestration
@@ -84,7 +87,8 @@ genesis-bastion/
     │   ├── Genome.js                 # Génome continu, calcul de fitness (stats + mutations), croisement mendélien
     │   └── EcosystemSimulator.js     # Grille 24x24 du Jeu de la Vie de Conway, biomasse, maturité Bébé -> Adulte
     ├── entities/
-    │   ├── CreatureMeshBuilder.js    # Morphologie 3D procédurale pilotée par le génome, les hybrides et les mutations
+    │   ├── BlenderModelManager.js    # Chargeur GLTFLoader, cache des 14 modèles .glb Blender 5.0 & bascule temps réel [J]
+    │   ├── CreatureMeshBuilder.js    # Morphologie 3D hybride (Modèles .glb Blender 5.0 + greffes génétiques/mutations)
     │   ├── EnemyManager.js           # IA ennemie, croissance Bébé (0.5x) -> Adulte (1.0x), famine et éradication
     │   ├── PlayerController.js       # Contrôles action-roguelike du joueur, mort Roguelike, grâce & remise à zéro
     │   └── BastionAndNPCs.js         # Sanctuaire central, cages, Autels d'Armes, Reliques d'Éden et IA Éclaireurs
@@ -92,7 +96,7 @@ genesis-bastion/
     │   └── SoundManager.js           # Musique adaptative Lyria Realtime + 5 stems Lyria 3 (dont Requiem Game Over 64 BPM), voix Gemini TTS FR & SFX WebAudio
     ├── ui/
     │   ├── CharacterPortraitsConfig.js # Portraits Nano Banana (Aldric, Kaelen, Troll de Feu, Dragon, Requin, Taupe) & Simagrées
-    │   ├── HUDManager.js             # Interface tactique DOM (zéro innerHTML), Modale Game Over, Forge [K], Dôme [V], Codex [Tab]
+    │   ├── HUDManager.js             # Interface tactique DOM (zéro innerHTML), Modale Game Over, Forge [K], Dôme [V], Bascule 3D [J]
     │   └── Minimap.js                # Radar 2D temps réel (biomasse Conway, cônes de vue Éclaireurs, balises Mutants & Reliques)
     └── styles/
         └── main.css                  # Design système cartographique & biologique dark-fantasy
@@ -119,4 +123,16 @@ Lorsque les PV du Gardien tombent à `0` (ou que le Cœur du Sanctuaire est dét
 3. **Deux Options Explicites** :
    - **`🔄 Repartir à Zéro (Nouvelle Run Roguelike — Niv. 1, Île #1)`** : Applique la vraie règle Roguelike en réinitialisant intégralement le Héros au Niveau 1, les Bâtiments du Bastion, la Grille de Conway et la Population Sauvage sur l'Île #1 (`resetForNewRoguelikeRun()`).
    - **`✨ Continuer quand même (Grâce Temporaire du Sanctuaire — 100% PV)`** : Relève le Gardien devant le Sanctuaire avec `100 % PV`, `+60 Rations`, une onde de choc dorée qui repousse les assaillants, et conserve toute la progression acquise.
+
+---
+
+## Modèles 3D Blender 5.0 MCP (`.glb` PBR) & Architecture Multi-Versions (`v0.10.0`)
+
+La version **`v0.10.0-blender-mcp-3d-models`** (branche `blender-3d-models`) intègre **14 modèles 3D `.glb` PBR subdivisés et lissés** générés directement via **Blender 5.0.1 MCP** (`scripts/generate-blender-models.py` $\rightarrow$ `public/assets/models/*.glb`) :
+- **Personnages & Structures** : `hero_guardian.glb` (Gardien en armure obsidienne/or, cape cramoisie, bouclier runique & espadon `Weapon`), `npc_survivor.glb` (Éclaireur à lanterne dorée), `bastion_monolith.glb` (Monolithe de Relique d'Éden).
+- **Bestiaire Darwinien Complet (11 espèces)** : `goblin.glb`, `orc.glb`, `troll.glb`, `wolf.glb`, `lion.glb`, `vulture.glb`, `dragon.glb`, `shark.glb` (Requin Marcheur amphibie), `giant_mole.glb` (Taupe Géante à museau étoilé), `deer.glb`, `rabbit.glb`.
+- **Bascule Temps Réel (`[J]` / Bouton HUD)** : Appuyez sur **`J`** ou cliquez sur **`🎨 Modèles 3D : Blender (.glb) [J]`** pour comparer instantanément en plein jeu les modèles `.glb` Blender 5.0 et les maillages procéduraux historiques (sans recharger la page).
+- **Double Serveur en Parallèle** :
+  - **Version Blender 3D (`.glb`)** : `http://giom-us.c.googlers.com:5173/` (branche `blender-3d-models`)
+  - **Version Classique Procédurale (`v0.9.0`)** : `http://giom-us.c.googlers.com:5174/` (branche `v0.9-classic-procedural`, accessible en 1 clic via le bouton `⏪ Version Classique (5174)` de l'en-tête).
 
