@@ -70,15 +70,17 @@ function getSimulatedBiomeAt(x, z) {
  */
 async function tryLoadEcosystemModules() {
   try {
-    const [ecoMod, genomeMod, phyloMod] = await Promise.all([
+    const [ecoMod, genomeMod, phyloMod, balanceMod] = await Promise.all([
       import('../src/ecosystem/EcosystemSimulator.js'),
       import('../src/ecosystem/Genome.js'),
       import('../src/ecosystem/Phylogeny.js'),
+      import('../src/ecosystem/BalanceAndPacing.js'),
     ]);
     return {
       EcosystemSimulator: ecoMod.EcosystemSimulator || ecoMod.default,
       Genome: genomeMod.Genome || genomeMod.default,
       Phylogeny: phyloMod,
+      Balance: balanceMod,
     };
   } catch (err) {
     logger.warn(

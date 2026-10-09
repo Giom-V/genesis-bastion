@@ -506,56 +506,89 @@ export const CONFIG = {
   },
 
   /**
-   * Roguelike Level-Up Upgrade Cards for the Player
+   * Roguelike Level-Up Counter-Adaptation Upgrade Cards for the Player
    */
   UPGRADES: [
     {
       id: 'cleave_damage',
-      name: 'Lame d’Éradication Génétique',
-      category: 'Combat',
-      description: '+35% dégâts de fente (Cleave) et +25% dégâts bonus contre les Mutants et Hybrides.',
-      icon: '⚔️',
-      bonus: { cleaveDamageMult: 1.35, mutantDamageMult: 1.25 },
+      designId: 'patient_zero_tracker',
+      name: 'Traqueur de Patient Zéro',
+      category: 'Traque Génétique',
+      counterTarget: 'Lignées Mutantes & Patients Zéro',
+      description:
+        '+35% dégâts de fente (Cleave), +45% dégâts contre les Mutants/Hybrides et +45% vitesse vers une mutation repérée.',
+      icon: '🎯',
+      bonus: {
+        cleaveDamageMult: 1.35,
+        mutantDamageMult: 1.45,
+        towardMutantSpeedMult: 1.45,
+      },
     },
     {
       id: 'move_speed',
-      name: 'Bottes de Traqueur',
+      designId: 'strider_boots',
+      name: 'Bottes d’Expédition Véloce',
       category: 'Mobilité',
-      description: '+20% vitesse de déplacement et réduction de 25% du temps de recharge d’esquive.',
+      counterTarget: 'Course contre le Compte à Rebours Eco-Tick',
+      description:
+        '+24% vitesse de déplacement et réduction de 30% du temps de recharge d’esquive pour traverser l’île avant un Eco-Tick.',
       icon: '🥾',
-      bonus: { speedMult: 1.2, dashCooldownMult: 0.75 },
+      bonus: { speedMult: 1.24, dashCooldownMult: 0.7 },
     },
     {
       id: 'max_hp_regen',
+      designId: 'amber_blood_vigor',
       name: 'Sang d’Ambre Régénérant',
       category: 'Survie',
-      description: '+50 PV Maximum, restauration immédiate de 60 PV et régénération passive accrue.',
+      counterTarget: 'Guerre d’Usure en Terres Sauvages',
+      description:
+        '+60 PV Maximum, restauration immédiate de 70 PV et régénération passive de +3.0 PV/s.',
       icon: '❤️',
-      bonus: { maxHpFlat: 50, healInstant: 60, regenPerSec: 2.5 },
+      bonus: { maxHpFlat: 60, healInstant: 70, regenPerSec: 3.0 },
     },
     {
       id: 'scout_vision',
-      name: 'Optiques d’Éclaireur Faucon',
-      category: 'Éclaireurs',
-      description: '+30% rayon de détection des Éclaireurs et +20% vitesse de fuite des Éclaireurs.',
+      designId: 'scout_falconry',
+      name: 'Fauconnerie d’Éclaireur',
+      category: 'Renseignement',
+      counterTarget: 'Détection Précoce en Deep Wilderness',
+      description:
+        '+40% portée de vision des Éclaireurs au-delà de la frontière et +25% vitesse d’expédition et de fuite.',
       icon: '🦅',
-      bonus: { scoutVisionMult: 1.3, scoutSpeedMult: 1.2 },
+      bonus: { scoutVisionMult: 1.4, scoutSpeedMult: 1.25 },
     },
     {
       id: 'bastion_turret_power',
-      name: 'Balistes Alchimiques du Bastion',
+      designId: 'thorn_bulwark',
+      name: 'Muraille d’Épines & Balistes Runiques',
       category: 'Bastion',
-      description: '+40% dégâts de tir des Gardes et des Tours de Guet, +150 PV au Bastion.',
+      counterTarget: 'Migrations de Famine (Surpopulation > 6)',
+      description:
+        '+40% dégâts des Gardes et Tours de Guet, +180 PV au Bastion et +16 dégâts d’épines.',
       icon: '🏰',
-      bonus: { turretDamageMult: 1.4, bastionHpBonus: 150 },
+      bonus: { turretDamageMult: 1.4, bastionHpBonus: 180, bastionThornsAdd: 16 },
     },
     {
       id: 'fire_resist',
-      name: 'Égide Ignifuge & Cryo-Purge',
-      category: 'Défense',
-      description: 'Réduit de 35% les dégâts subis des mutants élémentaires (Feu/Venin) et élargit l’arc d’attaque.',
+      designId: 'pyrophage_blade',
+      name: 'Lame Pyrophage & Égide Cryo',
+      category: 'Contre-Mutation',
+      counterTarget: 'Troll de Feu & Dragons Volcaniques',
+      description:
+        'Réduit de 40% les dégâts subis des mutants élémentaires (Feu/Venin/Givre) et élargit l’arc d’attaque de +1.4m.',
       icon: '🛡️',
-      bonus: { damageReduction: 0.35, cleaveRangeAdd: 1.2 },
+      bonus: { damageReduction: 0.4, cleaveRangeAdd: 1.4, cleaveDamageMult: 1.2 },
+    },
+    {
+      id: 'juvenile_purge',
+      designId: 'juvenile_purge',
+      name: 'Purge Juvénile & Terre Brûlée',
+      category: 'Écologie Conway',
+      counterTarget: 'Cellules à Densité Optimale (2–5)',
+      description:
+        'Tuer un mutant ou un Bébé monstre draine 30% de la biomasse de sa cellule, retardant la reproduction de la meute.',
+      icon: '🧬',
+      bonus: { cellBiomassDrainOnKill: 0.3, babyDamageMult: 1.5, cleaveDamageMult: 1.2 },
     },
   ],
 };
