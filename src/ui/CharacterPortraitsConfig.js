@@ -861,6 +861,28 @@ export function getAlertBannerPortraitPresentation(alertType = 'patient_zero') {
     };
   }
 
+  if (
+    alertType === 'game_over' ||
+    alertType === 'gameover' ||
+    alertType === 'requiem'
+  ) {
+    return {
+      alertType: 'game_over',
+      speaker: 'Aldric',
+      speakerTitle: 'Maître Biologiste & Forgeron Runique',
+      emotionLabel: '🕯️ REQUIEM DU SANCTUAIRE',
+      portraitUrl: PORTRAIT_ASSETS.aldric_scholar,
+      secondaryExpressionUrl: PORTRAIT_ASSETS.aldric_neutral,
+      specimenPortraitUrl: PORTRAIT_ASSETS.aldric_scholar,
+      simagreeClass: SIMAGREE_ANIMATION_CLASSES.SCHOLAR_NOD,
+      specimenSimagreeClass: SIMAGREE_ANIMATION_CLASSES.SCHOLAR_NOD,
+      themeColor: '#dc2626',
+      voiceAudioKey: 'alert_gameover_requiem',
+      quote:
+        '« Même les plus grands Gardiens tombent parfois sous la loi de Darwin, mon ami. Écoute le chant du Sanctuaire : veux-tu repartir à zéro selon la règle sacrée du roguelike, ou laisser la flamme d’Éden te relever pour continuer cette expédition ? »',
+    };
+  }
+
   if (alertType === 'eradicated' || alertType === 'lineage_eradicated') {
     return {
       alertType: 'eradicated',

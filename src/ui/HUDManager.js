@@ -338,6 +338,8 @@ export class HUDManager {
     this.isWeaponModalOpen = false;
     /** @type {boolean} */
     this.isIslandModalOpen = false;
+    /** @type {boolean} */
+    this.isGameOverModalOpen = false;
     /** @type {'vampire_survivors'|'diablo_action'} */
     this.combatMode = 'vampire_survivors';
     /** @type {number} */
@@ -379,6 +381,7 @@ export class HUDManager {
     this._buildBastionArchitectModal();
     this._buildWeaponForgeModal();
     this._buildIslandVictoryModal();
+    this._buildGameOverModal();
 
     // Abonnement temps réel au logger pour le fil d'évolution
     this._unsubscribeLogger = logger.subscribe(() => {
@@ -390,7 +393,7 @@ export class HUDManager {
   /**
    * Indique si le jeu doit être mis en pause totale (`true` dès que la modale de Montée de Niveau,
    * la modale de Choix du Mode de Combat, l'Architecte du Bastion `[H]`, l'Armurerie des Artefacts `[K]`,
-   * la Victoire du Bouclier d'Éden `[V]` ou le Codex Phylogénétique `[Tab]` est ouvert).
+   * la Victoire du Bouclier d'Éden `[V]`, l'écran Game Over `[X]` ou le Codex Phylogénétique `[Tab]` est ouvert).
    * @returns {boolean}
    */
   get isModalPaused() {
@@ -400,7 +403,8 @@ export class HUDManager {
         this.isCombatModeModalOpen ||
         this.isBastionModalOpen ||
         this.isWeaponModalOpen ||
-        this.isIslandModalOpen
+        this.isIslandModalOpen ||
+        this.isGameOverModalOpen
     );
   }
 
@@ -988,6 +992,20 @@ export class HUDManager {
       this.toggleCodexModal();
     });
 
+    this.triggerGameOverTestBtn = el(
+      'button',
+      'hud-btn hud-btn-gameover is-full-span',
+      '💀 Tester Game Over & Requiem Lyria [X]'
+    );
+    this.triggerGameOverTestBtn.type = 'button';
+    this.triggerGameOverTestBtn.title =
+      'Simuler la mort du Gardien (PV → 0) pour tester l’écran Game Over Roguelike et la musique triste Lyria [X]';
+    this.triggerGameOverTestBtn.addEventListener('click', () => {
+      if (this.callbacks.onTriggerGameOverTest) {
+        this.callbacks.onTriggerGameOverTest();
+      }
+    });
+
     simGrid.append(
       this.forceTickBtn,
       this.spawnFireTrollBtn,
@@ -996,7 +1014,8 @@ export class HUDManager {
       this.reintroducePreyBtn,
       this.openWeaponModalBtn,
       this.activateIslandShieldBtn,
-      this.openCodexBtn
+      this.openCodexBtn,
+      this.triggerGameOverTestBtn
     );
     this.simLab.appendChild(simGrid);
 
@@ -2472,6 +2491,7 @@ export class HUDManager {
       { key: 'V', label: 'Bouclier Île' },
       { key: 'Tab', label: 'Codex Génétique' },
       { key: 'T', label: 'Eco-Tick' },
+      { key: 'X', label: 'Test Game Over' },
     ];
 
     for (const c of controls) {
@@ -3769,7 +3789,7 @@ export class HUDManager {
     const artWrap = el('div', 'island-victory-artwork-wrap');
     const artImg = document.createElement('img');
     artImg.className = 'island-victory-artwork';
-    artImg.src = getSpecimenPortraitUrl('island_victory');
+    artImg.src = CHARACTER_PORTRAITS.kaelen.proud.url;
     artImg.alt = 'Dôme-Bouclier Planétaire Genesis Bastion';
     artWrap.appendChild(artImg);
 
@@ -3841,11 +3861,7 @@ export class HUDManager {
       islandData.equippedWeaponId || this.lastPlayerRef?.equippedWeaponId || 'runic_steel'
     );
 
-    this.setDynamicPortrait(
-      'island_victory',
-      `Île #${currentIsland} Sanctuarisée !`,
-      `Dôme-Bouclier Planétaire Actif · Cap sur ${nextTier.name}`
-    );
+    this._applyAlertBannerPortrait('island_victory');
 
     if (this.islandVictoryHeadlineEl) {
       this.islandVictoryHeadlineEl.textContent = `🛡️ ${currentTier.name} Sanctuarisée — Dôme-Bouclier Planétaire Actif !`;
@@ -3889,6 +3905,310 @@ export class HUDManager {
     this.isIslandModalOpen = false;
     if (this.islandModalBackdrop) {
       this.islandModalBackdrop.classList.remove('is-open');
+    }
+  }
+
+  /* ==========================================================================
+     7E. MODALE GAME OVER ROGUELIKE, REQUIEM TRISTE LYRIA (64 BPM)
+         & DOUBLE OPTION : REPARTIR À ZÉRO VS CONTINUER QUAND MÊME [X] (PHASE 9)
+     ========================================================================== */
+  _buildGameOverModal() {
+    this.gameOverBackdrop = el(
+      'div',
+      'modal-backdrop gameover-modal-backdrop hud-interactive'
+    );
+
+    const card = el('div', 'gameover-modal-card');
+
+    // 1. En-tête dramatique Game Over
+    const header = el('div', 'gameover-header');
+    const headerLeft = el('div', 'gameover-header-left');
+    const skullBadge = el('div', 'gameover-skull-badge', '💀');
+    const titleWrap = el('div', 'modal-title-wrap');
+    this.gameOverTitleEl = el(
+      'h2',
+      'gameover-title',
+      '💀 GAME OVER — FIN DE L’EXPÉDITION'
+    );
+    this.gameOverSubtitleEl = el(
+      'p',
+      'gameover-subtitle',
+      'Tombé au combat sous la pression de l’écosystème darwinien'
+    );
+    titleWrap.append(this.gameOverTitleEl, this.gameOverSubtitleEl);
+    headerLeft.append(skullBadge, titleWrap);
+
+    const roguelikePill = el(
+      'span',
+      'gameover-roguelike-pill',
+      '🕯️ RÈGLE ROGUELIKE : MORT DÉFINITIVE OU GRÂCE D’ÉDEN'
+    );
+    header.append(headerLeft, roguelikePill);
+
+    // 2. Corps de la modale
+    const body = el('div', 'modal-body');
+
+    // 2A. Encart Musical & Vocal Lyria "Requiem des Cendres" (Aldric)
+    const pres = getAlertBannerPortraitPresentation('game_over');
+    const lyriaBox = el('div', 'gameover-lyria-box');
+    const portraitWrap = el(
+      'div',
+      `gameover-portrait-wrap ${pres.simagreeClass || 'simagree-scholar-nod'}`
+    );
+    this.gameOverPortraitImgEl = el('img', 'gameover-portrait-img');
+    this.gameOverPortraitImgEl.src =
+      pres.portraitUrl || CHARACTER_PORTRAITS.aldric.scholar.url;
+    this.gameOverPortraitImgEl.alt = 'Aldric — Requiem du Sanctuaire';
+    portraitWrap.appendChild(this.gameOverPortraitImgEl);
+
+    const lyriaContent = el('div', 'gameover-lyria-content');
+    const lyriaTopRow = el('div', 'gameover-lyria-top-row');
+    this.gameOverLyriaBadgeEl = el(
+      'span',
+      'gameover-lyria-badge',
+      '🕯️ Lyria : Requiem des Cendres (64 BPM — Violoncelle & Piano Mélancolique)'
+    );
+
+    this.replayGameOverVoiceBtn = el(
+      'button',
+      'hud-replay-voice-btn',
+      '🔈 Réécouter l’Élégie'
+    );
+    this.replayGameOverVoiceBtn.type = 'button';
+    this.replayGameOverVoiceBtn.title =
+      'Réécouter l’élégie vocale d’Aldric (Gemini TTS Fenrir) et le thème triste Lyria 64 BPM';
+    this.replayGameOverVoiceBtn.addEventListener('click', () => {
+      if (typeof this.callbacks.onReplayGameOverVoice === 'function') {
+        this.callbacks.onReplayGameOverVoice();
+      } else if (typeof this.callbacks.onReplayTutorialVoice === 'function') {
+        this.callbacks.onReplayTutorialVoice('alert_gameover_requiem');
+      }
+    });
+    lyriaTopRow.append(this.gameOverLyriaBadgeEl, this.replayGameOverVoiceBtn);
+
+    this.gameOverQuoteEl = el(
+      'div',
+      'gameover-quote',
+      pres.quote ||
+        '« Même les plus grands Gardiens tombent parfois sous la loi de Darwin, mon ami. Écoute le chant du Sanctuaire : veux-tu repartir à zéro selon la règle sacrée du roguelike, ou laisser la flamme d’Éden te relever pour continuer cette expédition ? »'
+    );
+    lyriaContent.append(lyriaTopRow, this.gameOverQuoteEl);
+    lyriaBox.append(portraitWrap, lyriaContent);
+
+    // 2B. Grille Bilan de la Run Roguelike (6 cartes)
+    this.gameOverStatsGrid = el('div', 'gameover-stats-grid');
+
+    // 2C. Deux Boutons d'Action Principaux : Repartir à Zéro (Roguelike Pur) vs Continuer quand même
+    const actionsRow = el('div', 'gameover-actions');
+
+    this.gameOverRestartBtn = el('button', 'gameover-btn-restart');
+    this.gameOverRestartBtn.type = 'button';
+    this.gameOverRestartBtn.append(
+      el(
+        'span',
+        'gameover-btn-main-label',
+        '🔄 Repartir à Zéro (Nouvelle Run Roguelike — Niv. 1, Île #1)'
+      ),
+      el(
+        'span',
+        'gameover-btn-sub-label',
+        'Règle Roguelike Pure : Réinitialise le Gardien Niv. 1, le Bastion et l’Écosystème sur l’Île #1'
+      )
+    );
+    this.gameOverRestartBtn.addEventListener('click', () => {
+      this.lastKnownPlayerLevel = 1;
+      this.chosenUpgradeIds = [];
+      this.hideGameOverModal();
+      if (typeof this.callbacks.onRestartFromZero === 'function') {
+        this.callbacks.onRestartFromZero();
+      }
+    });
+
+    this.gameOverContinueBtn = el('button', 'gameover-btn-continue');
+    this.gameOverContinueBtn.type = 'button';
+    this.gameOverContinueBtn.append(
+      el(
+        'span',
+        'gameover-btn-main-label',
+        '✨ Continuer quand même (Grâce Temporaire du Sanctuaire — 100% PV)'
+      ),
+      el(
+        'span',
+        'gameover-btn-sub-label',
+        'Option pour le moment : Ressuscite au Sanctuaire avec 100% PV, +60 Rations et toute votre progression'
+      )
+    );
+    this.gameOverContinueBtn.addEventListener('click', () => {
+      this.hideGameOverModal();
+      if (typeof this.callbacks.onContinueAfterGameOver === 'function') {
+        this.callbacks.onContinueAfterGameOver();
+      }
+    });
+
+    actionsRow.append(this.gameOverRestartBtn, this.gameOverContinueBtn);
+
+    body.append(lyriaBox, this.gameOverStatsGrid, actionsRow);
+    card.append(header, body);
+    this.gameOverBackdrop.appendChild(card);
+    this.root.appendChild(this.gameOverBackdrop);
+  }
+
+  /**
+   * Affiche l'écran plein écran Game Over Roguelike accompagné de la musique triste Lyria
+   * ("Requiem des Cendres" — 64 BPM) et laisse le choix entre Repartir à Zéro ou Continuer quand même.
+   * Met immédiatement la simulation 3D en pause (`this.isGameOverModalOpen = true`).
+   *
+   * @param {Object} [summary={}] - Bilan de la run roguelike et circonstances de la mort.
+   * @param {string} [summary.killerName] - Nom de l'ennemi ou de la cause ayant terrassé le Gardien.
+   * @param {string} [summary.reason] - `'player_dead'` / `'hero_slain'` ou `'bastion_destroyed'` / `'bastion_fallen'`.
+   * @param {number} [summary.islandNumber] - Numéro de l'île atteinte.
+   * @param {number} [summary.playerLevel] - Niveau atteint par le Gardien.
+   * @param {string} [summary.combatMode] - Mode de combat actif.
+   * @param {string} [summary.equippedWeaponId] - Identifiant de l'arme élémentaire équipée.
+   * @param {number} [summary.spellsCount] - Nombre de Sorts 3D débloqués.
+   * @param {number} [summary.masteryRanks] - Nombre total de rangs de maîtrise adaptative.
+   * @param {number} [summary.totalKilled] - Nombre total de monstres éliminés.
+   * @param {number} [summary.mutantsKilled] - Nombre de mutants éliminés.
+   * @param {number} [summary.relicCount] - Fragments de Relique d'Éden collectés (`0..3`).
+   * @param {number} [summary.generation] - Génération darwinienne maximale atteinte.
+   */
+  showGameOverModal(summary = {}) {
+    if (!this.gameOverBackdrop) return;
+
+    const p = summary.player || this.lastPlayerRef || {};
+    const b = summary.bastionAndNpcs || this.lastBastionRef || {};
+    const em = summary.enemyManager || this.lastEnemyManagerRef || {};
+    const eco = summary.ecoSim || this.lastEcoSimRef || {};
+
+    const isBastionFallen =
+      summary.reason === 'bastion_destroyed' || summary.reason === 'bastion_fallen';
+
+    const killerName =
+      summary.killerName ||
+      p.lastKillerName ||
+      p.lastDamageSource ||
+      (isBastionFallen
+        ? 'Destruction du Cœur du Sanctuaire'
+        : 'Prédateur Mutant de l’Archipel');
+
+    if (this.gameOverSubtitleEl) {
+      if (isBastionFallen) {
+        this.gameOverSubtitleEl.textContent = `⚔️ Le Cœur du Sanctuaire a été détruit (${killerName}) — L’expédition s’achève ici`;
+      } else {
+        this.gameOverSubtitleEl.textContent = `⚔️ Tombé au combat sous les coups de : ${killerName}`;
+      }
+    }
+
+    const islandNum =
+      summary.islandNumber ||
+      em.islandNumber ||
+      eco.islandNumber ||
+      b.islandNumber ||
+      1;
+    const islandSpec = getIslandTierSpec(islandNum);
+
+    const playerLevel = summary.playerLevel || p.level || 1;
+    const modeId = summary.combatMode || p.combatMode || this.combatMode || 'vampire_survivors';
+    const modeLabel =
+      modeId === 'diablo_action' ? 'Mode Diablo [1-4]' : 'Mode Vampire Survivors (Auto)';
+
+    const weaponId = summary.equippedWeaponId || p.equippedWeaponId || 'runic_steel';
+    const weaponSpec = getElementalWeaponSpec(weaponId);
+
+    const ownedMap =
+      typeof p.getOwnedAbilitiesMap === 'function'
+        ? p.getOwnedAbilitiesMap()
+        : p.abilityLevels || {};
+    const spellsCount =
+      summary.spellsCount ??
+      Object.values(ownedMap).filter((lvl) => Number(lvl) > 0).length;
+    const msRef = p.masterySystem || p.mastery || p.adaptiveMastery || null;
+    const masterySummary =
+      msRef && typeof msRef.getSummaryForHUD === 'function'
+        ? msRef.getSummaryForHUD()
+        : null;
+    const masteryRanks =
+      summary.masteryRanks ?? (masterySummary?.totalAdaptationsCount || 0);
+
+    const totalKilled =
+      summary.totalKilled ??
+      p.enemiesKilledCount ??
+      p.kills ??
+      em.totalKilled ??
+      0;
+    const mutantsKilled =
+      summary.mutantsKilled ??
+      p.mutantsKilledCount ??
+      p.mutantsSlain ??
+      em.mutantsKilled ??
+      0;
+
+    const relicCount =
+      summary.relicCount ??
+      (typeof b.getCollectedRelicCount === 'function'
+        ? b.getCollectedRelicCount()
+        : b.collectedRelicFragments || 0);
+    const maxRelics = RELIC_FRAGMENTS_SPEC?.totalRequired || 3;
+    const generation =
+      summary.generation ?? eco.generation ?? Math.max(1, (eco.tickCount || 0) + 1);
+
+    if (this.gameOverStatsGrid) {
+      this.gameOverStatsGrid.replaceChildren();
+      const cards = [
+        {
+          label: '🏝️ Île Atteinte',
+          value: `Île #${islandNum}`,
+          sub: `${islandSpec.name} (${islandSpec.subtitle})`,
+        },
+        {
+          label: '⭐ Niveau du Gardien',
+          value: `Niveau ${playerLevel}`,
+          sub: modeLabel,
+        },
+        {
+          label: '⚔️ Arme Élémentaire',
+          value: `${weaponSpec.icon} ${weaponSpec.shortName}`,
+          sub: weaponSpec.badgeText || 'Acier Runique',
+        },
+        {
+          label: '✨ Sorts & Maîtrises',
+          value: `${spellsCount} Sort${spellsCount > 1 ? 's' : ''} 3D`,
+          sub: `${masteryRanks} Rang${masteryRanks > 1 ? 's' : ''} de Maîtrise Adaptative`,
+        },
+        {
+          label: '💀 Monstres Éliminés',
+          value: `${totalKilled} Vaincu${totalKilled > 1 ? 's' : ''}`,
+          sub: `dont ${mutantsKilled} Mutant${mutantsKilled > 1 ? 's' : ''} / Patient Zéro`,
+        },
+        {
+          label: '🧩 Reliques & Génétique',
+          value: `${relicCount} / ${maxRelics} Reliques`,
+          sub: `Génération Darwinienne #${generation}`,
+        },
+      ];
+
+      for (const c of cards) {
+        const cardEl = el('div', 'gameover-stat-card');
+        cardEl.append(
+          el('span', 'gameover-stat-label', c.label),
+          el('span', 'gameover-stat-value', c.value),
+          el('span', 'gameover-stat-sub', c.sub)
+        );
+        this.gameOverStatsGrid.appendChild(cardEl);
+      }
+    }
+
+    this.isGameOverModalOpen = true;
+    this.gameOverBackdrop.classList.add('is-open');
+  }
+
+  /**
+   * Ferme la modale Game Over Roguelike et reprend la simulation (`isGameOverModalOpen = false`).
+   */
+  hideGameOverModal() {
+    this.isGameOverModalOpen = false;
+    if (this.gameOverBackdrop) {
+      this.gameOverBackdrop.classList.remove('is-open');
     }
   }
 
@@ -4069,6 +4389,12 @@ export class HUDManager {
     if (bastionAndNpcs) {
       this.lastBastionRef = bastionAndNpcs;
     }
+    if (enemyManager) {
+      this.lastEnemyManagerRef = enemyManager;
+    }
+    if (ecoSim) {
+      this.lastEcoSimRef = ecoSim;
+    }
     if (questSystem) {
       this.lastQuestSystemRef = questSystem;
     }
@@ -4083,8 +4409,15 @@ export class HUDManager {
             tel.shortStatusFR || `🎵 Lyria : ${tel.modeLabelFR || 'Sanctuaire'}`;
         }
         if (this.lyriaStatusPill) {
-          this.lyriaStatusPill.classList.remove('state-tutorial', 'state-combat', 'state-boss');
-          if (tel.activeStemId === 'boss') {
+          this.lyriaStatusPill.classList.remove(
+            'state-tutorial',
+            'state-combat',
+            'state-boss',
+            'state-gameover'
+          );
+          if (tel.activeStemId === 'gameover' || tel.mode === 'gameover') {
+            this.lyriaStatusPill.classList.add('state-gameover');
+          } else if (tel.activeStemId === 'boss') {
             this.lyriaStatusPill.classList.add('state-boss');
           } else if (tel.activeStemId === 'combat') {
             this.lyriaStatusPill.classList.add('state-combat');
@@ -4204,6 +4537,8 @@ export class HUDManager {
         if (!this.isLevelUpOpen) {
           this.showLevelUpModal(null, null, { player });
         }
+      } else if (lvl < this.lastKnownPlayerLevel) {
+        this.lastKnownPlayerLevel = lvl;
       }
 
       const res = player.resources || {};
