@@ -27,6 +27,10 @@ export const CONFIG = {
    */
   ECO: {
     TICK_INTERVAL: 12,
+    MATURATION_TIME: 20,
+    BABY_SCALE: 0.5,
+    BABY_STAT_MULT: 0.55,
+    BABY_METABOLISM_MULT: 0.5,
     MIN_DENSITY: 2,
     MAX_DENSITY: 6,
     OPTIMAL_MAX: 5,
@@ -482,8 +486,8 @@ export const CONFIG = {
     VISION_RADIUS: 34,
     FLEE_RADIUS: 16,
     HP: 60,
-    PATROL_MIN_RADIUS: 28,
-    PATROL_MAX_RADIUS: 98,
+    PATROL_MIN_RADIUS: 45,
+    PATROL_MAX_RADIUS: 105,
   },
 
   /**
