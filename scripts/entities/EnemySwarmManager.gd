@@ -1034,6 +1034,8 @@ func _sample_ground_y(x: float, z: float, is_aquatic: bool) -> float:
 
 
 func _instantiate_blender_species_mesh(species_id: String, spec: Dictionary) -> Node3D:
+	if DisplayServer.get_name() == "headless":
+		return null
 	var model_path := String(spec.get("model_file", "res://assets/models/goblin.glb"))
 	if not _packed_cache.has(model_path):
 		if ResourceLoader.exists(model_path):

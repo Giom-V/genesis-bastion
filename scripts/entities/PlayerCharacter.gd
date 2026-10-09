@@ -329,6 +329,8 @@ func _build_visual_hierarchy() -> void:
 
 
 func _load_blender_hero_mesh() -> Node3D:
+	if DisplayServer.get_name() == "headless":
+		return null
 	var candidate_paths: Array[String] = [
 		"res://assets/models/hero_guardian.glb",
 		"res://assets/models/player_warden.glb",
