@@ -84,7 +84,7 @@ export const ROGUELIKE_ABILITIES = [
     baseCount: 2,
     description:
       'Invoque 2 à 5 lames spectrales qui tournent en orbite 3D permanente autour du Héros et tranchent tout ennemi au contact.',
-    levelScalingDesc: '+1 lame orbitale et +25% dégâts par niveau.',
+    levelScalingDesc: '+1 lame orbitale, +8% dégâts et +4% portée par niveau.',
     affinityMutation: 'winged_leap',
     affinitySpecies: 'goblin',
   },
@@ -107,7 +107,7 @@ export const ROGUELIKE_ABILITIES = [
     burnDuration: 3.0,
     description:
       'Libère une onde de choc circulaire de magma autour du Héros, calcinant les meutes proches et leur infligeant une brûlure continue.',
-    levelScalingDesc: '+30% dégâts de feu, +1.2m de rayon et -0.4s de recharge par niveau.',
+    levelScalingDesc: '+8% dégâts de feu, +4% de rayon et -4% de recharge par niveau.',
     affinityMutation: 'pyro_gland',
     affinitySpecies: 'troll',
   },
@@ -128,7 +128,7 @@ export const ROGUELIKE_ABILITIES = [
     baseCount: 3,
     description:
       'Frappe l’ennemi le plus proche d’un éclair 3D haute tension qui rebondit instantanément de monstre en monstre (3 à 7 cibles).',
-    levelScalingDesc: '+1 rebond de foudre et +22% dégâts par niveau.',
+    levelScalingDesc: '+1 rebond de foudre, +8% dégâts et -4% de recharge par niveau.',
     affinityMutation: 'winged_leap',
     affinitySpecies: 'vulture',
   },
@@ -151,7 +151,7 @@ export const ROGUELIKE_ABILITIES = [
     slowDuration: 3.5,
     description:
       'Projette une lance de glace perforante à longue portée qui ralentit les ennemis touchés de 50% — idéal pour stopper un Patient Zéro en fuite !',
-    levelScalingDesc: '+1 javelot aux niveaux 3 & 5, +25% dégâts et ralentissement prolongé.',
+    levelScalingDesc: '+1 javelot aux niveaux 3 & 5, +8% dégâts et +4% portée par niveau.',
     affinityMutation: 'cryo_blood',
     affinitySpecies: 'wolf',
   },
@@ -174,7 +174,7 @@ export const ROGUELIKE_ABILITIES = [
     poisonDuration: 4.0,
     description:
       'Tire un éventail de 5 dagues neurotoxiques qui empoisonnent les ennemis sur la durée et réduisent leur régénération.',
-    levelScalingDesc: '+2 dagues par niveau et +30% dégâts de poison.',
+    levelScalingDesc: '+1 dague par niveau et +8% dégâts de poison.',
     affinityMutation: 'venom_sacs',
     affinitySpecies: 'orc',
   },
@@ -196,7 +196,7 @@ export const ROGUELIKE_ABILITIES = [
     aoeRadius: 5.5,
     description:
       'Cible prioritairement la créature au plus haut Fitness Score (ou Patient Zéro) à portée et abat un météore explosif dévastateur.',
-    levelScalingDesc: '+35% dégâts d’impact, +1m de rayon d’explosion et -0.6s de recharge par niveau.',
+    levelScalingDesc: '+8% dégâts d’impact, +4% de rayon d’explosion et -4% de recharge par niveau.',
     affinityMutation: 'titan_growth',
     affinitySpecies: 'dragon',
   },
@@ -218,7 +218,7 @@ export const ROGUELIKE_ABILITIES = [
     lifestealRatio: 0.45,
     description:
       'Relie le Héros aux ennemis proches par un faisceau cramoisi qui draine leur vitalité et restaure immédiatement vos PV.',
-    levelScalingDesc: '+1 cible drainée et +25% de soin vampirique par niveau.',
+    levelScalingDesc: '+1 cible drainée, +8% dégâts et +2% de soin vampirique par niveau.',
     affinityMutation: 'vampiric_maw',
     affinitySpecies: 'lion',
   },
@@ -241,7 +241,7 @@ export const ROGUELIKE_ABILITIES = [
     stunDuration: 1.4,
     description:
       'Fracasse le sol pour créer une onde tellurique qui repousse violemment (Knockback) et étourdit toutes les créatures alentour.',
-    levelScalingDesc: '+28% dégâts, +20% distance de recul et +0.3s d’étourdissement par niveau.',
+    levelScalingDesc: '+8% dégâts, +4% rayon et +0.12s d’étourdissement par niveau.',
     affinityMutation: 'osteo_plating',
     affinitySpecies: 'troll',
   },
@@ -259,6 +259,7 @@ export const ROGUELIKE_ABILITIES_BY_ID = Object.freeze(
 
 /**
  * Calcule les caractéristiques exactes d'une compétence active/auto-cast à un niveau donné (`1..5`).
+ * Progression équilibrée Phase 11 : `+8%` dégâts par niveau, `+4%` portée par niveau, `-4%` temps de recharge par niveau.
  *
  * @param {string} abilityId - Identifiant de la compétence (ex. `'spinning_blades'`, `'pyro_nova'`).
  * @param {number} [level=1] - Niveau actuel de la compétence (`1` à `5`).
@@ -282,15 +283,16 @@ export function getAbilityStatsAtLevel(abilityId, level = 1) {
   const lvl = clamp(Math.floor(level || 1), 1, def.maxLevel || 5);
   const steps = lvl - 1;
 
-  const damage = Math.round(def.baseDamage * (1 + steps * 0.28));
-  const cooldown = Number(Math.max(1.2, def.baseCooldown * Math.pow(0.9, steps)).toFixed(2));
-  const range = Number((def.baseRange * (1 + steps * 0.12)).toFixed(2));
+  const damage = Math.round(def.baseDamage * (1 + steps * 0.08));
+  const minCooldown = Math.max(1.2, def.baseCooldown * 0.65);
+  const cooldown = Number(Math.max(minCooldown, def.baseCooldown * Math.pow(0.96, steps)).toFixed(2));
+  const range = Number((def.baseRange * (1 + steps * 0.04)).toFixed(2));
 
   let count = def.baseCount || 1;
   if (def.id === 'spinning_blades' || def.id === 'chain_lightning' || def.id === 'soul_siphon') {
     count = def.baseCount + steps;
   } else if (def.id === 'venom_volley') {
-    count = def.baseCount + steps * 2;
+    count = def.baseCount + steps;
   } else if (def.id === 'frost_spear') {
     count = lvl >= 5 ? 3 : lvl >= 3 ? 2 : 1;
   }
@@ -309,37 +311,96 @@ export function getAbilityStatsAtLevel(abilityId, level = 1) {
     colorHex: def.colorHex,
     colorCss: def.colorCss,
     extra: {
-      burnDps: def.burnDps ? Math.round(def.burnDps * (1 + steps * 0.25)) : 0,
+      burnDps: def.burnDps ? Math.round(def.burnDps * (1 + steps * 0.08)) : 0,
       burnDuration: def.burnDuration || 0,
-      poisonDps: def.poisonDps ? Math.round(def.poisonDps * (1 + steps * 0.28)) : 0,
+      poisonDps: def.poisonDps ? Math.round(def.poisonDps * (1 + steps * 0.08)) : 0,
       poisonDuration: def.poisonDuration || 0,
       slowFactor: def.slowFactor || 0,
-      slowDuration: def.slowDuration ? +(def.slowDuration + steps * 0.35).toFixed(1) : 0,
-      aoeRadius: def.aoeRadius ? +(def.aoeRadius + steps * 0.6).toFixed(1) : range,
-      lifestealRatio: def.lifestealRatio ? +(def.lifestealRatio + steps * 0.05).toFixed(2) : 0,
-      knockbackDist: def.knockbackDist ? +(def.knockbackDist + steps * 0.8).toFixed(1) : 0,
-      stunDuration: def.stunDuration ? +(def.stunDuration + steps * 0.25).toFixed(2) : 0,
+      slowDuration: def.slowDuration ? +(def.slowDuration + steps * 0.15).toFixed(1) : 0,
+      aoeRadius: def.aoeRadius ? +(def.aoeRadius * (1 + steps * 0.04)).toFixed(2) : range,
+      lifestealRatio: def.lifestealRatio ? +(def.lifestealRatio + steps * 0.02).toFixed(2) : 0,
+      knockbackDist: def.knockbackDist ? +(def.knockbackDist + steps * 0.25).toFixed(2) : 0,
+      stunDuration: def.stunDuration ? +(def.stunDuration + steps * 0.12).toFixed(2) : 0,
     },
   };
 }
 
 /**
+ * Calcule le bonus de dégâts (`%`) contre une espèce selon le nombre d'individus tués :
+ * - Kills 1..5 : `+1.0%` par monstre (`1%` à `5%`)
+ * - Kills 6..15 : `+0.5%` par monstre (`5.5%` à `10%`)
+ * - Kills 16+ : `+0.25%` par monstre, plafonné à `+15.0%` max (atteint à 35 kills).
+ *
+ * @param {number} [kills=0] - Nombre de monstres tués de cette espèce.
+ * @returns {number} Bonus en pourcentage (`0` à `15.0`), arrondi à 1 décimale.
+ */
+export function computeSpeciesSlayerBonusPct(kills = 0) {
+  const k = Math.max(0, Math.floor(Number(kills) || 0));
+  if (k <= 0) return 0;
+  const tier1 = Math.min(k, 5) * 1.0;
+  const tier2 = Math.max(0, Math.min(k - 5, 10)) * 0.5;
+  const tier3 = Math.max(0, k - 15) * 0.25;
+  const val = Math.min(15.0, tier1 + tier2 + tier3);
+  return Math.round(val * 10) / 10;
+}
+
+/**
+ * Calcule le bonus de dégâts (`%`) contre une mutation selon le nombre de porteurs tués :
+ * - Kills 1..5 : `+1.0%` par mutant (`1%` à `5%`)
+ * - Kills 6..15 : `+0.5%` par mutant (`5.5%` à `10%`)
+ * - Kills 16+ : `+0.25%` par mutant, plafonné à `+15.0%` max.
+ *
+ * @param {number} [kills=0] - Nombre de mutants tués portant ce gène.
+ * @returns {number} Bonus en pourcentage (`0` à `15.0`), arrondi à 1 décimale.
+ */
+export function computeMutationSlayerBonusPct(kills = 0) {
+  return computeSpeciesSlayerBonusPct(kills);
+}
+
+/**
+ * Calcule le pourcentage de réduction de dégâts (`%`) acquis après `hits` coups reçus :
+ * - Élémentaire / Venin / Givre (`!isPhysical`) :
+ *   - Coups 1..6 : `+0.5%` par coup (`3.0%` à 6 coups)
+ *   - Coups 7..22 : `+0.25%` par coup (`7.0%` à 22 coups)
+ *   - Coups 23+ : `+0.15%` par coup, plafonné à `10.0%` max.
+ * - Physique (`isPhysical === true`) :
+ *   - Coups 1..5 : `+0.4%` par coup (`2.0%` à 5 coups)
+ *   - Coups 6+ : `+0.2%` par coup, plafonné à `6.0%` max.
+ *
+ * @param {number} [hits=0] - Nombre de coups encaissés dans cette catégorie.
+ * @param {boolean} [isPhysical=false] - Si vrai, applique la courbe physique plafonnée à `6%`.
+ * @returns {number} Pourcentage de réduction (`0` à `10.0` ou `6.0`), arrondi à 1 décimale.
+ */
+export function computeResistanceBonusPct(hits = 0, isPhysical = false) {
+  const h = Math.max(0, Math.floor(Number(hits) || 0));
+  if (h <= 0) return 0;
+  if (isPhysical) {
+    const t1 = Math.min(h, 5) * 0.4;
+    const t2 = Math.max(0, h - 5) * 0.2;
+    return Math.round(Math.min(6.0, t1 + t2) * 10) / 10;
+  }
+  const t1 = Math.min(h, 6) * 0.5;
+  const t2 = Math.max(0, Math.min(h - 6, 16)) * 0.25;
+  const t3 = Math.max(0, h - 22) * 0.15;
+  return Math.round(Math.min(10.0, t1 + t2 + t3) * 10) / 10;
+}
+
+/**
  * Classe d'Apprentissage & d'Adaptation par l'Action du Héros (`AdaptiveMasterySystem`).
  *
- * Principe : "Plus tu fais ou subis X, plus ton Héros devient fort et résistant face à X."
+ * Principe équilibré (Phase 11 — `<= 1%` par monstre avec rendement décroissant rapide) :
  * 1. **Maîtrise de Chasse par Espèce (`speciesKills`)** :
- *    - Paliers rapides (`1`, `3`, `6`, `10`, `16` éliminations) pour que le joueur ressente
- *      l'adaptation dès ses tout premiers combats (Acte 2 & Acte 3 !).
- *    - Chaque rang confère `+12%` de dégâts supplémentaires contre cette espèce (jusqu'à `+60%`).
+ *    - Kills `1..5` : **`+1.0%` par monstre** (`1%` → `5%`)
+ *    - Kills `6..15` : **`+0.5%` par monstre** (`5.5%` → `10%`)
+ *    - Kills `16+` : **`+0.25%` par monstre**, plafonné à **`+15.0%` max** (à 35 kills).
+ *    - Paliers de notification (`speciesThresholds`) : `[1, 3, 6, 10, 15]` (`+1%`, `+3%`, `+5.5%`, `+7.5%`, `+10%`).
  * 2. **Maîtrise Anti-Mutation (`mutationKills`)** :
- *    - Paliers (`1`, `2`, `4`, `7`, `12` éliminations de porteurs d'une mutation).
- *    - Chaque rang confère `+15%` de dégâts contre les porteurs de cette mutation ET augmente de
- *      `+65%` la probabilité de se voir proposer le sort élémentaire associé au prochain Level-Up !
- * 3. **Résistance Adaptative par Dégâts Subis (`damageTakenByType`)** :
- *    - Types suivis : `'fire'` (Feu/Pyro), `'venom'` (Venin/Poison), `'cryo'` (Givre), `'physical'` (Mêlée).
- *    - Dès que le joueur encaisse des coups d'un type donné, son organisme s'endurcit par paliers :
- *      - Élémentaire (`fire`, `venom`, `cryo`) : `+8%` de réduction par rang (jusqu'à `45%`).
- *      - Physique (`physical`) : `+6%` de réduction par rang (jusqu'à `30%`).
+ *    - Même courbe à rendement décroissant (`+1.0%` kills `1..5`, `+0.5%` kills `6..15`, `+0.25%` kills `16+`, plafond **`+15.0%`**).
+ *    - Augmente légèrement (`+15%`, multiplicateur `1.15`) la probabilité de se voir proposer le sort élémentaire associé au prochain Level-Up.
+ *    - Plafond global cumulé (`getTotalAdaptiveDamageMultiplier` / `getDamageMultiplierAgainst`) : **`1.30x` (`+30%` grand max)**.
+ * 3. **Résistance Adaptative par Dégâts Subis (`hitsTakenByType`)** :
+ *    - Élémentaire (`fire`, `venom`, `cryo`) : `+0.5%` par coup (1..6), `+0.25%` (7..22), `+0.15%` (23+), plafonné à **`10.0%` max**.
+ *    - Physique (`physical`) : `+0.4%` par coup (1..5), `+0.2%` (6+), plafonné à **`6.0%` max**.
  */
 export class AdaptiveMasterySystem {
   constructor() {
@@ -378,12 +439,40 @@ export class AdaptiveMasterySystem {
     /** @type {Array<object>} File d'attente des notifications de montée de rang pour le HUD */
     this.pendingNotifications = [];
 
-    /** Paliers de kills pour monter de rang contre une espèce (Rang 1 dès le 1er kill !) */
-    this.speciesThresholds = [1, 3, 6, 10, 16];
-    /** Paliers de kills pour monter de rang contre une mutation (Rang 1 dès le 1er mutant tué !) */
-    this.mutationThresholds = [1, 2, 4, 7, 12];
-    /** Paliers de coups/dégâts reçus (en équivalent coups) pour monter de rang de résistance */
+    /** Paliers de kills pour notifier les rangs d'espèce (+1%, +3%, +5.5%, +7.5%, +10%) */
+    this.speciesThresholds = [1, 3, 6, 10, 15];
+    /** Paliers de kills pour notifier les rangs de mutation (+1%, +3%, +5.5%, +7.5%, +10%) */
+    this.mutationThresholds = [1, 3, 6, 10, 15];
+    /** Paliers de coups reçus pour notifier les rangs de résistance */
     this.resistanceHitThresholds = [2, 5, 9, 15, 22];
+  }
+
+  /**
+   * Calcule le bonus de dégâts (`%`) contre une espèce selon le nombre d'individus tués.
+   * @param {number} [kills=0]
+   * @returns {number}
+   */
+  computeSpeciesSlayerBonusPct(kills = 0) {
+    return computeSpeciesSlayerBonusPct(kills);
+  }
+
+  /**
+   * Calcule le bonus de dégâts (`%`) contre une mutation selon le nombre de porteurs tués.
+   * @param {number} [kills=0]
+   * @returns {number}
+   */
+  computeMutationSlayerBonusPct(kills = 0) {
+    return computeMutationSlayerBonusPct(kills);
+  }
+
+  /**
+   * Calcule le pourcentage de réduction de dégâts (`%`) acquis après `hits` coups reçus.
+   * @param {number} [hits=0]
+   * @param {boolean} [isPhysical=false]
+   * @returns {number}
+   */
+  computeResistanceBonusPct(hits = 0, isPhysical = false) {
+    return computeResistanceBonusPct(hits, isPhysical);
   }
 
   /**
@@ -423,7 +512,8 @@ export class AdaptiveMasterySystem {
   }
 
   /**
-   * Enregistre l'élimination d'un ennemi par le joueur et met à jour les maîtrises d'espèce et de mutation.
+   * Enregistre l'élimination d'un ennemi par le joueur et met à jour les maîtrises d'espèce et de mutation
+   * selon la courbe `<= 1%` par monstre à rendement décroissant rapide.
    *
    * @param {object} enemy - Entité ennemie éliminée (`{ speciesId, genome: { speciesId, speciesName, mutations } }`).
    * @returns {{
@@ -441,7 +531,6 @@ export class AdaptiveMasterySystem {
     }
 
     const rawSpeciesId = this._resolveSpeciesId(enemy);
-    // Si c'est un hybride (ex. 'goblin_orc'), fait progresser la maîtrise des deux espèces parentes !
     const targetSpeciesList =
       rawSpeciesId.includes('_') && Array.isArray(enemy.genome?.hybridParents) && enemy.genome.hybridParents.length > 0
         ? enemy.genome.hybridParents
@@ -461,10 +550,11 @@ export class AdaptiveMasterySystem {
         newRank++;
       }
 
+      const bonusPct = this.computeSpeciesSlayerBonusPct(nextKills);
+
       if (newRank > prevRank) {
         this.speciesRanks[spId] = newRank;
         const spName = CONFIG.SPECIES?.[spId]?.name || enemy.genome?.speciesName || spId;
-        const bonusPct = newRank * 12;
         const notif = {
           id: `mastery_sp_${spId}_r${newRank}_${Date.now()}`,
           type: 'species_slayer',
@@ -472,7 +562,7 @@ export class AdaptiveMasterySystem {
           rank: newRank,
           bonusPct,
           title: `⚔️ Maîtrise : Fléau des ${spName}s (Rang ${newRank})`,
-          subtitle: `+${bonusPct}% Dégâts contre l’espèce ${spName} (${nextKills} éliminés)`,
+          subtitle: `+${bonusPct}% Dégâts contre l’espèce ${spName} (${nextKills} éliminés, rendement décroissant)`,
           badgeText: `vs ${spName} +${bonusPct}%`,
           colorCss: '#e6a145',
           colorHex: 0xe6a145,
@@ -487,7 +577,11 @@ export class AdaptiveMasterySystem {
     }
 
     // Maîtrise Anti-Mutation si l'ennemi portait une ou plusieurs mutations
-    const mutations = Array.isArray(enemy.genome?.mutations) ? enemy.genome.mutations : [];
+    const mutations = Array.isArray(enemy.genome?.mutations)
+      ? enemy.genome.mutations
+      : Array.isArray(enemy.mutations)
+        ? enemy.mutations
+        : [];
     for (const mutId of mutations) {
       const prevMutKills = this.mutationKills[mutId] || 0;
       const nextMutKills = prevMutKills + 1;
@@ -502,11 +596,12 @@ export class AdaptiveMasterySystem {
         newMutRank++;
       }
 
+      const bonusPct = this.computeMutationSlayerBonusPct(nextMutKills);
+
       if (newMutRank > prevMutRank) {
         this.mutationRanks[mutId] = newMutRank;
         const mutDef = CONFIG.MUTATIONS?.[mutId];
         const mutLabel = mutDef?.shortLabel || mutDef?.name || mutId;
-        const bonusPct = newMutRank * 15;
         const notif = {
           id: `mastery_mut_${mutId}_r${newMutRank}_${Date.now()}`,
           type: 'mutation_slayer',
@@ -514,7 +609,7 @@ export class AdaptiveMasterySystem {
           rank: newMutRank,
           bonusPct,
           title: `🧬 Adaptation Génétique : Chasseur [${mutLabel}] (Rang ${newMutRank})`,
-          subtitle: `+${bonusPct}% Dégâts contre les mutants [${mutLabel}] & affinité de sort accrue !`,
+          subtitle: `+${bonusPct}% Dégâts contre les mutants [${mutLabel}] & affinité de sort (+15%) !`,
           badgeText: `vs ${mutLabel} +${bonusPct}%`,
           colorCss: mutDef?.colorCss || '#ff4757',
           colorHex: mutDef?.colorHex || 0xff4757,
@@ -529,9 +624,18 @@ export class AdaptiveMasterySystem {
       speciesId: rawSpeciesId,
       speciesKills: primaryKills,
       speciesRank: primaryRank,
-      speciesBonusPct: primaryRank * 12,
+      speciesBonusPct: this.computeSpeciesSlayerBonusPct(primaryKills),
       newlyUnlockedRanks,
     };
+  }
+
+  /**
+   * Alias de `recordKill(enemy)` pour compatibilité avec les scripts de simulation et le moteur.
+   * @param {object} enemy
+   * @returns {object}
+   */
+  recordCreatureKill(enemy) {
+    return this.recordKill(enemy);
   }
 
   /**
@@ -606,7 +710,7 @@ export class AdaptiveMasterySystem {
     const newlyUnlockedRanks = [];
     if (newRank > prevRank) {
       this.resistanceRanks[category] = newRank;
-      const meta = this._getResistanceDisplayMeta(category, newRank);
+      const meta = this._getResistanceDisplayMeta(category, newRank, hits);
       const notif = {
         id: `mastery_res_${category}_r${newRank}_${Date.now()}`,
         type: 'resistance',
@@ -628,8 +732,8 @@ export class AdaptiveMasterySystem {
     return {
       damageCategory: category,
       resistanceRank: this.resistanceRanks[category] || 0,
-      resistancePct: Math.round(reduction * 100),
-      damageMultiplier: Number((1 - reduction).toFixed(3)),
+      resistancePct: Number((reduction * 100).toFixed(1)),
+      damageMultiplier: Number((1 - reduction).toFixed(4)),
       newlyUnlockedRanks,
     };
   }
@@ -638,14 +742,18 @@ export class AdaptiveMasterySystem {
    * Métadonnées d'affichage pour chaque catégorie de résistance adaptative.
    * @param {'fire'|'venom'|'cryo'|'physical'} category
    * @param {number} rank
+   * @param {number} [hitsOverride]
    */
-  _getResistanceDisplayMeta(category, rank) {
+  _getResistanceDisplayMeta(category, rank, hitsOverride) {
+    const hits = hitsOverride ?? (this.hitsTakenByType[category] || 0);
+    const isPhys = category === 'physical';
+    const pct = this.computeResistanceBonusPct(hits, isPhys);
     const map = {
       fire: {
         label: 'Ignifugation Sang-de-Dragon',
         shortName: 'Feu',
         icon: '🔥',
-        pct: Math.min(45, rank * 9),
+        pct,
         colorCss: '#ff5252',
         colorHex: 0xff5252,
       },
@@ -653,7 +761,7 @@ export class AdaptiveMasterySystem {
         label: 'Immunité Antitoxine',
         shortName: 'Venin',
         icon: '🧪',
-        pct: Math.min(45, rank * 9),
+        pct,
         colorCss: '#39ff14',
         colorHex: 0x39ff14,
       },
@@ -661,7 +769,7 @@ export class AdaptiveMasterySystem {
         label: 'Sang Calorigène',
         shortName: 'Givre',
         icon: '❄️',
-        pct: Math.min(45, rank * 9),
+        pct,
         colorCss: '#00e5ff',
         colorHex: 0x00e5ff,
       },
@@ -669,7 +777,7 @@ export class AdaptiveMasterySystem {
         label: 'Endurcissement Ostéo-Dermique',
         shortName: 'Physique',
         icon: '🛡️',
-        pct: Math.min(30, rank * 6),
+        pct,
         colorCss: '#f0ead6',
         colorHex: 0xf0ead6,
       },
@@ -678,52 +786,137 @@ export class AdaptiveMasterySystem {
   }
 
   /**
-   * Calcule le multiplicateur total de dégâts infligés par le Héros contre une cible donnée,
-   * en cumulant la Maîtrise d'Espèce (`+12%/rang`) et la Maîtrise Anti-Mutation (`+15%/rang`).
+   * Calcule le multiplicateur de dégâts d'espèce directement à partir du compteur de kills (`1 + bonusPct / 100`).
    *
-   * @param {object} enemy - Ennemi ciblé.
-   * @returns {number} Multiplicateur de dégâts (`>= 1.0`).
+   * @param {string} speciesId - Identifiant de l'espèce.
+   * @returns {number} Multiplicateur dans `[1.0, 1.15]`.
    */
-  getDamageMultiplierAgainst(enemy) {
-    if (!enemy) return 1.0;
-    let bonus = 0;
-
-    const spId = this._resolveSpeciesId(enemy);
-    if (this.speciesRanks[spId]) {
-      bonus += this.speciesRanks[spId] * 0.12;
-    } else if (Array.isArray(enemy.genome?.hybridParents)) {
-      for (const pId of enemy.genome.hybridParents) {
-        if (this.speciesRanks[pId]) {
-          bonus += this.speciesRanks[pId] * 0.08;
-        }
-      }
+  getSpeciesDamageMultiplier(speciesId) {
+    if (!speciesId) return 1.0;
+    const kills = this.speciesKills[speciesId] || 0;
+    if (kills > 0) {
+      return Number((1 + this.computeSpeciesSlayerBonusPct(kills) / 100).toFixed(4));
     }
-
-    const mutations = Array.isArray(enemy.genome?.mutations) ? enemy.genome.mutations : [];
-    for (const mutId of mutations) {
-      if (this.mutationRanks[mutId]) {
-        bonus += this.mutationRanks[mutId] * 0.15;
+    if (typeof speciesId === 'string' && speciesId.includes('_')) {
+      const parts = speciesId.split('_');
+      let sumPct = 0;
+      for (const pId of parts) {
+        sumPct += this.computeSpeciesSlayerBonusPct(this.speciesKills[pId] || 0) * 0.65;
       }
+      return Number(clamp(1 + sumPct / 100, 1.0, 1.15).toFixed(4));
     }
-
-    return Number(clamp(1.0 + bonus, 1.0, 2.6).toFixed(3));
+    return 1.0;
   }
 
   /**
-   * Calcule la réduction de dégâts adaptative (`0.0` à `0.45`) acquise contre un type d'attaque.
+   * Calcule le multiplicateur de dégâts contre une liste de mutations (`1 + sum(bonusPct) / 100`).
+   *
+   * @param {Array<string>} [mutationIds=[]] - Identifiants des mutations portées par la cible.
+   * @returns {number} Multiplicateur dans `[1.0, 1.20]`.
+   */
+  getMutationDamageMultiplier(mutationIds = []) {
+    if (!Array.isArray(mutationIds) || mutationIds.length === 0) return 1.0;
+    let totalPct = 0;
+    for (const mutId of mutationIds) {
+      const kills = this.mutationKills[mutId] || 0;
+      totalPct += this.computeMutationSlayerBonusPct(kills);
+    }
+    return Number(clamp(1 + totalPct / 100, 1.0, 1.2).toFixed(4));
+  }
+
+  /**
+   * Calcule le multiplicateur total de dégâts infligés par le Héros contre une cible donnée,
+   * en cumulant la Maîtrise d'Espèce (`<= +15%`) et la Maîtrise Anti-Mutation (`<= +15%`),
+   * plafonné à `1.30` (`+30%` grand maximum).
+   *
+   * @param {object} enemy - Ennemi ciblé.
+   * @returns {number} Multiplicateur de dégâts (`1.0` à `1.30`).
+   */
+  getDamageMultiplierAgainst(enemy) {
+    if (!enemy) return 1.0;
+    const spId = this._resolveSpeciesId(enemy);
+    let spBonusPct = this.computeSpeciesSlayerBonusPct(this.speciesKills[spId] || 0);
+
+    if (spBonusPct === 0 && Array.isArray(enemy.genome?.hybridParents)) {
+      for (const pId of enemy.genome.hybridParents) {
+        spBonusPct += this.computeSpeciesSlayerBonusPct(this.speciesKills[pId] || 0) * 0.65;
+      }
+      spBonusPct = Math.min(15.0, spBonusPct);
+    }
+
+    const mutations = Array.isArray(enemy.genome?.mutations) ? enemy.genome.mutations : [];
+    let mutBonusPct = 0;
+    for (const mutId of mutations) {
+      mutBonusPct += this.computeMutationSlayerBonusPct(this.mutationKills[mutId] || 0);
+    }
+
+    const totalBonusFraction = (spBonusPct + mutBonusPct) / 100;
+    return Number(clamp(1.0 + totalBonusFraction, 1.0, 1.30).toFixed(4));
+  }
+
+  /**
+   * Alias de `getDamageMultiplierAgainst(creature)` conformément à la spécification Phase 11.
+   *
+   * @param {object} creature - Créature ciblée.
+   * @returns {number} Multiplicateur de dégâts (`1.0` à `1.30`).
+   */
+  getTotalAdaptiveDamageMultiplier(creature) {
+    return this.getDamageMultiplierAgainst(creature);
+  }
+
+  /**
+   * Calcule la réduction de dégâts adaptative (`0.0` à `0.10` élémentaire / `0.06` physique) acquise contre un type d'attaque.
    *
    * @param {string|boolean} damageTypeOrIsElemental
    * @param {object|null} [attackerEnemy=null]
-   * @returns {number} Fraction de réduction dans `[0, 0.45]`.
+   * @returns {number} Fraction de réduction dans `[0, 0.10]`.
    */
   getDamageReductionFor(damageTypeOrIsElemental = 'physical', attackerEnemy = null) {
     const category = this._resolveDamageCategory(damageTypeOrIsElemental, attackerEnemy);
-    const rank = this.resistanceRanks[category] || 0;
-    if (rank <= 0) return 0;
-    if (category === 'physical') {
-      return clamp(rank * 0.06, 0, 0.3);
+    const hits = this.hitsTakenByType[category] || 0;
+    if (hits <= 0) return 0;
+    const isPhys = category === 'physical';
+    const pct = this.computeResistanceBonusPct(hits, isPhys);
+    return Number(clamp(pct / 100, 0, isPhys ? 0.06 : 0.10).toFixed(4));
+  }
+
+  /**
+   * Retourne le multiplicateur de dégâts subis (`1 - reduction`) pour un type de dégât donné.
+   *
+   * @param {string|boolean} damageTypeOrIsElemental
+   * @param {object|null} [attackerEnemy=null]
+   * @returns {number} Multiplicateur dans `[0.90, 1.0]`.
+   */
+  getDamageTakenMultiplier(damageTypeOrIsElemental = 'physical', attackerEnemy = null) {
+    return Number((1 - this.getDamageReductionFor(damageTypeOrIsElemental, attackerEnemy)).toFixed(4));
+  }
+
+  /**
+   * Calcule le multiplicateur de pondération d'offre de sort au Level-Up (`+15%` max si affinité de mutation).
+   *
+   * @param {object} ability - Définition du sort dans `ROGUELIKE_ABILITIES`.
+   * @returns {number} Multiplicateur de poids (`1.0` à `1.265`).
+   */
+  getSpellOfferWeightMultiplier(ability) {
+    if (!ability) return 1.0;
+    let mult = 1.0;
+    if (ability.affinityMutation && (this.mutationKills?.[ability.affinityMutation] || 0) > 0) {
+      mult *= 1.15;
     }
-    return clamp(rank * 0.09, 0, 0.45);
+    if (ability.affinitySpecies && (this.speciesKills?.[ability.affinitySpecies] || 0) > 0) {
+      mult *= 1.10;
+    }
+    return Number(mult.toFixed(3));
+  }
+
+  /**
+   * Dépile et retourne la prochaine notification de maîtrise en attente (ou `null`).
+   *
+   * @returns {object|null}
+   */
+  getUnlockNotification() {
+    if (this.pendingNotifications.length === 0) return null;
+    return this.pendingNotifications.shift() || null;
   }
 
   /**
@@ -764,7 +957,7 @@ export class AdaptiveMasterySystem {
           kills,
           nextThreshold,
           rank,
-          bonusPct: rank * 12,
+          bonusPct: this.computeSpeciesSlayerBonusPct(kills),
         };
       })
       .sort((a, b) => b.kills - a.kills);
@@ -779,7 +972,7 @@ export class AdaptiveMasterySystem {
           name: mutDef?.shortLabel || mutDef?.name || mutId,
           kills,
           rank,
-          bonusPct: rank * 15,
+          bonusPct: this.computeMutationSlayerBonusPct(kills),
           colorCss: mutDef?.colorCss || '#ff4757',
         };
       })
@@ -790,7 +983,7 @@ export class AdaptiveMasterySystem {
       .map((cat) => {
         const rank = this.resistanceRanks[cat] || 0;
         const hits = this.hitsTakenByType[cat] || 0;
-        const meta = this._getResistanceDisplayMeta(cat, rank);
+        const meta = this._getResistanceDisplayMeta(cat, rank, hits);
         const nextThreshold =
           this.resistanceHitThresholds[Math.min(rank, this.resistanceHitThresholds.length - 1)] ||
           hits;
@@ -808,9 +1001,9 @@ export class AdaptiveMasterySystem {
       });
 
     const totalAdaptationsCount =
-      speciesMasteries.filter((s) => s.rank > 0).length +
-      mutationMasteries.filter((m) => m.rank > 0).length +
-      resistances.filter((r) => r.rank > 0).length;
+      speciesMasteries.filter((s) => s.kills > 0).length +
+      mutationMasteries.filter((m) => m.kills > 0).length +
+      resistances.filter((r) => r.hits > 0).length;
 
     return {
       speciesMasteries,
@@ -884,16 +1077,11 @@ export function drawRoguelikeLevelUpChoices(
 
     const nextLvl = currentLvl + 1;
     const statsNext = getAbilityStatsAtLevel(ability.id, nextLvl);
-    let weight = currentLvl > 0 ? 1.45 : 1.3; // Favorise légèrement les sorts actifs et l'évolution des sorts équipés
+    let weight = currentLvl > 0 ? 1.35 : 1.25;
 
-    // Synergie avec l'Apprentissage Adaptatif : si le joueur a combattu la mutation/espèce associée
-    if (mastery) {
-      if (ability.affinityMutation && (mastery.mutationKills?.[ability.affinityMutation] || 0) > 0) {
-        weight *= 1.75;
-      }
-      if (ability.affinitySpecies && (mastery.speciesKills?.[ability.affinitySpecies] || 0) > 0) {
-        weight *= 1.3;
-      }
+    // Synergie avec l'Apprentissage Adaptatif (+15% max via getSpellOfferWeightMultiplier)
+    if (mastery && typeof mastery.getSpellOfferWeightMultiplier === 'function') {
+      weight *= mastery.getSpellOfferWeightMultiplier(ability);
     }
 
     const isUpgrade = currentLvl > 0;
@@ -922,7 +1110,7 @@ export function drawRoguelikeLevelUpChoices(
       colorCss: ability.colorCss,
       description: cardDesc,
       statsAtNextLevel: statsNext,
-      weight: weight * (0.82 + randFn() * 0.36),
+      weight: weight * (0.85 + randFn() * 0.3),
     });
   }
 
@@ -930,8 +1118,8 @@ export function drawRoguelikeLevelUpChoices(
   const passiveSet = new Set(Array.isArray(chosenPassives) ? chosenPassives : []);
   for (const upg of DESIGNED_UPGRADES) {
     let weight = passiveSet.has(upg.id) ? 0.5 : 1.05;
-    if (ecoContext?.hasActivePyro && upg.id === 'pyrophage_blade') weight *= 1.65;
-    if ((ecoContext?.activeMutantCount || 0) > 0 && upg.id === 'patient_zero_tracker') weight *= 1.5;
+    if (ecoContext?.hasActivePyro && upg.id === 'pyrophage_blade') weight *= 1.15;
+    if ((ecoContext?.activeMutantCount || 0) > 0 && upg.id === 'patient_zero_tracker') weight *= 1.15;
 
     candidates.push({
       ...upg,
@@ -980,5 +1168,8 @@ export default {
   ROGUELIKE_ABILITIES_BY_ID,
   getAbilityStatsAtLevel,
   drawRoguelikeLevelUpChoices,
+  computeSpeciesSlayerBonusPct,
+  computeMutationSlayerBonusPct,
+  computeResistanceBonusPct,
   AdaptiveMasterySystem,
 };

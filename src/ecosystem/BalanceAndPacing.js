@@ -1218,13 +1218,13 @@ export const DESIGNED_UPGRADES = [
     name: 'Traqueur de Patient Zéro',
     category: 'Traque Génétique',
     description:
-      '+45% vitesse de course et +45% dégâts de fente en se dirigeant vers ou en combattant une mutation repérée par un Éclaireur.',
+      '+10% vitesse de course, +10% dégâts de fente et +12% dégâts contre les mutations repérées par un Éclaireur.',
     icon: '🎯',
     counterTarget: 'Lignées Mutantes & Patients Zéro',
     bonus: {
-      cleaveDamageMult: 1.35,
-      mutantDamageMult: 1.45,
-      towardMutantSpeedMult: 1.45,
+      cleaveDamageMult: 1.1,
+      mutantDamageMult: 1.12,
+      towardMutantSpeedMult: 1.1,
     },
   },
   {
@@ -1233,12 +1233,12 @@ export const DESIGNED_UPGRADES = [
     name: 'Fauconnerie d’Éclaireur',
     category: 'Renseignement',
     description:
-      '+40% portée de vision des Éclaireurs au-delà de la frontière et +25% vitesse d’expédition et d’esquive.',
+      '+12% portée de vision des Éclaireurs au-delà de la frontière et +10% vitesse d’expédition et d’esquive.',
     icon: '🦅',
     counterTarget: 'Détection Précoce en Deep Wilderness',
     bonus: {
-      scoutVisionMult: 1.4,
-      scoutSpeedMult: 1.25,
+      scoutVisionMult: 1.12,
+      scoutSpeedMult: 1.1,
     },
   },
   {
@@ -1247,13 +1247,13 @@ export const DESIGNED_UPGRADES = [
     name: 'Purge Juvénile & Terre Brûlée',
     category: 'Écologie Conway',
     description:
-      'Tuer un mutant ou un Bébé monstre draine 30% de la biomasse de sa cellule, retardant la reproduction de toute la meute locale.',
+      'Tuer un mutant ou un Bébé monstre draine 12% de la biomasse de sa cellule (+12% dégâts contre les Bébés, +8% dégâts de fente).',
     icon: '🧬',
     counterTarget: 'Cellules à Densité Optimale (2–5)',
     bonus: {
-      cellBiomassDrainOnKill: 0.3,
-      babyDamageMult: 1.5,
-      cleaveDamageMult: 1.2,
+      cellBiomassDrainOnKill: 0.12,
+      babyDamageMult: 1.12,
+      cleaveDamageMult: 1.08,
     },
   },
   {
@@ -1262,13 +1262,13 @@ export const DESIGNED_UPGRADES = [
     name: 'Muraille d’Épines & Balistes Runiques',
     category: 'Bastion',
     description:
-      '+180 PV au Bastion, +40% dégâts des Tours de Guet et renvoie 16 dégâts d’épines aux meutes affamées en migration.',
+      '+60 PV au Bastion, +12% dégâts des Tours de Guet et renvoie 6 dégâts d’épines aux meutes affamées en migration.',
     icon: '🏰',
     counterTarget: 'Migrations de Famine (Surpopulation > 6)',
     bonus: {
-      turretDamageMult: 1.4,
-      bastionHpBonus: 180,
-      bastionThornsAdd: 16,
+      turretDamageMult: 1.12,
+      bastionHpBonus: 60,
+      bastionThornsAdd: 6,
     },
   },
   {
@@ -1277,13 +1277,13 @@ export const DESIGNED_UPGRADES = [
     name: 'Lame Pyrophage & Égide Cryo',
     category: 'Contre-Mutation',
     description:
-      'Réduit de 40% les dégâts élémentaires (Glande Pyroclastique, Venin, Givre) et élargit l’arc de fente de +1.4m.',
+      'Réduit de 8% les dégâts élémentaires (Glande Pyroclastique, Venin, Givre), élargit l’arc de fente de +0.5m et +8% dégâts.',
     icon: '🛡️',
     counterTarget: 'Troll de Feu & Dragons Volcaniques',
     bonus: {
-      damageReduction: 0.4,
-      cleaveRangeAdd: 1.4,
-      cleaveDamageMult: 1.2,
+      damageReduction: 0.08,
+      cleaveRangeAdd: 0.5,
+      cleaveDamageMult: 1.08,
     },
   },
   {
@@ -1292,12 +1292,12 @@ export const DESIGNED_UPGRADES = [
     name: 'Bottes d’Expédition Véloce',
     category: 'Mobilité',
     description:
-      '+24% vitesse de déplacement permanente et réduction de 30% du temps de recharge d’esquive pour traverser l’île avant un Eco-Tick.',
+      '+8% vitesse de déplacement permanente et réduction de 15% du temps de recharge d’esquive pour traverser l’île avant un Eco-Tick.',
     icon: '🥾',
     counterTarget: 'Course contre le Compte à Rebours Eco-Tick',
     bonus: {
-      speedMult: 1.24,
-      dashCooldownMult: 0.7,
+      speedMult: 1.08,
+      dashCooldownMult: 0.85,
     },
   },
   {
@@ -1306,13 +1306,13 @@ export const DESIGNED_UPGRADES = [
     name: 'Sang d’Ambre Régénérant',
     category: 'Survie',
     description:
-      '+60 PV Maximum, soin immédiat de 70 PV et régénération passive de +3.0 PV/s lors des expéditions lointaines.',
+      '+15 PV Maximum, soin immédiat de 25 PV et régénération passive de +1.0 PV/s lors des expéditions lointaines.',
     icon: '❤️',
     counterTarget: 'Guerre d’Usure en Terres Sauvages',
     bonus: {
-      maxHpFlat: 60,
-      healInstant: 70,
-      regenPerSec: 3.0,
+      maxHpFlat: 15,
+      healInstant: 25,
+      regenPerSec: 1.0,
     },
   },
 ];

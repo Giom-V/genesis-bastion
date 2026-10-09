@@ -111,19 +111,19 @@ L'exécution du simulateur déterministe sans interface (`npm run dry-run`, grai
 
 ---
 
-## 5. Matrice des Contre-Adaptations Roguelike (`DESIGNED_UPGRADES`)
+## 5. Matrice des Contre-Adaptations Roguelike (`DESIGNED_UPGRADES` — Phase 11 Équilibrée `+8%` à `+12%`)
 
-À chaque montée de niveau (XP gagnée en éliminant des monstres et surtout des Patients Zéro), le système [`pickCounterAdaptationUpgrades`](file:///usr/local/google/home/giom/.gemini/jetski/scratch/genesis-bastion/src/ecosystem/BalanceAndPacing.js) analyse l'état actuel de l'écosystème (`hasActivePyro`, `activeMutantCount`, `starvingCount`) pour proposer 3 cartes de contre-adaptation ciblées :
+À chaque montée de niveau (XP gagnée en éliminant des monstres et surtout des Patients Zéro), le système [`pickCounterAdaptationUpgrades`](file:///usr/local/google/home/giom/.gemini/jetski/scratch/genesis-bastion/src/ecosystem/BalanceAndPacing.js) analyse l'état actuel de l'écosystème (`hasActivePyro`, `activeMutantCount`, `starvingCount`) pour proposer 3 cartes de contre-adaptation ciblées aux bonus mesurés (`+8%` à `+12%`) :
 
 | Amélioration Roguelike | Catégorie | Effet Mécanique Exact | Menace Écologique Contre-Carrée |
 | :--- | :--- | :--- | :--- |
-| **🎯 Traqueur de Patient Zéro** | Traque Génétique | `+45%` vitesse et `+45%` dégâts de fente en se dirigeant vers ou en combattant une mutation repérée par un Éclaireur. | **Émergence d'un Patient Zéro** dans les confins sauvages avant son passage à l'âge adulte. |
-| **🦅 Fauconnerie d'Éclaireur** | Renseignement | `+40%` portée de vision des Éclaireurs hors-frontière ($34 \rightarrow 47.6\text{u}$) et `+25%` vitesse d'expédition/fuite. | **Brouillard de guerre** dans la Caldeira Volcanique et mortalité des Éclaireurs. |
-| **🧬 Purge Juvénile & Terre Brûlée** | Écologie Conway | Tuer un mutant ou un Bébé draine **30% de la biomasse** de sa cellule et inflige `+50%` dégâts aux Bébés. | **Cellules à densité optimale (2–5)** : affame artificiellement la meute pour bloquer son prochain Eco-Tick. |
-| **🏰 Muraille d'Épines & Balistes** | Bastion | `+180 PV` au Bastion, `+40%` dégâts des Tours de Guet et renvoie `16` dégâts d'épines aux assaillants. | **Migrations de Famine** déclenchées par les cellules en surpopulation ($> 6$). |
-| **🛡️ Lame Pyrophage & Égide Cryo** | Contre-Mutation | Réduit de **40%** les dégâts élémentaires (*Feu*, *Venin*, *Givre*) et élargit l'arc d'attaque de `+1.4m`. | **Dominance de la Glande Pyroclastique** (*Trolls de Feu*) et des *Dragons*. |
-| **🥾 Bottes d'Expédition Véloce** | Mobilité | `+24%` vitesse permanente et `-30%` temps de recharge d'esquive (Dash). | **Compte à rebours Eco-Tick ($12\text{s}$)** lors des traversées d'un bout à l'autre de l'île. |
-| **❤️ Sang d'Ambre Régénérant** | Survie | `+60 PV Max`, soin immédiat de `70 PV` et régénération passive de `+3.0 PV/s`. | **Guerre d'usure** lors des expéditions prolongées loin du feu de camp du Bastion. |
+| **🎯 Traqueur de Patient Zéro** | Traque Génétique | `+10%` vitesse de course, `+10%` dégâts de fente et `+12%` dégâts contre une mutation repérée par un Éclaireur. | **Émergence d'un Patient Zéro** dans les confins sauvages avant son passage à l'âge adulte. |
+| **🦅 Fauconnerie d'Éclaireur** | Renseignement | `+12%` portée de vision des Éclaireurs hors-frontière et `+10%` vitesse d'expédition/fuite. | **Brouillard de guerre** dans la Caldeira Volcanique et mortalité des Éclaireurs. |
+| **🧬 Purge Juvénile & Terre Brûlée** | Écologie Conway | Tuer un mutant ou un Bébé draine **12% de la biomasse** de sa cellule, `+12%` dégâts vs Bébés et `+8%` fente. | **Cellules à densité optimale (2–5)** : affame artificiellement la meute pour bloquer son prochain Eco-Tick. |
+| **🏰 Muraille d'Épines & Balistes** | Bastion | `+60 PV` au Bastion, `+12%` dégâts des Tours de Guet et renvoie `6` dégâts d'épines aux assaillants. | **Migrations de Famine** déclenchées par les cellules en surpopulation ($> 6$). |
+| **🛡️ Lame Pyrophage & Égide Cryo** | Contre-Mutation | Réduit de **8%** les dégâts élémentaires (*Feu*, *Venin*, *Givre*), élargit l'arc de `+0.5m` et `+8%` fente. | **Dominance de la Glande Pyroclastique** (*Trolls de Feu*) et des *Dragons*. |
+| **🥾 Bottes d'Expédition Véloce** | Mobilité | `+8%` vitesse permanente et `-15%` temps de recharge d'esquive (Dash). | **Compte à rebours Eco-Tick ($12\text{s}$)** lors des traversées d'un bout à l'autre de l'île. |
+| **❤️ Sang d'Ambre Régénérant** | Survie | `+15 PV Max`, soin immédiat de `25 PV` et régénération passive de `+1.0 PV/s`. | **Guerre d'usure** lors des expéditions prolongées loin du feu de camp du Bastion. |
 
 ---
 
@@ -148,40 +148,39 @@ Au lancement de la partie (et à tout instant via le bouton du HUD ou la touche 
 
 ---
 
-## 7. Arsenal des 8 Sorts 3D Évolutifs (`ROGUELIKE_ABILITIES`, Niv. 1 → 5)
+## 7. Arsenal des 8 Sorts 3D Évolutifs (`ROGUELIKE_ABILITIES`, Niv. 1 → 5 — Scaling Mesuré `+8%/niv.`)
 
-Chaque montée de niveau propose 3 cartes tirées via `drawRoguelikeLevelUpChoices()`, permettant de débloquer jusqu'à 4 sorts actifs/auto-cast et de les faire évoluer jusqu'au **Niveau 5** :
+Chaque montée de niveau propose 3 cartes tirées via `drawRoguelikeLevelUpChoices()`, permettant de débloquer jusqu'à 4 sorts actifs/auto-cast et de les faire évoluer jusqu'au **Niveau 5** avec une progression équilibrée (**`+8%` dégâts par niveau**, **`+4%` portée par niveau**, **`-4%` temps de recharge par niveau**) :
 
-| Sort 3D (`id`) | Icône & Catégorie | Dégâts Base → Niv. 5 | Recharge Base → Niv. 5 | Mécanique 3D & Rôle Tactique | Affinité Génétique |
+| Sort 3D (`id`) | Icône & Catégorie | Dégâts Base → Niv. 5 (`+8%/niv.`) | Recharge Base → Niv. 5 (`-4%/niv.`) | Mécanique 3D & Rôle Tactique | Affinité Génétique |
 | :--- | :---: | :---: | :---: | :--- | :--- |
-| **Lames Orbitales** (`spinning_blades`) | 🌀 Orbite 3D Permanente | `18` → `38` / coup | Permanent (`4.5s` pulse) | **2 à 6 lames spectrales** tournent en orbite autour du Héros et tranchent tout ennemi au contact. | `goblin` / `winged_leap` |
-| **Nova Pyroclastique** (`pyro_nova`) | 🔥 Explosion de Feu | `42` → `89` (+Brûlure) | `5.2s` → `3.4s` | Onde de choc circulaire de magma (`8.5m` → `12.6m`) calcinant les meutes denses. | `troll` / `pyro_gland` |
-| **Arc Foudroyant** (`chain_lightning`) | ⚡ Foudre en Chaîne | `34` → `72` / cible | `3.8s` → `2.5s` | Éclair 3D haute tension rebondissant instantanément de **3 à 7 ennemis**. | `vulture` / `winged_leap` |
-| **Javelot Cryogénique** (`frost_spear`) | ❄️ Perforation & Gel | `38` → `81` | `3.2s` → `2.1s` | Lance de glace perforante (`1` à `3` projectiles) qui **ralentit de 50%** : idéal pour bloquer un Patient Zéro ! | `wolf` / `cryo_blood` |
-| **Salve Venimeuse** (`venom_volley`) | 🧪 Barrage Toxique | `22` → `47` (+Poison) | `3.6s` → `2.4s` | Éventail de **5 à 13 dagues neurotoxiques** infligeant un lourd poison sur la durée (DoT). | `orc` / `venom_sacs` |
-| **Météore d'Ambre** (`meteor_strike`) | ☄️ Frappe Anti-Apex | `68` → `144` (AoE) | `7.0s` → `4.6s` | Cible automatiquement l'ennemi au **plus haut `fitnessScore`** (ou Patient Zéro) et abat un météore explosif. | `dragon` / `titan_growth` |
-| **Siphon Vampirique** (`soul_siphon`) | 🩸 Drain Hématophage | `32` → `68` | `5.5s` → `3.6s` | Rayon cramoisi reliant **2 à 6 cibles** au Héros et convertissant **45% à 65%** des dégâts en soin immédiat. | `lion` / `vampiric_maw` |
-| **Onde Sismique** (`seismic_slam`) | 🔨 Onde & Stun | `36` → `76` | `5.0s` → `3.3s` | Frappe tellurique qui **repousse violemment (`5.5m+`)** et **étourdit (`1.4s` → `2.4s`)** la horde entourant le joueur. | `troll` / `osteo_plating` |
+| **Lames Orbitales** (`spinning_blades`) | 🌀 Orbite 3D Permanente | `18` → `24` / coup | Permanent (`4.5s` pulse) | **2 à 6 lames spectrales** tournent en orbite autour du Héros et tranchent tout ennemi au contact. | `goblin` / `winged_leap` |
+| **Nova Pyroclastique** (`pyro_nova`) | 🔥 Explosion de Feu | `42` → `55` (+Brûlure) | `5.2s` → `4.37s` | Onde de choc circulaire de magma (`8.5m` → `9.9m`) calcinant les meutes denses. | `troll` / `pyro_gland` |
+| **Arc Foudroyant** (`chain_lightning`) | ⚡ Foudre en Chaîne | `34` → `45` / cible | `3.8s` → `3.19s` | Éclair 3D haute tension rebondissant instantanément de **3 à 7 ennemis**. | `vulture` / `winged_leap` |
+| **Javelot Cryogénique** (`frost_spear`) | ❄️ Perforation & Gel | `38` → `50` | `3.2s` → `2.69s` | Lance de glace perforante (`1` à `3` projectiles) qui **ralentit de 50%** : idéal pour bloquer un Patient Zéro ! | `wolf` / `cryo_blood` |
+| **Salve Venimeuse** (`venom_volley`) | 🧪 Barrage Toxique | `22` → `29` (+Poison) | `3.6s` → `3.02s` | Éventail de **5 à 13 dagues neurotoxiques** infligeant un poison sur la durée (DoT). | `orc` / `venom_sacs` |
+| **Météore d'Ambre** (`meteor_strike`) | ☄️ Frappe Anti-Apex | `68` → `90` (AoE) | `7.0s` → `5.88s` | Cible automatiquement l'ennemi au **plus haut `fitnessScore`** (ou Patient Zéro) et abat un météore explosif. | `dragon` / `titan_growth` |
+| **Siphon Vampirique** (`soul_siphon`) | 🩸 Drain Hématophage | `32` → `42` | `5.5s` → `4.62s` | Rayon cramoisi reliant **2 à 6 cibles** au Héros et convertissant **45% à 65%** des dégâts en soin immédiat. | `lion` / `vampiric_maw` |
+| **Onde Sismique** (`seismic_slam`) | 🔨 Onde & Stun | `36` → `48` | `5.0s` → `4.20s` | Frappe tellurique qui **repousse violemment (`5.5m+`)** et **étourdit (`1.4s` → `2.4s`)** la horde entourant le joueur. | `troll` / `osteo_plating` |
 
 ---
 
-## 8. Apprentissage & Adaptation par l'Action (`AdaptiveMasterySystem`)
+## 8. Apprentissage & Adaptation par l'Action (`AdaptiveMasterySystem` — `≤ 1%` par Monstre & Rendements Décroissants)
 
-Pour que le Héros évolue lui aussi en symbiose avec l'écosystème darwinien, la classe [`AdaptiveMasterySystem`](file:///usr/local/google/home/giom/.gemini/jetski/scratch/genesis-bastion/src/ecosystem/RoguelikeAbilitiesAndMastery.js) implémente la loi **"Plus tu fais ou subis X, plus tu deviens fort et résistant face à X"** :
+Pour que le Héros progresse de manière granulaire sans jamais trivialiser l'écosystème, la classe [`AdaptiveMasterySystem`](file:///usr/local/google/home/giom/.gemini/jetski/scratch/genesis-bastion/src/ecosystem/RoguelikeAbilitiesAndMastery.js) applique une courbe **strictement inférieure ou égale à `+1.0%` par monstre éliminé avec rendements décroissants rapides** :
 
-1. **⚔️ Maîtrise de Chasse par Espèce (`recordKill`)** :
-   - Paliers rapides : **`1`, `3`, `6`, `10`, `16` éliminations** d'une même espèce (et les deux espèces parentes lorsqu'on tue un hybride comme un *Goblorc*).
-   - Dès le **1er kill**, le joueur débloque **Rang 1 (+12% Dégâts contre cette espèce)**, grimpant jusqu'à **+60% au Rang 5**.
-2. **🧬 Maîtrise Anti-Mutation & Affinité Élémentaire (`recordKill`)** :
-   - Paliers : **`1`, `2`, `4`, `7`, `12` mutants éliminés** d'une même souche (`pyro_gland`, `venom_sacs`, `cryo_blood`, `osteo_plating`, etc.).
-   - Confère **+15% Dégâts par rang** (jusqu'à **+75%**) contre tous les porteurs de cette mutation ET multiplie par **$\times 1.75$** la probabilité que l'arbre de Level-Up propose le sort élémentaire correspondant (ex. tuer le *Troll de Feu* favorise l'apparition de la *Nova Pyroclastique* !).
-3. **🛡️ Résistance Corporelle Adaptative (`recordDamageTaken`)** :
-   - Paliers : **`2`, `5`, `9`, `15`, `22` coups encaissés** dans chacune des 4 catégories (`fire`, `venom`, `cryo`, `physical`).
-   - Plus le Héros survit aux flammes, aux toxines, au givre ou aux coups de masse, plus son corps s'immunise :
-     - **🔥 Ignifugation Sang-de-Dragon (Feu)** : `+9%` de réduction par rang (**jusqu'à 45%**).
-     - **🧪 Immunité Antitoxine (Venin)** : `+9%` de réduction par rang (**jusqu'à 45%**).
-     - **❄️ Sang Calorigène (Givre)** : `+9%` de réduction par rang (**jusqu'à 45%**).
-     - **🛡️ Endurcissement Ostéo-Dermique (Physique)** : `+6%` de réduction par rang (**jusqu'à 30%**).
+1. **⚔️ Maîtrise de Chasse par Espèce (`computeSpeciesSlayerBonusPct(kills)`)** :
+   - **Kills `1..5`** : **`+1.0%` par kill** (`1%` à `1` kill $\rightarrow$ `5.0%` à `5` kills).
+   - **Kills `6..15`** : **`+0.5%` par kill** (`5.5%` à `6` kills $\rightarrow$ `10.0%` à `15` kills).
+   - **Kills `16+`** : **`+0.25%` par kill**, plafonné à **`+15.0%` maximum** (atteint à `35` kills).
+   - Paliers de notification d'interface : **`1`, `3`, `6`, `10`, `15` éliminations** (`+1%`, `+3%`, `+5.5%`, `+7.5%`, `+10%`).
+2. **🧬 Maîtrise Anti-Mutation & Affinité Élémentaire (`computeMutationSlayerBonusPct(kills)`)** :
+   - Même courbe à rendements décroissants (**`+1.0%` sur les kills `1..5`, `+0.5%` sur `6..15`, `+0.25%` sur `16+`**, plafonnée à **`+15.0%` max**).
+   - Le multiplicateur adaptatif total combiné (Espèce + Mutations) via `getDamageMultiplierAgainst(enemy)` est plafonné à **`1.30` (`+30%` grand maximum)**.
+   - Augmente modérément de **`+15%` (`×1.15`)** la probabilité que l'arbre de Level-Up propose le sort élémentaire correspondant.
+3. **🛡️ Résistance Corporelle Adaptative (`computeResistanceBonusPct(hits, isPhysical)`)** :
+   - **Résistance Élémentaire (`fire`, `venom`, `cryo`)** : **`+0.5%` par coup reçu** (`1..6` coups = `0.5%..3.0%`), puis **`+0.25%/coup`** (`7..22` coups = `3.25%..7.0%`), puis **`+0.15%/coup`** (`23+`), plafonné à **`10.0%` max**.
+   - **Endurcissement Physique (`physical`)** : **`+0.4%` par coup reçu** (`1..5` coups = `0.4%..2.0%`), puis **`+0.2%/coup`** (`6+`), plafonné à **`6.0%` max**.
 
 ---
 
@@ -282,15 +281,15 @@ Définis dans [`src/config.js`](file:///usr/local/google/home/giom/.gemini/jetsk
 
 Définis dans [`src/config.js`](file:///usr/local/google/home/giom/.gemini/jetski/scratch/genesis-bastion/src/config.js) (`ELEMENTAL_WEAPONS`, `RELIC_FRAGMENTS`, `ISLAND_TIERS`) et [`src/ecosystem/BaseAndQuestsDesign.js`](file:///usr/local/google/home/giom/.gemini/jetski/scratch/genesis-bastion/src/ecosystem/BaseAndQuestsDesign.js) (`ELEMENTAL_WEAPONS_CATALOG`, `RELIC_FRAGMENTS_SPEC`, `ISLAND_TIERS_CONFIG`, `getIslandTierSpec`), le système de méta-progression RPG offre un objectif de victoire clair par île tout en personnalisant profondément le style de combat du Héros :
 
-### 13.1. Les 4 Armes Élémentaires Légendaires (`ELEMENTAL_WEAPONS_CATALOG`)
+### 13.1. Les 4 Armes Élémentaires Légendaires (`ELEMENTAL_WEAPONS_CATALOG` — Phase 11 Équilibrée `+10%`–`+12%`)
 En explorant les **Autels d'Armes Élémentaires (`[E]`)** disséminés sur l'île ou en ouvrant l'**Armurerie des Artefacts (`[K]`)**, le joueur peut choisir et changer à tout moment d'arme élémentaire (recolorant dynamiquement la lame 3D et l'arc de fente du Héros) :
 
 | Arme (`id`) | Élément & Autel 3D | Effets à l'Impact & Passif | Cibles Privilégiées & Synergie Écologique |
 | :--- | :--- | :--- | :--- |
-| **🔥 Lame Solaire d'Ignis** (`fire_greatsword`) | **Feu** `(34, -28)` | **`+35%` Dégâts de Fente**, inflige **Brûlure Solaire (`14 DPS` / `4s`)** et déclenche une **détonation AoE (`36` dég., `6.5m`)** à la mort de la cible. | **`+45%` dégâts** contre les **Bêtes Sauvages (`wolf`/`lion`)** et les **Taupes Géantes (`giant_mole`)**. |
-| **❄️ Espadon Givré de Borée** (`ice_greatsword`) | **Glace** `(-36, -26)` | **`+25%` Portée de Fente**, inflige **Givre Profond (`-55%` vitesse / `4s`)** et **brise l'armure `osteo_plating`**. | **`+50%` dégâts** contre les **Mutants Pyro (`pyro_gland`)** et les **Requins Marcheurs (`shark`)**. |
-| **⚡ Glaive Foudroyant d'Aether** (`lightning_greatsword`) | **Foudre** `(38, 26)` | **`+25%` Vitesse d'Attaque**, **`+15%` Vitesse de Course**, et chaque coup projette un **Éclair en Chaîne sur 3 ennemis (`22` dég.)**. | **`+40%` dégâts** contre les **Peaux-Vertes (`goblin`/`orc`)** et les créatures amphibies. |
-| **🧪 Faux d'Émeraude Symbiotique** (`venom_greatsword`) | **Venin / Biomasse** `(-34, 30)` | Inflige **Venin Corrosif (`12 DPS`, `-30%` attaque ennemie)**, **`18%` Vol de Vie**, et récolte **`+2 🌿 Biomasse` par kill**. | **🌿 Immunité du Gibier** : **épargne automatiquement les Biches et Lapins (`0` dégât collatéral à l'épée et aux sorts !)**. |
+| **🔥 Lame Solaire d'Ignis** (`fire_greatsword`) | **Feu** `(34, -28)` | **`+12%` Dégâts de Fente**, inflige **Brûlure Solaire (`8 DPS` / `3.5s`)** et déclenche une **détonation AoE (`18` dég., `5.5m`)** au kill. | **`+15%` dégâts** contre les **Bêtes Sauvages (`wolf`/`lion`)** et les **Taupes Géantes (`giant_mole`)**. |
+| **❄️ Espadon Givré de Borée** (`ice_greatsword`) | **Glace** `(-36, -26)` | **`+10%` Dégâts**, **`+12%` Portée**, inflige **Givre (`-35%` vitesse / `3.5s`)** et **brise l'armure `osteo_plating`**. | **`+15%` dégâts** contre les **Mutants Pyro (`pyro_gland`)** et les **Requins Marcheurs (`shark`)**. |
+| **⚡ Glaive Foudroyant d'Aether** (`lightning_greatsword`) | **Foudre** `(38, 26)` | **`+10%` Dégâts**, **`+12%` Vit. Attaque**, **`+8%` Vit. Course**, et projette un **Éclair en Chaîne sur 3 ennemis (`12` dég.)**. | **`+15%` dégâts** contre les **Peaux-Vertes (`goblin`/`orc`)** et les créatures amphibies. |
+| **🧪 Faux d'Émeraude Symbiotique** (`venom_greatsword`) | **Venin / Biomasse** `(-34, 30)` | **`+10%` Dégâts**, **Venin (`7 DPS`, `-15%` attaque ennemie)**, **`8%` Vol de Vie**, et récolte **`+1 🌿 Biomasse` par kill**. | **🌿 Immunité du Gibier** (`+15%` vs Bêtes/Taupes) : **épargne automatiquement les Biches et Lapins (`0` dégât collatéral !)**. |
 
 ### 13.2. Les 3 Fragments de Relique d'Éden, le Dôme-Bouclier Planétaire (`[V]`) & Progression d'Île en Île
 1. **Collecte des 3 Monolithes de Relique (`🧩 Reliques : 0/3 → 3/3`)** :
@@ -318,3 +317,22 @@ En tant que véritable **Action-Roguelike Écologique**, la chute du Gardien (`p
 3. **Double Choix : Vraie Règle Roguelike vs Grâce Temporaire du Sanctuaire** :
    - **`🔄 Repartir à Zéro (Nouvelle Run Roguelike — Niv. 1, Île #1)`** : Applique la règle pure du Roguelike (`restartFromZero()`) — réinitialise intégralement le Héros au Niveau 1 (`Espadon Runique`, maîtrises et sorts remis à zéro), reconstruit le Bastion initial et génère un tout nouvel écosystème Gen-1 sur l'Île #1.
    - **`✨ Continuer quand même (Grâce Temporaire du Sanctuaire — 100% PV)`** : Permet au joueur qui souhaite poursuivre son exploration actuelle (`continueAfterGameOver()`) de relever le Gardien au cœur du Bastion avec `100% PV`, `+60 🍖 Rations`, une onde de choc purificatrice et l'intégralité de ses armes, sorts et reliques conservés.
+
+---
+
+## 15. Phase 11 — Rééquilibrage Mathématique des Courbes de Progression (`≤ 1%` par Monstre & Rendements Décroissants)
+
+Afin de préserver la tension darwinienne sur toute la durée d'une campagne multi-îles et d'éviter l'inflation exponentielle des dégâts du joueur, toutes les courbes de progression suivent un **plafond granulaire à rendements décroissants** :
+
+$$\text{BonusChasse}(k) = \begin{cases} 1.0\% \times k & \text{si } 1 \le k \le 5 \quad (\text{max } 5.0\%) \\ 5.0\% + 0.5\% \times (k - 5) & \text{si } 6 \le k \le 15 \quad (\text{max } 10.0\%) \\ \min\big(15.0\%,\; 10.0\% + 0.25\% \times (k - 15)\big) & \text{si } k \ge 16 \quad (\text{plafond à } k = 35) \end{cases}$$
+
+| Système de Progression | Ancienne Valeur (Phases 1–10) | Nouvelle Formule Équilibrée (Phase 11) | Plafond Absolu |
+| :--- | :---: | :---: | :---: |
+| **Maîtrise par Espèce (`computeSpeciesSlayerBonusPct`)** | `+12%` dès le 1er kill (`+60%` max) | **`+1.0%/kill`** (`1..5`), **`+0.5%/kill`** (`6..15`), **`+0.25%/kill`** (`16+`) | **`+15.0%`** (à `35` kills) |
+| **Maîtrise Anti-Mutation (`computeMutationSlayerBonusPct`)** | `+15%` dès le 1er mutant (`+75%` max) | **`+1.0%/kill`** (`1..5`), **`+0.5%/kill`** (`6..15`), **`+0.25%/kill`** (`16+`) | **`+15.0%`** (`+30%` combiné max) |
+| **Résistance Élémentaire (`computeResistanceBonusPct`)** | `+9%` par palier (`45%` max) | **`+0.5%/coup`** (`1..6`), **`+0.25%/coup`** (`7..22`), **`+0.15%/coup`** (`23+`) | **`+10.0%`** |
+| **Résistance Physique (`computeResistanceBonusPct`)** | `+6%` par palier (`30%` max) | **`+0.4%/coup`** (`1..5`), **`+0.2%/coup`** (`6+`) | **`+6.0%`** |
+| **Évolution des Sorts 3D (`getAbilityStatsAtLevel`)** | `+28%` dégâts/niv., `-11%` CD/niv. | **`+8%` dégâts/niv.**, **`+4%` portée/niv.**, **`-4%` CD/niv.** | Niv. 5 = `×1.32` Dégâts, `×0.84` CD |
+| **Cartes Passives de Level-Up (`DESIGNED_UPGRADES`)** | `+24%` à `+50%` par carte | **`+8%` à `+12%`** dégâts/vitesse/vision, `+15 PV Max`, `-15%` Dash CD | Cumul additif mesuré |
+| **Armes Élémentaires Légendaires (`ELEMENTAL_WEAPONS`)** | `+35%` base, `+45%–50%` vs clade | **`+10%` à `+12%` dégâts de base**, **`+15%` vs clade cible**, `8%` Vol de Vie | Synergie tactique sans power-creep |
+
