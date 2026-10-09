@@ -378,6 +378,7 @@ export class SceneManager {
       const step = Math.max(3.2, this.targetCameraDistance * 0.09);
       const delta = Math.sign(e.deltaY) * step;
       this.targetCameraDistance = clamp(this.targetCameraDistance + delta, 12, 145);
+      this.hasZoomed = true;
     };
 
     this._onMouseDown = (e) => {
@@ -397,6 +398,9 @@ export class SceneManager {
 
       this.targetCameraYaw -= dx * 0.0065;
       this.targetCameraPitch = clamp(this.targetCameraPitch + dy * 0.005, 0.32, 1.32);
+      if (Math.abs(dx) > 1 || Math.abs(dy) > 1) {
+        this.hasRotatedCamera = true;
+      }
     };
 
     this._onMouseUp = () => {
@@ -411,8 +415,14 @@ export class SceneManager {
 
     this._onKeyDown = (e) => {
       if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) return;
-      if (e.code === 'KeyQ') this._camInput.rotateLeft = true;
-      if (e.code === 'KeyE') this._camInput.rotateRight = true;
+      if (e.code === 'KeyQ') {
+        this._camInput.rotateLeft = true;
+        this.hasRotatedCamera = true;
+      }
+      if (e.code === 'KeyE') {
+        this._camInput.rotateRight = true;
+        this.hasRotatedCamera = true;
+      }
     };
 
     this._onKeyUp = (e) => {
@@ -710,6 +720,32 @@ export class SceneManager {
     const hitTarget = new THREE.Vector3();
     const hit = this._raycaster.ray.intersectPlane(this._groundPlane, hitTarget);
     return hit ? hitTarget : null;
+  }
+
+  /**
+   * Projects a 3D world position `{x, y, z}` into 2D viewport pixel coordinates `{x, y, visible}`
+   * for floating damage numbers and contextual tutorial action badges.
+   *
+   * @param {THREE.Vector3|{x: number, y?: number, z: number}} worldPos - 3D world position.
+   * @param {number} [yOffset=0] - Additional vertical offset in world units.
+   * @returns {{ x: number, y: number, visible: boolean }} Screen coordinates in pixels.
+   */
+  worldToScreen(worldPos, yOffset = 0) {
+    if (!worldPos) return { x: 0, y: 0, visible: false };
+    const wx = worldPos.x ?? worldPos.position?.x ?? 0;
+    const wy = (worldPos.y ?? worldPos.position?.y ?? 2.0) + yOffset;
+    const wz = worldPos.z ?? worldPos.position?.z ?? 0;
+
+    const vec = new THREE.Vector3(wx, wy, wz);
+    vec.project(this.camera);
+
+    const width = this.container?.clientWidth || window.innerWidth || 1280;
+    const height = this.container?.clientHeight || window.innerHeight || 720;
+
+    const visible = vec.z >= -1 && vec.z <= 1;
+    const x = (vec.x * 0.5 + 0.5) * width;
+    const y = (-(vec.y * 0.5) + 0.5) * height;
+    return { x, y, visible };
   }
 
   /**

@@ -539,6 +539,17 @@ export class VFXManager {
   }
 
   /**
+   * Creates, moves, or hides a golden 3D tutorial objective beacon (used in Onboarding Acts 1–6).
+   *
+   * @param {THREE.Vector3|{x: number, y?: number, z: number}|null} pos - Target world position.
+   * @param {boolean} [active=true] - Whether the tutorial waypoint should be visible.
+   * @param {number|string} [colorHex=0xffd166] - Waypoint glow color.
+   */
+  setTutorialWaypoint(pos, active = true, colorHex = 0xffd166) {
+    this.setPatientZeroBeacon('__tutorial_waypoint__', pos, colorHex, active);
+  }
+
+  /**
    * Per-frame update for all active particle bursts, shock rings, DNA double-helices,
    * and Patient Zero sky beacons.
    *
