@@ -2196,3 +2196,396 @@ body {
   color: #9be061;
   font-weight: 600;
 }
+
+/* ==========================================================================
+   13. PHASE 6 : PORTRAITS NANO BANANA, SIMAGRÉES ANIMÉES, BANDE-SON LYRIA & VOIX TTS
+   ========================================================================== */
+
+/* 13A. Top Bar — Lyria Adaptive Music Live Telemetry Pill & Mute/Unmute */
+.hud-audio-status-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.hud-lyria-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 99px;
+  background: rgba(13, 19, 26, 0.9);
+  border: 1px solid rgba(230, 161, 69, 0.45);
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.45);
+  transition: border-color 0.25s ease, background 0.25s ease;
+}
+
+.hud-lyria-pill.state-combat {
+  border-color: rgba(255, 71, 87, 0.72);
+  background: rgba(38, 13, 18, 0.92);
+}
+
+.hud-lyria-pill.state-boss {
+  border-color: #ffd166;
+  background: linear-gradient(90deg, rgba(64, 12, 18, 0.95), rgba(38, 18, 10, 0.95));
+}
+
+.hud-lyria-pill.state-tutorial {
+  border-color: rgba(56, 193, 114, 0.65);
+  background: rgba(12, 28, 22, 0.92);
+}
+
+.hud-lyria-state-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #38c172;
+  box-shadow: 0 0 8px #38c172;
+  animation: lyriaPulseDot 1.6s ease-in-out infinite;
+}
+
+.hud-lyria-pill.state-combat .hud-lyria-state-dot {
+  background: #ff4757;
+  box-shadow: 0 0 10px #ff4757;
+  animation-duration: 0.75s;
+}
+
+.hud-lyria-pill.state-boss .hud-lyria-state-dot {
+  background: #ffd166;
+  box-shadow: 0 0 12px #ff4757;
+  animation-duration: 0.48s;
+}
+
+.hud-lyria-pill.is-muted .hud-lyria-state-dot {
+  background: #6c7a89;
+  box-shadow: none;
+  animation: none;
+}
+
+@keyframes lyriaPulseDot {
+  0%, 100% {
+    transform: scale(0.92);
+    opacity: 0.75;
+  }
+  50% {
+    transform: scale(1.28);
+    opacity: 1;
+  }
+}
+
+.hud-mute-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 4px 9px;
+  border-radius: 6px;
+  background: rgba(22, 31, 42, 0.9);
+  border: 1px solid rgba(240, 234, 214, 0.25);
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 0.15s ease, border-color 0.2s ease, background 0.2s ease;
+}
+
+.hud-mute-btn:hover {
+  border-color: var(--accent-amber);
+  background: rgba(230, 161, 69, 0.18);
+  transform: translateY(-1px);
+}
+
+.hud-mute-btn.is-muted {
+  border-color: rgba(255, 71, 87, 0.65);
+  color: #ff8a95;
+}
+
+/* 13B. Tutorial Onboarding Card — Character Portrait Medallion & Simagrées */
+.hud-onboarding-layout {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+}
+
+.hud-portrait-medallion-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+  width: 96px;
+}
+
+.hud-portrait-frame {
+  position: relative;
+  width: 84px;
+  height: 84px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 50% 35%, rgba(36, 48, 64, 0.95), rgba(10, 14, 20, 0.98));
+  border: 2.5px solid #e2b76b;
+  box-shadow:
+    0 6px 18px rgba(0, 0, 0, 0.72),
+    0 0 16px rgba(230, 161, 69, 0.32),
+    inset 0 0 10px rgba(0, 0, 0, 0.65);
+  overflow: visible;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: border-color 0.25s ease, box-shadow 0.25s ease;
+}
+
+.hud-portrait-frame.is-speaking {
+  box-shadow:
+    0 6px 20px rgba(0, 0, 0, 0.8),
+    0 0 22px rgba(56, 193, 114, 0.62),
+    inset 0 0 12px rgba(230, 161, 69, 0.35);
+}
+
+.hud-portrait-img {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  object-fit: cover;
+  display: block;
+  user-select: none;
+  pointer-events: none;
+}
+
+.hud-portrait-specimen-pip {
+  position: absolute;
+  right: -6px;
+  bottom: -4px;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 2px solid #ff4757;
+  background: #0d131a;
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.8), 0 0 10px rgba(255, 71, 87, 0.65);
+  object-fit: cover;
+  z-index: 3;
+}
+
+.hud- portrait-specimen-pip.is-hidden,
+.hud-portrait-specimen-pip.is-hidden {
+  display: none;
+}
+
+.hud-speaker-name {
+  font-family: var(--font-display);
+  font-size: 12px;
+  font-weight: 700;
+  color: #ffd166;
+  text-align: center;
+  letter-spacing: 0.03em;
+  line-height: 1.15;
+}
+
+.hud-emotion-badge {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 99px;
+  background: rgba(230, 161, 69, 0.16);
+  border: 1px solid rgba(230, 161, 69, 0.45);
+  color: var(--text-primary);
+  text-align: center;
+  white-space: nowrap;
+  max-width: 106px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.hud-onboarding-main-col {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.hud-onboarding-quote-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  background: rgba(9, 14, 20, 0.72);
+  border-left: 3px solid #e2b76b;
+  border-radius: 4px 6px 6px 4px;
+  padding: 5px 9px;
+}
+
+.hud-onboarding-quote {
+  font-size: 11.5px;
+  font-style: italic;
+  color: #f6eedc;
+  line-height: 1.35;
+  flex: 1;
+}
+
+.hud-replay-voice-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: 5px;
+  background: rgba(56, 193, 114, 0.16);
+  border: 1px solid rgba(56, 193, 114, 0.5);
+  color: #7bed9f;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.18s ease, transform 0.15s ease;
+}
+
+.hud-replay-voice-btn:hover {
+  background: rgba(56, 193, 114, 0.3);
+  transform: translateY(-1px);
+}
+
+/* 13C. Alert Banner Portrait Medallion (Patient Zéro & Dragon Wrath) */
+.hud-alert-portrait-wrap {
+  position: relative;
+  width: 62px;
+  height: 62px;
+  border-radius: 50%;
+  border: 2px solid #ff4757;
+  background: #0d131a;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.75), 0 0 14px rgba(255, 71, 87, 0.55);
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.hud-alert-portrait-img {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  object-fit: cover;
+  display: block;
+}
+
+.hud-alert-specimen-pip {
+  position: absolute;
+  right: -5px;
+  bottom: -4px;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 1.5px solid #ffd166;
+  background: #0d131a;
+  object-fit: cover;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.85);
+}
+
+.hud-alert-specimen-pip.is-hidden {
+  display: none;
+}
+
+/* 13D. 6 Keyframe Animations « Simagrées » (Expressions Vivantes) */
+.simagree-talk-bounce {
+  animation: simagreeTalkBounce 1.15s ease-in-out infinite;
+}
+
+.simagree-battle-shake {
+  animation: simagreeBattleShake 0.65s ease-in-out infinite;
+}
+
+.simagree-panic-pulse {
+  animation: simagreePanicPulse 0.55s ease-in-out infinite;
+}
+
+.simagree-scholar-nod {
+  animation: simagreeScholarNod 1.5s ease-in-out infinite;
+}
+
+.simagree-proud-glow {
+  animation: simagreeProudGlow 1.8s ease-in-out infinite;
+}
+
+.simagree-roar-tremble {
+  animation: simagreeRoarTremble 0.42s ease-in-out infinite;
+}
+
+@keyframes simagreeTalkBounce {
+  0%, 100% {
+    transform: translateY(0) scale(1);
+  }
+  35% {
+    transform: translateY(-4px) scale(1.03) rotate(-1.5deg);
+  }
+  70% {
+    transform: translateY(-2px) scale(1.01) rotate(1.5deg);
+  }
+}
+
+@keyframes simagreeBattleShake {
+  0%, 100% {
+    transform: translateX(0) rotate(0deg) scale(1);
+  }
+  25% {
+    transform: translateX(-3px) rotate(-3deg) scale(1.04);
+  }
+  75% {
+    transform: translateX(3px) rotate(3deg) scale(1.04);
+  }
+}
+
+@keyframes simagreePanicPulse {
+  0%, 100% {
+    transform: scale(1) rotate(0deg);
+    box-shadow: 0 0 12px rgba(255, 71, 87, 0.5);
+  }
+  50% {
+    transform: scale(1.08) rotate(-2.5deg);
+    box-shadow: 0 0 24px rgba(255, 71, 87, 0.95);
+  }
+}
+
+@keyframes simagreeScholarNod {
+  0%, 100% {
+    transform: rotate(0deg) translateY(0);
+  }
+  40% {
+    transform: rotate(3.5deg) translateY(2px);
+  }
+  75% {
+    transform: rotate(-2deg) translateY(-2px);
+  }
+}
+
+@keyframes simagreeProudGlow {
+  0%, 100% {
+    transform: scale(1);
+    filter: brightness(1);
+  }
+  50% {
+    transform: scale(1.05);
+    filter: brightness(1.16);
+  }
+}
+
+@keyframes simagreeRoarTremble {
+  0%, 100% {
+    transform: translate(0, 0) scale(1.02);
+  }
+  25% {
+    transform: translate(-3px, 2px) scale(1.07) rotate(-2deg);
+  }
+  50% {
+    transform: translate(3px, -2px) scale(1.08) rotate(2deg);
+  }
+  75% {
+    transform: translate(-2px, -2px) scale(1.05) rotate(-1deg);
+  }
+}
+

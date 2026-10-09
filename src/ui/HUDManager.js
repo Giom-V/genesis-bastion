@@ -43,6 +43,12 @@ import {
   SCOUT_MISSIONS_CATALOG,
   getScoutMissionSpec,
 } from '../ecosystem/BaseAndQuestsDesign.js';
+import {
+  CHARACTER_PORTRAITS,
+  SIMAGREE_ANIMATION_CLASSES,
+  getTutorialDialoguePresentation,
+  getAlertBannerPortraitPresentation,
+} from './CharacterPortraitsConfig.js';
 import { logger } from '../utils/logger.js';
 import { getCardinalLabelFR, dist2D } from '../utils/math.js';
 
@@ -454,7 +460,7 @@ export class HUDManager {
   _buildTopBar() {
     this.topBar = el('header', 'hud-top-bar hud-interactive');
 
-    // Marque + Horloge Jour/Nuit + Bouton Switch Mode [C]
+    // Marque + Horloge Jour/Nuit + Bouton Switch Mode [C] + Bande-Son Lyria Live
     const brandGroup = el('div', 'hud-brand-group');
     const brandTitle = el('h1', 'hud-brand-title', 'Genesis Bastion');
     this.clockBadge = el('div', 'hud-clock-badge', '☀️ Jour 1 — 08h00 (Jour)');
@@ -471,7 +477,27 @@ export class HUDManager {
       this.toggleCombatMode();
     });
 
-    brandGroup.append(brandTitle, this.clockBadge, this.combatModeSwitchBtn);
+    // Pilule Télémétrie Musicale Adaptative Lyria & Bouton Mute/Unmute
+    this.audioStatusGroup = el('div', 'hud-audio-status-group');
+    this.lyriaStatusPill = el('div', 'hud-lyria-pill state-tutorial');
+    this.lyriaStatusPill.title =
+      'Bande-son adaptative Lyria Realtime + Multi-Stem (réagit aux PV, à l’état Combat/Paix/Dialogue, à l’espèce ennemie et aux éléments Feu/Glace/Venin/Foudre)';
+    this.lyriaStateDot = el('span', 'hud-lyria-state-dot');
+    this.lyriaStatusLabel = el('span', 'hud-lyria-label', '🎵 Lyria : Dialogue Tutoriel (85 BPM)');
+    this.lyriaStatusPill.append(this.lyriaStateDot, this.lyriaStatusLabel);
+
+    this.muteToggleBtn = el('button', 'hud-mute-btn', '🔊 Audio');
+    this.muteToggleBtn.type = 'button';
+    this.muteToggleBtn.title = 'Couper / Réactiver la musique adaptative Lyria, les voix TTS et les effets sonores';
+    this.muteToggleBtn.addEventListener('click', () => {
+      if (typeof this.callbacks.onToggleAudioMute === 'function') {
+        const isMuted = this.callbacks.onToggleAudioMute();
+        this.setAudioMuteUI(Boolean(isMuted));
+      }
+    });
+
+    this.audioStatusGroup.append(this.lyriaStatusPill, this.muteToggleBtn);
+    brandGroup.append(brandTitle, this.clockBadge, this.combatModeSwitchBtn, this.audioStatusGroup);
 
     // Barre de progression Eco-Tick
     this.ecoGroup = el('div', 'hud-ecotick-group');
@@ -803,8 +829,46 @@ export class HUDManager {
   _buildCenterAlertColumn() {
     this.centerCol = el('div', 'hud-center-column');
 
-    // 3A. Carte d'Onboarding Guidé (Actes 1 à 7)
+    // 3A. Carte d'Onboarding Guidé (Actes 1 à 7) avec Médaillon Portrait Nano Banana & Simagrées
     this.onboardingCard = el('div', 'hud-onboarding-card is-hidden hud-interactive');
+    const onboardingLayout = el('div', 'hud-onboarding-layout');
+
+    // Colonne gauche : Médaillon de Portrait Animé ("Simagrées") — Aldric (Actes 1–4) / Kaelen (Actes 5–7)
+    this.portraitMedallionCol = el('div', 'hud-portrait-medallion-col');
+    this.portraitFrameEl = el('div', 'hud-portrait-frame simagree-talk-bounce');
+    this.portraitImgEl = el('img', 'hud-portrait-img');
+    this.portraitImgEl.src = CHARACTER_PORTRAITS.aldric.defaultPortraitUrl;
+    this.portraitImgEl.alt = 'Portrait du Mentor';
+
+    this.portraitSpecimenPipEl = el('img', 'hud-portrait-specimen-pip is-hidden');
+    this.portraitSpecimenPipEl.src = CHARACTER_PORTRAITS.fire_troll.defaultPortraitUrl;
+    this.portraitSpecimenPipEl.alt = 'Spécimen ciblé';
+
+    this.portraitFrameEl.append(this.portraitImgEl, this.portraitSpecimenPipEl);
+    this.speakerNameEl = el('div', 'hud-speaker-name', 'Aldric');
+    this.emotionBadgeEl = el('div', 'hud-emotion-badge', '🧭 Mentor Bienveillant');
+    this.portraitMedallionCol.append(this.portraitFrameEl, this.speakerNameEl, this.emotionBadgeEl);
+
+    // Alternance automatique d'expression ("simagrée") entre portrait principal et secondaire
+    this._currentPortraitPrimaryUrl = CHARACTER_PORTRAITS.aldric.defaultPortraitUrl;
+    this._currentPortraitSecondaryUrl = CHARACTER_PORTRAITS.aldric.scholar.url;
+    this._portraitAltToggle = false;
+    this._portraitSwapIntervalId = window.setInterval(() => {
+      if (!this.onboardingCard || this.onboardingCard.classList.contains('is-hidden')) return;
+      if (
+        this._currentPortraitPrimaryUrl &&
+        this._currentPortraitSecondaryUrl &&
+        this._currentPortraitPrimaryUrl !== this._currentPortraitSecondaryUrl
+      ) {
+        this._portraitAltToggle = !this._portraitAltToggle;
+        this.portraitImgEl.src = this._portraitAltToggle
+          ? this._currentPortraitSecondaryUrl
+          : this._currentPortraitPrimaryUrl;
+      }
+    }, 1850);
+
+    // Colonne principale droite : En-tête d'acte, Citation parlée + bouton "🔈 Réécouter Voix", Instructions, Touches et Objectif
+    this.onboardingMainCol = el('div', 'hud-onboarding-main-col');
 
     const topRow = el('div', 'hud-onboarding-top');
     const stepWrap = el('div', 'hud-onboarding-step-wrap');
@@ -826,6 +890,19 @@ export class HUDManager {
     topRow.append(stepWrap, this.skipTutorialBtn);
 
     this.onboardingTitleEl = el('div', 'hud-onboarding-title', '');
+
+    this.onboardingQuoteRow = el('div', 'hud-onboarding-quote-row');
+    this.onboardingQuoteEl = el('div', 'hud-onboarding-quote', '');
+    this.replayVoiceBtn = el('button', 'hud-replay-voice-btn', '🔈 Réécouter Voix');
+    this.replayVoiceBtn.type = 'button';
+    this.replayVoiceBtn.title = 'Réécouter le doublage vocal Gemini TTS de cet acte';
+    this.replayVoiceBtn.addEventListener('click', () => {
+      if (typeof this.callbacks.onReplayTutorialVoice === 'function') {
+        this.callbacks.onReplayTutorialVoice(this._currentOnboardingActNum || 1);
+      }
+    });
+    this.onboardingQuoteRow.append(this.onboardingQuoteEl, this.replayVoiceBtn);
+
     this.onboardingDescEl = el('div', 'hud-onboarding-desc', '');
     this.onboardingWhyEl = el('div', 'hud-onboarding-why', '');
     this.onboardingKeysRow = el('div', 'hud-onboarding-keys-row');
@@ -836,19 +913,34 @@ export class HUDManager {
     this.onboardingObjProgress = el('span', 'hud-onboarding-obj-progress', '');
     objBox.append(this.onboardingObjIcon, this.onboardingObjText, this.onboardingObjProgress);
 
-    this.onboardingCard.append(
+    this.onboardingMainCol.append(
       topRow,
       this.onboardingTitleEl,
+      this.onboardingQuoteRow,
       this.onboardingDescEl,
       this.onboardingWhyEl,
       this.onboardingKeysRow,
       objBox
     );
+
+    onboardingLayout.append(this.portraitMedallionCol, this.onboardingMainCol);
+    this.onboardingCard.appendChild(onboardingLayout);
     this.centerCol.appendChild(this.onboardingCard);
 
-    // 3B. Bannière d'alerte prioritaire Éclaireur (Patient Zéro)
+    // 3B. Bannière d'alerte prioritaire Éclaireur (Patient Zéro) & Courroux Draconique avec Portrait Nano Banana
     this.alertBanner = el('div', 'hud-scout-alert-banner is-hidden hud-interactive');
+    this.alertPortraitWrap = el('div', 'hud-alert-portrait-wrap simagree-panic-pulse');
+    this.alertPortraitImg = el('img', 'hud-alert-portrait-img');
+    this.alertPortraitImg.src = CHARACTER_PORTRAITS.kaelen.shocked.url;
+    this.alertPortraitImg.alt = 'Alerte Éclaireur';
+
+    this.alertSpecimenPipImg = el('img', 'hud-alert-specimen-pip');
+    this.alertSpecimenPipImg.src = CHARACTER_PORTRAITS.fire_troll.defaultPortraitUrl;
+    this.alertSpecimenPipImg.alt = 'Spécimen Mutant';
+
     this.alertIconWrap = el('div', 'hud-alert-icon-wrap', '🦅');
+    this.alertIconWrap.style.display = 'none';
+    this.alertPortraitWrap.append(this.alertPortraitImg, this.alertSpecimenPipImg);
 
     const body = el('div', 'hud-alert-body');
     this.alertTitleEl = el('div', 'hud-alert-title', 'ALERTE ÉCLAIREUR — PATIENT ZÉRO REPÉRÉ');
@@ -884,17 +976,34 @@ export class HUDManager {
     });
 
     actions.append(this.trackPatientZeroBtn, dismissBtn);
-    this.alertBanner.append(this.alertIconWrap, body, actions);
+    this.alertBanner.append(this.alertPortraitWrap, this.alertIconWrap, body, actions);
     this.centerCol.appendChild(this.alertBanner);
     this.root.appendChild(this.centerCol);
   }
 
   /**
-   * Met à jour la bannière d'Onboarding Guidé (Actes 1 à 7) en haut au centre.
+   * Met à jour l'état visuel du bouton Mute/Unmute de la barre supérieure.
+   * @param {boolean} isMuted
+   */
+  setAudioMuteUI(isMuted) {
+    if (this.muteToggleBtn) {
+      this.muteToggleBtn.classList.toggle('is-muted', Boolean(isMuted));
+      this.muteToggleBtn.textContent = isMuted ? '🔇 Muet' : '🔊 Audio';
+    }
+    if (this.lyriaStatusPill) {
+      this.lyriaStatusPill.classList.toggle('is-muted', Boolean(isMuted));
+    }
+  }
+
+  /**
+   * Met à jour la bannière d'Onboarding Guidé (Actes 1 à 7) en haut au centre,
+   * y compris le portrait Nano Banana d'Aldric (Actes 1–4) ou Kaelen (Actes 5–7),
+   * son badge d'émotion, sa classe d'animation « simagrée » et sa réplique vocale.
    *
    * @param {Object} state - État courant de l'acte d'onboarding.
    * @param {boolean} [state.visible=true] - Affiche ou masque la carte.
    * @param {number} [state.actNumber=1] - Numéro de l'acte (`1..7`).
+   * @param {string|number|null} [state.subStep=null] - Sous-étape courante.
    * @param {number} [state.totalActs=7] - Nombre total d'actes (`7`).
    * @param {string} [state.stepLabel] - Libellé d'étape (ex. `'Acte 1/7'`).
    * @param {string} [state.title] - Titre narratif et mécanique.
@@ -914,10 +1023,61 @@ export class HUDManager {
 
     this.onboardingCard.classList.remove('is-hidden');
     const actNum = state.actNumber || 1;
+    this._currentOnboardingActNum = actNum;
     const total = state.totalActs || 7;
     this.onboardingStepBadge.textContent = state.stepLabel || `ACTE ${actNum} / ${total}`;
     const pct = Math.min(100, Math.max(8, Math.round((actNum / total) * 100)));
     this.onboardingProgressFill.style.width = `${pct}%`;
+
+    // Mise à jour du portrait Nano Banana & Simagrée d'Aldric / Kaelen
+    const pres = getTutorialDialoguePresentation(actNum, state.subStep ?? null);
+    if (pres) {
+      const portraitSig = `${pres.actNumber}|${pres.subStep || ''}|${pres.portraitUrl}|${pres.simagreeClass}`;
+      if (this._lastPortraitSig !== portraitSig) {
+        this._lastPortraitSig = portraitSig;
+        this._currentPortraitPrimaryUrl = pres.portraitUrl;
+        this._currentPortraitSecondaryUrl = pres.secondaryExpressionUrl || pres.portraitUrl;
+        this._portraitAltToggle = false;
+
+        if (this.portraitImgEl) {
+          this.portraitImgEl.src = pres.portraitUrl;
+          this.portraitImgEl.alt = `${pres.speaker} (${pres.emotionLabel})`;
+        }
+        if (this.portraitFrameEl) {
+          const allSimClasses = Object.values(SIMAGREE_ANIMATION_CLASSES);
+          this.portraitFrameEl.classList.remove(...allSimClasses);
+          if (pres.simagreeClass) {
+            this.portraitFrameEl.classList.add(pres.simagreeClass);
+          }
+          if (pres.themeColor) {
+            this.portraitFrameEl.style.borderColor = pres.themeColor;
+          }
+        }
+        if (this.portraitSpecimenPipEl) {
+          if (pres.specimenPortraitUrl) {
+            this.portraitSpecimenPipEl.src = pres.specimenPortraitUrl;
+            this.portraitSpecimenPipEl.classList.remove('is-hidden');
+          } else {
+            this.portraitSpecimenPipEl.classList.add('is-hidden');
+          }
+        }
+        if (this.speakerNameEl) {
+          this.speakerNameEl.textContent = pres.speaker;
+          if (pres.themeColor) {
+            this.speakerNameEl.style.color = pres.themeColor;
+          }
+        }
+        if (this.emotionBadgeEl) {
+          this.emotionBadgeEl.textContent = pres.emotionLabel;
+        }
+        if (this.onboardingQuoteEl) {
+          this.onboardingQuoteEl.textContent = pres.quote || '';
+        }
+        if (this.onboardingQuoteRow && pres.themeColor) {
+          this.onboardingQuoteRow.style.borderLeftColor = pres.themeColor;
+        }
+      }
+    }
 
     this.onboardingTitleEl.textContent = state.title || '';
     this.onboardingDescEl.textContent = state.instructionText || '';
@@ -1037,6 +1197,41 @@ export class HUDManager {
   }
 
   /**
+   * Applique la configuration de portrait Nano Banana et d'animation « simagrée » à la bannière d'alerte.
+   * @param {'patient_zero'|'eradicated'|'dragon_wrath'} alertType
+   * @private
+   */
+  _applyAlertBannerPortrait(alertType = 'patient_zero') {
+    const alertPres = getAlertBannerPortraitPresentation(alertType);
+    if (!alertPres || !this.alertPortraitWrap) return;
+
+    const allSimClasses = Object.values(SIMAGREE_ANIMATION_CLASSES);
+    this.alertPortraitWrap.classList.remove(...allSimClasses);
+    if (alertPres.simagreeClass) {
+      this.alertPortraitWrap.classList.add(alertPres.simagreeClass);
+    }
+    if (alertPres.themeColor) {
+      this.alertPortraitWrap.style.borderColor = alertPres.themeColor;
+    }
+
+    if (this.alertPortraitImg) {
+      this.alertPortraitImg.src = alertPres.portraitUrl;
+      this.alertPortraitImg.alt = alertPres.emotionLabel || alertType;
+    }
+    if (this.alertSpecimenPipImg) {
+      if (alertPres.specimenPortraitUrl && alertType !== 'dragon_wrath') {
+        this.alertSpecimenPipImg.src = alertPres.specimenPortraitUrl;
+        this.alertSpecimenPipImg.classList.remove('is-hidden');
+      } else if (alertType === 'dragon_wrath' && alertPres.secondaryExpressionUrl) {
+        this.alertSpecimenPipImg.src = alertPres.secondaryExpressionUrl;
+        this.alertSpecimenPipImg.classList.remove('is-hidden');
+      } else {
+        this.alertSpecimenPipImg.classList.add('is-hidden');
+      }
+    }
+  }
+
+  /**
    * Déclenche la bannière d'alerte prioritaire lorsqu'un Éclaireur découvre un Mutant ou Hybride.
    * Mentionne explicitement si la cible est encore un Bébé (Juvénile) avant maturité reproductive.
    *
@@ -1077,6 +1272,7 @@ export class HUDManager {
       lineageId: mutId || genome.speciesId || genome.lineageId,
     };
 
+    this._applyAlertBannerPortrait('patient_zero');
     this.alertBanner.classList.remove('is-hidden', 'is-eradicated', 'is-dragon-wrath');
     this.alertIconWrap.textContent = '🦅';
     this.trackPatientZeroBtn.textContent = '🎯 TRAQUER LE PATIENT ZÉRO';
@@ -1109,6 +1305,7 @@ export class HUDManager {
     const mutName = mutDef ? mutDef.name : mutationId || 'Lignée Mutante';
     const speciesName = lastEnemy?.genome?.speciesName || 'Porteur';
 
+    this._applyAlertBannerPortrait('eradicated');
     this.alertBanner.classList.remove('is-hidden', 'is-dragon-wrath');
     this.alertBanner.classList.add('is-eradicated');
     this.alertIconWrap.textContent = '✨';
@@ -1142,6 +1339,7 @@ export class HUDManager {
       lineageId: speciesId,
     };
 
+    this._applyAlertBannerPortrait('dragon_wrath');
     this.alertBanner.classList.remove('is-hidden', 'is-eradicated');
     this.alertBanner.classList.add('is-dragon-wrath');
     this.alertIconWrap.textContent = '🐉';
@@ -3067,6 +3265,7 @@ export class HUDManager {
       player = null,
       bastionAndNpcs = null,
       questSystem = null,
+      sound = null,
     } = state;
 
     if (player) {
@@ -3077,6 +3276,31 @@ export class HUDManager {
     }
     if (questSystem) {
       this.lastQuestSystemRef = questSystem;
+    }
+
+    // 0. Télémétrie Musicale Adaptative Lyria & État Voix TTS
+    if (sound && typeof sound.getMusicTelemetryForHUD === 'function') {
+      const tel = sound.getMusicTelemetryForHUD();
+      if (tel) {
+        this.setAudioMuteUI(Boolean(tel.muted));
+        if (this.lyriaStatusLabel) {
+          this.lyriaStatusLabel.textContent =
+            tel.shortStatusFR || `🎵 Lyria : ${tel.modeLabelFR || 'Sanctuaire'}`;
+        }
+        if (this.lyriaStatusPill) {
+          this.lyriaStatusPill.classList.remove('state-tutorial', 'state-combat', 'state-boss');
+          if (tel.activeStemId === 'boss') {
+            this.lyriaStatusPill.classList.add('state-boss');
+          } else if (tel.activeStemId === 'combat') {
+            this.lyriaStatusPill.classList.add('state-combat');
+          } else if (tel.activeStemId === 'tutorial') {
+            this.lyriaStatusPill.classList.add('state-tutorial');
+          }
+        }
+        if (this.portraitFrameEl) {
+          this.portraitFrameEl.classList.toggle('is-speaking', Boolean(tel.isVoiceSpeaking));
+        }
+      }
     }
 
     // 1. Horloge Jour / Nuit

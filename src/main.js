@@ -48,13 +48,14 @@ import { BastionAndNPCs } from './entities/BastionAndNPCs.js';
 import { buildCreatureMesh } from './entities/CreatureMeshBuilder.js';
 import { HUDManager } from './ui/HUDManager.js';
 import { Minimap } from './ui/Minimap.js';
+import { SoundManager } from './audio/SoundManager.js';
 
 /**
  * Classe principale d'orchestration d'une session Genesis Bastion.
  */
 export class GenesisBastionGame {
   /**
-   * Initialise tous les sous-systèmes 3D, écologiques, entités, HUD et l'Onboarding en 7 Actes.
+   * Initialise tous les sous-systèmes 3D, écologiques, entités, audio, HUD et l'Onboarding en 7 Actes.
    * @param {Object} [options={}]
    * @param {boolean} [options.startWithTutorial=true] - Démarre en Acte 1 du tutoriel guidé.
    */
@@ -71,6 +72,10 @@ export class GenesisBastionGame {
     this.terrain = new Terrain(this.sceneManager.scene);
     /** @type {VFXManager} */
     this.vfx = new VFXManager(this.sceneManager.scene);
+
+    // 1B. Moteur Audio Adaptatif Lyria Realtime + Multi-Stem, Voix Gemini TTS & SFX WebAudio
+    /** @type {SoundManager} */
+    this.sound = new SoundManager();
 
     // 2. Simulateur d'Écosystème (Jeu de la Vie de Conway + Algorithme Génétique) & Système de Quêtes Dynamiques
     /** @type {EcosystemSimulator} */
@@ -127,6 +132,9 @@ export class GenesisBastionGame {
       onSetScoutMission: (missionType, targetMutationId) =>
         this.handleSetScoutMission(missionType, targetMutationId),
       onTriggerQuestAction: (quest) => this.handleTriggerQuestAction(quest),
+      onToggleAudioMute: () => this.sound.toggleMute(),
+      onReplayTutorialVoice: (actNum) =>
+        this.sound.playTutorialVoice(actNum || this.tutorialAct || 1),
     });
     this.hud.registerExtraUpgrades(DESIGNED_UPGRADES);
 
@@ -198,6 +206,7 @@ export class GenesisBastionGame {
         player: this.player,
         bastionAndNpcs: this.bastionAndNpcs,
         questSystem: this.questSystem,
+        sound: this.sound,
       });
       this.sceneManager.update(0.016, 0, this.player.position);
     } catch (err) {
@@ -620,6 +629,11 @@ export class GenesisBastionGame {
       );
     }
 
+    // Déclencher le doublage vocal français Gemini TTS correspondant à l'Acte (Aldric Actes 1-4 / Kaelen Actes 5-7)
+    if (this.sound && typeof this.sound.playTutorialVoice === 'function') {
+      this.sound.playTutorialVoice(act.actNumber);
+    }
+
     this._refreshOnboardingBannerUI();
   }
 
@@ -632,6 +646,10 @@ export class GenesisBastionGame {
     this.tutorialAct = 7;
     this.ecoPaused = false;
     this.enemyManager.ecoPaused = false;
+
+    if (this.sound && typeof this.sound.stopVoice === 'function') {
+      this.sound.stopVoice();
+    }
 
     this.hud.setTutorialHighlight(null);
     this.hud.setHudVisibility(FULL_UNLOCKED_HUD, this.minimap);
@@ -1015,6 +1033,7 @@ export class GenesisBastionGame {
     this.hud.updateOnboardingBanner({
       visible: true,
       actNumber: act.actNumber,
+      subStep: this.tutorialSubStep,
       totalActs: ONBOARDING_ACTS.length,
       stepLabel: `ACTE ${act.actNumber} / ${ONBOARDING_ACTS.length} — ${act.timeWindow}`,
       title: act.title,
@@ -1161,9 +1180,9 @@ export class GenesisBastionGame {
   }
 
   /**
-   * Connecte les événements entre les Éclaireurs, le gestionnaire d'ennemis, le joueur et le HUD.
+   * Connecte les événements entre les Éclaireurs, le gestionnaire d'ennemis, le joueur, le moteur Audio et le HUD.
    * Intercepte également `enemyManager.damageEnemy` et `player.interact` pour afficher les nombres
-   * de dégâts flottants 3D->2D et détecter la récolte ou la construction sur socle 3D.
+   * de dégâts flottants 3D->2D, déclencher les SFX WebAudio et détecter la récolte ou la construction sur socle 3D.
    * @private
    */
   _wireGameCallbacks() {
@@ -1176,6 +1195,11 @@ export class GenesisBastionGame {
       const enemy = discovery.enemy;
       const ex = enemy?.x ?? enemy?.mesh?.position?.x ?? 0;
       const ez = enemy?.z ?? enemy?.mesh?.position?.z ?? 0;
+
+      if (this.sound && typeof this.sound.playScoutAlert === 'function') {
+        const shouldPlayAlertVoice = !(this.tutorialActive && this.tutorialAct === 6);
+        this.sound.playScoutAlert(shouldPlayAlertVoice);
+      }
 
       this.hud.showScoutAlert(discovery);
       this.minimap.pingLocation(ex, ez, 'PATIENT ZÉRO', 8000);
@@ -1215,6 +1239,9 @@ export class GenesisBastionGame {
       const ex = targetEnemy?.x ?? targetEnemy?.mesh?.position?.x ?? 0;
       const ez = targetEnemy?.z ?? targetEnemy?.mesh?.position?.z ?? 0;
 
+      if (this.sound && typeof this.sound.playDragonWrath === 'function') {
+        this.sound.playDragonWrath(true);
+      }
       if (this.hud && typeof this.hud.showSpeciesWrathBanner === 'function') {
         this.hud.showSpeciesWrathBanner(spKey, targetEnemy);
       }
@@ -1225,7 +1252,7 @@ export class GenesisBastionGame {
 
     this.enemyManager.onSpeciesWrathTriggered = this.handleSpeciesWrath;
 
-    // Interception non-intrusive de `enemyManager.damageEnemy` pour faire jaillir les dégâts flottants 3D->2D
+    // Interception non-intrusive de `enemyManager.damageEnemy` pour faire jaillir les dégâts flottants 3D->2D + SFX d'impact
     const origDamageEnemy = this.enemyManager.damageEnemy.bind(this.enemyManager);
     this.enemyManager.damageEnemy = (enemyIdOrObj, amount, knockbackDir, onEradicated) => {
       const targetId = typeof enemyIdOrObj === 'object' ? enemyIdOrObj?.id : enemyIdOrObj;
@@ -1256,74 +1283,134 @@ export class GenesisBastionGame {
         this.questSystem.recordEnemyKilled(targetRef);
       }
 
-      if (targetRef && this.sceneManager && typeof this.sceneManager.worldToScreen === 'function') {
-        const screenPos = this.sceneManager.worldToScreen(new THREE.Vector3(tx, ty, tz), 2.1);
-        const isMut =
-          Boolean(targetRef.genome?.isHybrid) ||
-          (Array.isArray(targetRef.genome?.mutations) && targetRef.genome.mutations.length > 0);
-        this.hud.spawnFloatingNumber(
-          screenPos,
-          `-${Math.round(amount)}`,
-          isMut ? 'dmg-crit' : 'dmg-normal'
-        );
+      if (targetRef) {
+        const muts = Array.isArray(targetRef.genome?.mutations) ? targetRef.genome.mutations : [];
+        const isMut = Boolean(targetRef.genome?.isHybrid) || muts.length > 0;
+        let hitElem = 'physical';
+        if (muts.includes('pyro_gland') || targetRef.genome?.speciesId === 'dragon') hitElem = 'fire';
+        else if (muts.includes('cryo_blood')) hitElem = 'ice';
+        else if (muts.includes('venom_sacs')) hitElem = 'venom';
 
-        if (res && res.killed && res.xpGained > 0) {
-          const xpPos = this.sceneManager.worldToScreen(new THREE.Vector3(tx, ty + 0.6, tz), 2.6);
-          this.hud.spawnFloatingNumber(xpPos, `+${res.xpGained} XP`, 'dmg-xp');
+        if (this.sound && typeof this.sound.playHitImpact === 'function') {
+          this.sound.playHitImpact(isMut, hitElem);
+        }
+
+        if (this.sceneManager && typeof this.sceneManager.worldToScreen === 'function') {
+          const screenPos = this.sceneManager.worldToScreen(new THREE.Vector3(tx, ty, tz), 2.1);
+          this.hud.spawnFloatingNumber(
+            screenPos,
+            `-${Math.round(amount)}`,
+            isMut ? 'dmg-crit' : 'dmg-normal'
+          );
+
+          if (res && res.killed && res.xpGained > 0) {
+            const xpPos = this.sceneManager.worldToScreen(new THREE.Vector3(tx, ty + 0.6, tz), 2.6);
+            this.hud.spawnFloatingNumber(xpPos, `+${res.xpGained} XP`, 'dmg-xp');
+          }
         }
       }
       return res;
     };
 
-    // Interception de `player.interact` pour détecter la récolte de Bois/Cristal en Acte 3B ou la construction sur socle 3D en Acte 4A
-    if (this.player && typeof this.player.interact === 'function') {
-      const origInteract = this.player.interact.bind(this.player);
-      this.player.interact = (bastionAndNpcs) => {
-        const prevWood = this.player.resources?.wood || 0;
-        const prevCrystal = this.player.resources?.crystal || 0;
-        const prevRescued = bastionAndNpcs?.rescuedCount || 0;
-        const prevWatchtowerLvl =
-          typeof bastionAndNpcs?.getBuildingLevel === 'function'
-            ? bastionAndNpcs.getBuildingLevel('watchtower')
-            : 0;
-
-        const interactResult = origInteract(bastionAndNpcs);
-
-        const newWood = this.player.resources?.wood || 0;
-        const newCrystal = this.player.resources?.crystal || 0;
-        const newRescued = bastionAndNpcs?.rescuedCount || 0;
-        const newWatchtowerLvl =
-          typeof bastionAndNpcs?.getBuildingLevel === 'function'
-            ? bastionAndNpcs.getBuildingLevel('watchtower')
-            : 0;
-
-        if (newWatchtowerLvl > prevWatchtowerLvl) {
-          this.tutState.watchtowerBuiltInAct4 = true;
-          this.hud.refreshLogFeed();
-        }
-
-        // Si le joueur a récolté un gisement (sans que ce soit le bonus d'ouverture d'une cage)
-        if (newRescued === prevRescued && (newWood > prevWood || newCrystal > prevCrystal)) {
-          this.tutState.harvestedInAct3 = true;
-          if (this.sceneManager && typeof this.sceneManager.worldToScreen === 'function') {
-            const screenPos = this.sceneManager.worldToScreen(
-              new THREE.Vector3(this.player.x, this.player.y, this.player.z),
-              2.2
-            );
-            const gainTxt =
-              newCrystal > prevCrystal
-                ? `+${newCrystal - prevCrystal} Cristal 💎`
-                : `+${newWood - prevWood} Bois 🪵`;
-            this.hud.spawnFloatingNumber(screenPos, gainTxt, 'dmg-heal');
-          }
-        }
-        return interactResult;
-      };
-    }
-
-    // Montée de niveau Roguelike & Maîtrises Adaptatives du joueur
+    // Interception de `player.performCleaveAttack`, `player.performDash` et `player.interact` pour les SFX et le tutoriel
     if (this.player) {
+      if (typeof this.player.performCleaveAttack === 'function') {
+        const origCleave = this.player.performCleaveAttack.bind(this.player);
+        this.player.performCleaveAttack = (enemyManager, bastionAndNpcs, isAutoMelee) => {
+          const prevSwings = this.player.attackSwings || 0;
+          const hits = origCleave(enemyManager, bastionAndNpcs, isAutoMelee);
+          if ((this.player.attackSwings || 0) > prevSwings && this.sound && typeof this.sound.playSwordCleave === 'function') {
+            this.sound.playSwordCleave();
+          }
+          return hits;
+        };
+      }
+
+      if (typeof this.player.performDash === 'function') {
+        const origDash = this.player.performDash.bind(this.player);
+        this.player.performDash = () => {
+          const prevDash = this.player.dashCount || 0;
+          origDash();
+          if ((this.player.dashCount || 0) > prevDash && this.sound && typeof this.sound.playDash === 'function') {
+            this.sound.playDash();
+          }
+        };
+      }
+
+      this.player.onAbilityCast = (abilityId) => {
+        if (this.sound && typeof this.sound.playSpellCast === 'function') {
+          this.sound.playSpellCast(abilityId);
+        }
+      };
+
+      this.player.onResourceHarvested = (resType) => {
+        if (this.sound && typeof this.sound.playHarvest === 'function') {
+          this.sound.playHarvest(resType);
+        }
+      };
+
+      this.player.onCageRescued = () => {
+        if (this.sound && typeof this.sound.playCageRescue === 'function') {
+          this.sound.playCageRescue();
+        }
+      };
+
+      this.player.onBuildingUpgraded = (_id, lvl) => {
+        if (this.sound && typeof this.sound.playBuildOrUpgrade === 'function') {
+          this.sound.playBuildOrUpgrade(lvl || 1);
+        }
+      };
+
+      if (typeof this.player.interact === 'function') {
+        const origInteract = this.player.interact.bind(this.player);
+        this.player.interact = (bastionAndNpcs) => {
+          const prevWood = this.player.resources?.wood || 0;
+          const prevCrystal = this.player.resources?.crystal || 0;
+          const prevRescued = bastionAndNpcs?.rescuedCount || 0;
+          const prevWatchtowerLvl =
+            typeof bastionAndNpcs?.getBuildingLevel === 'function'
+              ? bastionAndNpcs.getBuildingLevel('watchtower')
+              : 0;
+
+          const interactResult = origInteract(bastionAndNpcs);
+
+          const newWood = this.player.resources?.wood || 0;
+          const newCrystal = this.player.resources?.crystal || 0;
+          const newRescued = bastionAndNpcs?.rescuedCount || 0;
+          const newWatchtowerLvl =
+            typeof bastionAndNpcs?.getBuildingLevel === 'function'
+              ? bastionAndNpcs.getBuildingLevel('watchtower')
+              : 0;
+
+          if (newWatchtowerLvl > prevWatchtowerLvl) {
+            this.tutState.watchtowerBuiltInAct4 = true;
+            this.hud.refreshLogFeed();
+          }
+
+          // Si le joueur a récolté un gisement (sans que ce soit le bonus d'ouverture d'une cage)
+          if (newRescued === prevRescued && (newWood > prevWood || newCrystal > prevCrystal)) {
+            this.tutState.harvestedInAct3 = true;
+            if (this.sceneManager && typeof this.sceneManager.worldToScreen === 'function') {
+              const screenPos = this.sceneManager.worldToScreen(
+                new THREE.Vector3(this.player.x, this.player.y, this.player.z),
+                2.2
+              );
+              const gainTxt =
+                newCrystal > prevCrystal
+                  ? `+${newCrystal - prevCrystal} Cristal 💎`
+                  : `+${newWood - prevWood} Bois 🪵`;
+              this.hud.spawnFloatingNumber(screenPos, gainTxt, 'dmg-heal');
+            }
+          }
+          return interactResult;
+        };
+      }
+
+      // Montée de niveau Roguelike & Maîtrises Adaptatives du joueur
       this.player.onLevelUp = () => {
+        if (this.sound && typeof this.sound.playLevelUp === 'function') {
+          this.sound.playLevelUp();
+        }
         const enemies = this.enemyManager.getEnemies();
         let activeMutantCount = 0;
         let hasActivePyro = false;
@@ -1569,8 +1656,17 @@ export class GenesisBastionGame {
     if (!fn) return false;
 
     const built = fn(structureId, this.player?.resources);
-    if (built && structureId === 'watchtower') {
-      this.tutState.watchtowerBuiltInAct4 = true;
+    if (built) {
+      if (structureId === 'watchtower') {
+        this.tutState.watchtowerBuiltInAct4 = true;
+      }
+      if (this.sound && typeof this.sound.playBuildOrUpgrade === 'function') {
+        const lvl =
+          typeof this.bastionAndNpcs.getBuildingLevel === 'function'
+            ? this.bastionAndNpcs.getBuildingLevel(structureId)
+            : 1;
+        this.sound.playBuildOrUpgrade(lvl || 1);
+      }
     }
     this.hud.refreshLogFeed();
     return Boolean(built);
@@ -1824,6 +1920,29 @@ export class GenesisBastionGame {
       }
     }
 
+    // 4C. Mise à jour du Directeur Musical Adaptatif Lyria (Crossfade Stems & Télémétrie Live)
+    try {
+      if (this.sound && typeof this.sound.updateAdaptiveMusic === 'function') {
+        const dragonWrath =
+          typeof this.enemyManager.isSpeciesProvoked === 'function'
+            ? this.enemyManager.isSpeciesProvoked('dragon')
+            : false;
+        this.sound.updateAdaptiveMusic({
+          player: this.player,
+          enemies: this.enemyManager.getEnemies(),
+          tutorialActive: this.tutorialActive,
+          tutorialAct: this.tutorialAct,
+          isTutorialDialogue: this.tutorialActive,
+          isModalPaused: isPaused,
+          dragonWrathActive: dragonWrath,
+        });
+      }
+    } catch (err) {
+      logger.error('AUDIO', 'Erreur interceptée dans sound.updateAdaptiveMusic', {
+        error: String(err),
+      });
+    }
+
     // 5. Mise à jour de l'Océan, de la Végétation et des Particules / Balises 3D (dt = 0 en pause)
     const renderDt = isPaused ? 0 : dt;
     try {
@@ -1854,6 +1973,7 @@ export class GenesisBastionGame {
         player: this.player,
         bastionAndNpcs: this.bastionAndNpcs,
         questSystem: this.questSystem,
+        sound: this.sound,
       });
 
       this.minimap.update({
@@ -1891,6 +2011,7 @@ function bootstrapGenesisBastion() {
       game: gameInstance,
       config: CONFIG,
       logger,
+      sound: gameInstance.sound,
       sceneManager: gameInstance.sceneManager,
       terrain: gameInstance.terrain,
       vfx: gameInstance.vfx,
@@ -1905,6 +2026,8 @@ function bootstrapGenesisBastion() {
       spawnFireTroll: () => gameInstance.spawnTestFireTroll(),
       skipTutorial: () => gameInstance.skipTutorial(),
       startTutorialAct: (actNum) => gameInstance.startTutorialAct(actNum),
+      playTutorialVoice: (actOrKey) => gameInstance.sound?.playTutorialVoice?.(actOrKey),
+      toggleMute: () => gameInstance.sound?.toggleMute?.(),
       toggleCodex: () =>
         gameInstance.hud.toggleCodexModal(undefined, gameInstance.enemyManager.getEnemies()),
       toggleBastionArchitect: (forceState) =>
