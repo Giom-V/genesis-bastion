@@ -307,13 +307,17 @@ export class Minimap {
    */
   update(state = {}) {
     if (!this.ctx) return;
+    const now = performance.now();
+    if (this._lastDrawTime && now - this._lastDrawTime < 80) return;
+    this._lastDrawTime = now;
+
     const {
       terrain = null,
       ecoSim = null,
       enemies = [],
       player = null,
       bastionAndNpcs = null,
-      elapsedTime = performance.now() * 0.001,
+      elapsedTime = now * 0.001,
     } = state;
 
     this._ensureTerrainBackdrop(terrain);
