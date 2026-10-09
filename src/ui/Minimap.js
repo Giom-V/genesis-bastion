@@ -432,7 +432,7 @@ export class Minimap {
     ctx.lineWidth = 1.3;
     ctx.stroke();
 
-    // Icône octogonale / fortin au centre
+    // Icône octogonale / fortin au centre (Cœur du Bastion)
     ctx.beginPath();
     ctx.arc(px, py, 4.2, 0, Math.PI * 2);
     ctx.fillStyle = '#e6a145';
@@ -440,11 +440,33 @@ export class Minimap {
     ctx.strokeStyle = '#0d131a';
     ctx.lineWidth = 1.2;
     ctx.stroke();
+
+    // Emplacements des 4 chantiers / bâtiments autour du Bastion
+    const defaultPads = [
+      { id: 'watchtower', x: 8, z: -7 },
+      { id: 'scout_guild', x: -8, z: -7 },
+      { id: 'lumber_forge', x: 8, z: 7 },
+      { id: 'biolab', x: -8, z: 7 },
+    ];
+    const bLevels = bastionAndNpcs?.buildingLevels || bastionAndNpcs?.buildings || {};
+    for (const pad of defaultPads) {
+      const pCanvas = this.worldToCanvas(pad.x, pad.z);
+      const lvl =
+        typeof bLevels[pad.id] === 'number'
+          ? bLevels[pad.id]
+          : bLevels[pad.id]?.level || 0;
+      ctx.fillStyle = lvl > 0 ? '#38c172' : 'rgba(230, 161, 69, 0.35)';
+      ctx.strokeStyle = lvl > 0 ? '#ffffff' : 'rgba(230, 161, 69, 0.75)';
+      ctx.lineWidth = 0.8;
+      ctx.fillRect(pCanvas.px - 2, pCanvas.py - 2, 4, 4);
+      ctx.strokeRect(pCanvas.px - 2, pCanvas.py - 2, 4, 4);
+    }
     ctx.restore();
   }
 
   /**
    * Dessine les cages de prisonniers restant à libérer sur l'île.
+   * Met en évidence d'un anneau doré celles repérées par la mission `'find_cages'` des Éclaireurs.
    * @param {CanvasRenderingContext2D} ctx
    * @param {Object|null} bastionAndNpcs
    * @private
@@ -463,6 +485,14 @@ export class Minimap {
       const cz = cage.z ?? cage.pos?.z ?? cage.mesh?.position?.z ?? 0;
       const { px, py } = this.worldToCanvas(cx, cz);
 
+      if (cage.discoveredByScout || cage.spottedByScout) {
+        ctx.beginPath();
+        ctx.arc(px, py, 6.2, 0, Math.PI * 2);
+        ctx.strokeStyle = 'rgba(255, 209, 102, 0.85)';
+        ctx.lineWidth = 1.3;
+        ctx.stroke();
+      }
+
       ctx.fillStyle = '#ffd285';
       ctx.strokeStyle = '#0d131a';
       ctx.lineWidth = 1;
@@ -473,7 +503,8 @@ export class Minimap {
   }
 
   /**
-   * Dessine les PNJ alliés, en particulier les Éclaireurs (Scouts) avec leur rayon de détection.
+   * Dessine les PNJ alliés, en particulier les Éclaireurs (Scouts) avec leur rayon de détection
+   * et leur vecteur de mission active.
    * @param {CanvasRenderingContext2D} ctx
    * @param {Object|null} bastionAndNpcs
    * @private
@@ -497,6 +528,19 @@ export class Minimap {
       const { px, py } = this.worldToCanvas(nx, nz);
 
       if (npc.role === 'scout') {
+        // Vecteur de trajectoire vers la cible de mission de l'Éclaireur
+        if (typeof npc.targetX === 'number' && typeof npc.targetZ === 'number') {
+          const tgt = this.worldToCanvas(npc.targetX, npc.targetZ);
+          ctx.beginPath();
+          ctx.moveTo(px, py);
+          ctx.lineTo(tgt.px, tgt.py);
+          ctx.strokeStyle = 'rgba(72, 219, 251, 0.35)';
+          ctx.lineWidth = 1;
+          ctx.setLineDash([2, 3]);
+          ctx.stroke();
+          ctx.setLineDash([]);
+        }
+
         // Cercle de reconnaissance de l'Éclaireur
         ctx.beginPath();
         ctx.arc(px, py, visionPx, 0, Math.PI * 2);

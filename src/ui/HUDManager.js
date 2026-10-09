@@ -36,6 +36,13 @@ import {
   getAbilityStatsAtLevel,
   drawRoguelikeLevelUpChoices,
 } from '../ecosystem/RoguelikeAbilitiesAndMastery.js';
+import {
+  BASTION_BUILDINGS_CATALOG,
+  getBuildingUpgradeSpec,
+  canAffordBuildingUpgrade,
+  SCOUT_MISSIONS_CATALOG,
+  getScoutMissionSpec,
+} from '../ecosystem/BaseAndQuestsDesign.js';
 import { logger } from '../utils/logger.js';
 import { getCardinalLabelFR, dist2D } from '../utils/math.js';
 
@@ -191,6 +198,8 @@ export class HUDManager {
     this.isLevelUpOpen = false;
     /** @type {boolean} */
     this.isCombatModeModalOpen = false;
+    /** @type {boolean} */
+    this.isBastionModalOpen = false;
     /** @type {'vampire_survivors'|'diablo_action'} */
     this.combatMode = 'vampire_survivors';
     /** @type {number} */
@@ -211,6 +220,10 @@ export class HUDManager {
     this._lastMasterySig = '';
     /** @type {Array<Object>} */
     this.skillSlotEls = [];
+    /** @type {Record<string, Object>} */
+    this.buildingRowEls = {};
+    /** @type {Record<string, Object>} */
+    this.scoutMissionBtns = {};
 
     // Nettoyage initial du conteneur
     this.root.replaceChildren();
@@ -225,6 +238,7 @@ export class HUDManager {
     this._buildCodexModal();
     this._buildLevelUpModal();
     this._buildCombatModeModal();
+    this._buildBastionArchitectModal();
 
     // Abonnement temps réel au logger pour le fil d'évolution
     this._unsubscribeLogger = logger.subscribe(() => {
@@ -235,11 +249,16 @@ export class HUDManager {
 
   /**
    * Indique si le jeu doit être mis en pause totale (`true` dès que la modale de Montée de Niveau,
-   * la modale de Choix du Mode de Combat ou le Codex Phylogénétique `[Tab]` est ouvert).
+   * la modale de Choix du Mode de Combat, l'Architecte du Bastion `[H]` ou le Codex Phylogénétique `[Tab]` est ouvert).
    * @returns {boolean}
    */
   get isModalPaused() {
-    return Boolean(this.isLevelUpOpen || this.isCodexOpen || this.isCombatModeModalOpen);
+    return Boolean(
+      this.isLevelUpOpen ||
+        this.isCodexOpen ||
+        this.isCombatModeModalOpen ||
+        this.isBastionModalOpen
+    );
   }
 
   /**
@@ -291,6 +310,13 @@ export class HUDManager {
     const next = this.combatMode === 'vampire_survivors' ? 'diablo_action' : 'vampire_survivors';
     this.setCombatMode(next, true);
     return next;
+  }
+
+  /**
+   * Rafraîchit le libellé du bouton de bascule de mode de combat (`[C]`) sans émettre de callback.
+   */
+  _refreshCombatModeSwitchLabel() {
+    this.setCombatMode(this.combatMode, false);
   }
 
   /* ==========================================================================
@@ -517,29 +543,122 @@ export class HUDManager {
     roleList.append(scoutRow.row, guardRow.row, harvRow.row);
     rolesSection.appendChild(roleList);
 
-    // Constructions du Bastion
+    // Centre de Commandement des Missions d'Éclaireurs (Assignation d'ordre en 1 clic)
+    this.scoutMissionBox = el('div', 'hud-scout-mission-box');
+    this.scoutMissionBox.appendChild(
+      el('div', 'hud-section-label', '🦅 Ordre de Mission des Éclaireurs')
+    );
+    this.scoutMissionStatusEl = el(
+      'div',
+      'hud-scout-mission-status',
+      '🔍 Mission Active : Traquer [Trolls de Feu] (Repérés : 0 / 1)'
+    );
+    const missionGrid = el('div', 'hud-scout-mission-grid');
+    this.scoutMissionBtns = {};
+
+    for (const m of SCOUT_MISSIONS_CATALOG) {
+      const mBtn = el('button', `hud-scout-mission-btn${m.id === 'track_lineage' ? ' is-active' : ''}`);
+      mBtn.type = 'button';
+      mBtn.title = m.description;
+      const topSpan = el('span', '', m.shortLabel);
+      const subSpan = el(
+        'span',
+        'hud-scout-mission-sub',
+        m.id === 'track_lineage'
+          ? 'Cibler porteurs mutants'
+          : m.id === 'find_cages'
+            ? 'Révéler les cages'
+            : m.id === 'scout_volcano'
+              ? 'Zone 50m–108m'
+              : 'Périmètre 35m–58m'
+      );
+      mBtn.append(topSpan, subSpan);
+      mBtn.addEventListener('click', () => {
+        if (this.callbacks.onSetScoutMission) {
+          this.callbacks.onSetScoutMission(m.id, this.selectedLineageId || 'pyro_gland');
+        }
+      });
+      this.scoutMissionBtns[m.id] = { btn: mBtn, subSpan };
+      missionGrid.appendChild(mBtn);
+    }
+
+    this.scoutMissionBox.append(this.scoutMissionStatusEl, missionGrid);
+    rolesSection.appendChild(this.scoutMissionBox);
+
+    // Constructions & Améliorations du Bastion (5 Bâtiments Niv. 0 -> 3)
     this.buildSection = el('div', 'hud-section-block');
-    this.buildSection.appendChild(el('div', 'hud-section-label', 'Fortifications & Bio-Structures'));
-    const buildGrid = el('div', 'hud-build-grid');
+    const buildHeaderRow = el('div', 'hud-panel-header');
+    buildHeaderRow.append(
+      el('span', 'hud-section-label', '🏰 Bâtiments du Bastion (Niv. 0 → 3)'),
+      (this.openArchitectBtn = el('button', 'hud-btn hud-btn-sm hud-btn-amber', '📐 Architecte [H]'))
+    );
+    this.openArchitectBtn.type = 'button';
+    this.openArchitectBtn.title = 'Ouvrir le Plan d’Architecte complet du Bastion en Pause [H]';
+    this.openArchitectBtn.addEventListener('click', () => {
+      this.toggleBastionArchitectModal();
+    });
 
-    this.watchtowerBtn = this._createBuildButton(
-      'watchtower',
-      '🗼 Tour de Guet',
-      '25 Bois · 10 Cristal'
-    );
-    this.palisadeBtn = this._createBuildButton(
-      'palisade',
-      '🛡️ Palissade Runique',
-      '30 Bois · 5 Cristal'
-    );
-    this.biolabBtn = this._createBuildButton(
-      'biolab',
-      '🔬 Bio-Laboratoire',
-      '20 Bois · 20 Cristal'
+    const bastionHint = el(
+      'div',
+      'hud-bastion-hint',
+      '💡 Approchez d’un socle doré au camp et appuyez sur [E] ou cliquez sur [⬆️ Construire / Améliorer] ci-dessous :'
     );
 
-    buildGrid.append(this.watchtowerBtn, this.palisadeBtn, this.biolabBtn);
-    this.buildSection.appendChild(buildGrid);
+    this.bastionBuildingsListEl = el('div', 'hud-bastion-building-list');
+    this.buildingRowEls = {};
+
+    for (const bDef of BASTION_BUILDINGS_CATALOG) {
+      const spec = getBuildingUpgradeSpec(bDef.id, bDef.initialLevel);
+      const row = el('div', 'hud-building-row');
+
+      const top = el('div', 'hud-building-top');
+      const nameEl = el('span', 'hud-building-name', `${spec.icon} ${spec.shortName}`);
+      const lvlBadge = el(
+        'span',
+        `hud-building-lvl-badge${spec.currentLevel === 0 ? ' lvl-0' : ''}`,
+        `Niv. ${spec.currentLevel}/${spec.maxLevel}`
+      );
+      top.append(nameEl, lvlBadge);
+
+      const effectEl = el('div', 'hud-building-effect', spec.nextEffectDesc);
+
+      const bottom = el('div', 'hud-building-bottom');
+      const costEl = el('span', 'hud-building-cost', `Coût: ${spec.costText}`);
+      const upgBtn = el(
+        'button',
+        'hud-btn hud-btn-sm hud-building-upgrade-btn',
+        `⬆️ ${spec.actionVerb} [${spec.hotkey}]`
+      );
+      upgBtn.type = 'button';
+      upgBtn.addEventListener('click', () => {
+        if (this.callbacks.onBuildStructure) {
+          this.callbacks.onBuildStructure(bDef.id);
+        }
+      });
+
+      bottom.append(costEl, upgBtn);
+      row.append(top, effectEl, bottom);
+      this.bastionBuildingsListEl.appendChild(row);
+
+      this.buildingRowEls[bDef.id] = {
+        row,
+        nameEl,
+        lvlBadge,
+        effectEl,
+        costEl,
+        upgBtn,
+      };
+      if (bDef.legacyId) {
+        this.buildingRowEls[bDef.legacyId] = this.buildingRowEls[bDef.id];
+      }
+    }
+
+    // Références de compatibilité pour les surbrillances du tutoriel (Acte 4)
+    this.watchtowerBtn = this.buildingRowEls.watchtower?.upgBtn || null;
+    this.palisadeBtn = this.buildingRowEls.lumber_forge?.upgBtn || null;
+    this.biolabBtn = this.buildingRowEls.biolab?.upgBtn || null;
+
+    this.buildSection.append(buildHeaderRow, bastionHint, this.bastionBuildingsListEl);
 
     // Laboratoire de Simulation / Actions de Test Directes
     this.simLab = el('div', 'hud-sim-lab');
@@ -611,28 +730,6 @@ export class HUDManager {
     controls.append(countEl, assignBtn);
     row.append(info, controls);
     return { row, countEl, metaEl, assignBtn };
-  }
-
-  /**
-   * Crée un bouton de construction de structure du Bastion.
-   * @param {string} structId
-   * @param {string} labelText
-   * @param {string} costText
-   * @returns {HTMLButtonElement}
-   * @private
-   */
-  _createBuildButton(structId, labelText, costText) {
-    const btn = el('button', 'hud-btn hud-build-btn');
-    btn.type = 'button';
-    const nameSpan = el('span', '', labelText);
-    const costSpan = el('span', 'hud-build-cost', costText);
-    btn.append(nameSpan, costSpan);
-    btn.addEventListener('click', () => {
-      if (this.callbacks.onBuildStructure) {
-        this.callbacks.onBuildStructure(structId);
-      }
-    });
-    return btn;
   }
 
   /* ==========================================================================
@@ -972,18 +1069,74 @@ export class HUDManager {
   }
 
   /* ==========================================================================
-     4. PANNEAU DROIT : RADAR GÉNÉTIQUE & LIGNÉES MUTANTES / HYBRIDES
+     4. PANNEAU DROIT : QUÊTE PRIORITAIRE, RADAR GÉNÉTIQUE & LIGNÉES MUTANTES
      ========================================================================== */
   _buildRightPanel() {
     this.rightPanel = el('aside', 'hud-side-panel hud-right-panel hud-interactive');
 
     const header = el('div', 'hud-panel-header');
     header.append(
-      el('h2', 'hud-panel-title', '🧬 Radar Génétique & Lignées'),
+      el('h2', 'hud-panel-title', '🧬 Quêtes, Radar & Lignées'),
       (this.lineageSubtitleEl = el('span', 'hud-panel-subtitle', 'Mendel 78% / 92%'))
     );
 
-    // Résumé de la grille écologique de Conway
+    // 4A. Encart Quête Dynamique Prioritaire (Mission Éclaireurs -> Extermination Lignée)
+    this.questCardEl = el('div', 'hud-quest-card');
+    const qHeader = el('div', 'hud-quest-header');
+    this.questTitleEl = el(
+      'div',
+      'hud-quest-title',
+      '📜 Opération : Éradication — Trolls de Feu'
+    );
+    this.questPhaseBadgeEl = el('span', 'hud-lineage-badge badge-pz', 'PHASE 1/2');
+    qHeader.append(this.questTitleEl, this.questPhaseBadgeEl);
+
+    const qSteps = el('div', 'hud-quest-steps');
+    this.questStep1El = el(
+      'div',
+      'hud-quest-step is-active',
+      '🔍 1. Éclaireurs : Localiser tous les Trolls de Feu (0/1 repéré)'
+    );
+    this.questStep2El = el(
+      'div',
+      'hud-quest-step',
+      '⚔️ 2. Extermination : Éliminer toute la lignée (1 restant)'
+    );
+    qSteps.append(this.questStep1El, this.questStep2El);
+
+    this.questHintEl = el(
+      'div',
+      'hud-lineage-warning',
+      '💡 Ordonnez aux Éclaireurs de traquer la lignée pour révéler tous les porteurs sur la carte !'
+    );
+
+    const qFooter = el('div', 'hud-quest-footer');
+    this.questRewardEl = el(
+      'span',
+      'hud-quest-reward',
+      '🎁 +45 Bois · +35 Cristal · +30 Bio · +120 XP'
+    );
+    this.questActionBtn = el(
+      'button',
+      'hud-btn hud-btn-sm hud-btn-scout',
+      '🦅 Lancer Traque Éclaireurs'
+    );
+    this.questActionBtn.type = 'button';
+    this.questActionBtn.addEventListener('click', () => {
+      if (this.callbacks.onTriggerQuestAction) {
+        this.callbacks.onTriggerQuestAction(this._currentPrimaryQuest || null);
+      } else if (this.callbacks.onSetScoutMission) {
+        this.callbacks.onSetScoutMission(
+          'track_lineage',
+          this._currentPrimaryQuest?.targetMutationId || 'pyro_gland'
+        );
+      }
+    });
+    qFooter.append(this.questRewardEl, this.questActionBtn);
+
+    this.questCardEl.append(qHeader, qSteps, this.questHintEl, qFooter);
+
+    // 4B. Résumé de la grille écologique de Conway
     const conwayBlock = el('div', 'hud-section-block');
     conwayBlock.appendChild(
       el('div', 'hud-section-label', 'Cellules Écologiques (Jeu de la Vie)')
@@ -1008,7 +1161,7 @@ export class HUDManager {
     conwaySummary.append(optCell, famCell, isoCell);
     conwayBlock.appendChild(conwaySummary);
 
-    // Liste des lignées mutantes & hybrides
+    // 4C. Liste des lignées mutantes & hybrides
     const lineageBlock = el('div', 'hud-section-block');
     lineageBlock.appendChild(
       el('div', 'hud-section-label', 'Lignées Mutantes & Hybrides Actives')
@@ -1016,14 +1169,15 @@ export class HUDManager {
     this.lineageListEl = el('div', 'hud-lineage-list');
     lineageBlock.appendChild(this.lineageListEl);
 
-    this.rightPanel.append(header, conwayBlock, lineageBlock);
+    this.rightPanel.append(header, this.questCardEl, conwayBlock, lineageBlock);
     this.root.appendChild(this.rightPanel);
   }
 
   /**
    * Met à jour la liste des lignées mutantes et hybrides dans le panneau droit.
    * Combine le rapport de `ecoSim.getLineageReport(enemies)` et l'analyse directe des ennemis vivants
-   * (afin d'afficher le détail Adultes reproducteurs vs Bébés juvéniles et le temps avant maturité).
+   * (afin d'afficher le détail Adultes reproducteurs vs Bébés juvéniles, le nombre de porteurs repérés
+   * par les Éclaireurs, et un bouton direct pour ordonner la traque d'une lignée).
    *
    * @param {Object} ecoSim - Instance `EcosystemSimulator`.
    * @param {Array<Object>} enemies - Liste des ennemis vivants.
@@ -1062,6 +1216,7 @@ export class HUDManager {
           count: item.count ?? 0,
           adultCount: 0,
           babyCount: 0,
+          spottedCount: 0,
           minMaturationRem: null,
           maxFitness: 0,
           speciesNames: new Set(),
@@ -1073,7 +1228,7 @@ export class HUDManager {
       }
     }
 
-    // Enrichissement direct depuis les entités vivantes (Adultes vs Bébés, Fitness, Espèces porteuses)
+    // Enrichissement direct depuis les entités vivantes (Adultes vs Bébés, Repérés, Fitness, Espèces porteuses)
     for (const enemy of enemies) {
       if (!enemy || enemy.dead || (typeof enemy.hp === 'number' && enemy.hp <= 0)) continue;
       const genome = enemy.genome || {};
@@ -1097,6 +1252,7 @@ export class HUDManager {
             count: 0,
             adultCount: 0,
             babyCount: 0,
+            spottedCount: 0,
             minMaturationRem: null,
             maxFitness: 0,
             speciesNames: new Set(),
@@ -1116,10 +1272,13 @@ export class HUDManager {
         } else {
           entry.adultCount++;
         }
+        if (enemy.spottedByScout) {
+          entry.spottedCount++;
+          entry.discoveredByScout = true;
+        }
         entry.count = Math.max(entry.count, entry.adultCount + entry.babyCount);
         entry.maxFitness = Math.max(entry.maxFitness, fit);
         entry.generationMax = Math.max(entry.generationMax, genome.generation || 1);
-        if (enemy.spottedByScout) entry.discoveredByScout = true;
         if (!entry.patientZeroPos) entry.patientZeroPos = { x: enemy.x, z: enemy.z };
       }
 
@@ -1134,6 +1293,7 @@ export class HUDManager {
             count: 0,
             adultCount: 0,
             babyCount: 0,
+            spottedCount: 0,
             minMaturationRem: null,
             maxFitness: 0,
             speciesNames: new Set([spName]),
@@ -1153,10 +1313,13 @@ export class HUDManager {
         } else {
           hEntry.adultCount++;
         }
+        if (enemy.spottedByScout) {
+          hEntry.spottedCount++;
+          hEntry.discoveredByScout = true;
+        }
         hEntry.count = Math.max(hEntry.count, hEntry.adultCount + hEntry.babyCount);
         hEntry.maxFitness = Math.max(hEntry.maxFitness, fit);
         hEntry.generationMax = Math.max(hEntry.generationMax, genome.generation || 2);
-        if (enemy.spottedByScout) hEntry.discoveredByScout = true;
       }
     }
 
@@ -1232,19 +1395,19 @@ export class HUDManager {
       const metaRow = el('div', 'hud-lineage-meta');
       const stageDetail = isEradicated
         ? '0 porteur survivant'
-        : `${item.adultCount} Ad. / ${item.babyCount} Bébé${item.babyCount > 1 ? 's' : ''} 🐣`;
+        : `${item.adultCount} Ad. / ${item.babyCount} Bébé${item.babyCount > 1 ? 's' : ''} 🐣 · Repérés: ${item.spottedCount || 0}/${item.count}`;
       const genFitnessText = `Gén. ${item.generationMax} · Fit ${item.maxFitness ? item.maxFitness.toFixed(2) : '1.45'}`;
       metaRow.append(el('span', '', stageDetail), el('span', '', genFitnessText));
 
       card.append(topRow, metaRow);
 
-      // Message tactique contextuel (ex. fenêtre juvénile avant reproduction ou risque de dominance)
+      // Message tactique contextuel + Bouton direct "Ordonner aux Éclaireurs : Traquer cette lignée"
       if (!isEradicated) {
         let warnMsg = '';
         if (item.adultCount === 0 && item.babyCount > 0) {
           const remStr =
             item.minMaturationRem !== null ? ` (${Math.ceil(item.minMaturationRem)}s)` : '';
-          warnMsg = `⏳ Fenêtre tactique : tous les porteurs sont encor Juvéniles${remStr} et ne peuvent pas encore se reproduire !`;
+          warnMsg = `⏳ Fenêtre tactique : tous les porteurs sont encore Juvéniles${remStr} et ne peuvent pas se reproduire !`;
         } else if (isPatientZeroSingle) {
           warnMsg = item.discoveredByScout
             ? '🎯 Repéré par Éclaireur -> Éliminez-le avant le prochain Eco-Tick !'
@@ -1253,6 +1416,33 @@ export class HUDManager {
           warnMsg = `🔥 Transmission dominante (78%) en cours -> Chassez les ${item.adultCount} adulte(s) reproducteur(s) !`;
         }
         card.appendChild(el('div', 'hud-lineage-warning', warnMsg));
+
+        const actionRow = el('div', 'hud-lineage-actions');
+        const allSpotted = (item.spottedCount || 0) >= item.count;
+        const trackBtn = el(
+          'button',
+          `hud-btn hud-btn-sm ${allSpotted ? 'hud-btn-amber' : 'hud-btn-scout'} hud-lineage-track-btn`,
+          allSpotted
+            ? `🎯 Tous repérés (${item.spottedCount}/${item.count}) — Cibler & Éradiquer`
+            : `🦅 Ordonner aux Éclaireurs : Traquer (${item.spottedCount || 0}/${item.count} repérés)`
+        );
+        trackBtn.type = 'button';
+        trackBtn.addEventListener('click', (evt) => {
+          evt.stopPropagation();
+          this.selectedLineageId = item.id;
+          if (this.callbacks.onSetScoutMission) {
+            this.callbacks.onSetScoutMission('track_lineage', item.id);
+          }
+          if (this.callbacks.onFocusWorldPos && item.patientZeroPos) {
+            this.callbacks.onFocusWorldPos(
+              item.patientZeroPos.x,
+              item.patientZeroPos.z,
+              item.id
+            );
+          }
+        });
+        actionRow.appendChild(trackBtn);
+        card.appendChild(actionRow);
       }
 
       card.addEventListener('click', () => {
@@ -1477,7 +1667,8 @@ export class HUDManager {
       { key: '1-4', label: 'Sorts 3D' },
       { key: 'C', label: 'Mode Auto/Actif' },
       { key: 'Shift', label: 'Esquive' },
-      { key: 'E', label: 'Secourir / Récolter' },
+      { key: 'E', label: 'Bâtir / Secourir / Récolter' },
+      { key: 'H', label: 'Architecte Bastion' },
       { key: 'Tab', label: 'Codex Génétique' },
       { key: 'T', label: 'Eco-Tick' },
     ];
@@ -2182,6 +2373,325 @@ export class HUDManager {
   }
 
   /* ==========================================================================
+     7C. MODALE ARCHITECTE DU BASTION (`[H]`) — CONSTRUCTION & AMÉLIORATION NIV. 0 -> 3
+     ========================================================================== */
+  _buildBastionArchitectModal() {
+    this.bastionModalBackdrop = el('div', 'hud-modal-backdrop is-hidden hud-interactive');
+    const dialog = el('div', 'hud-modal-dialog');
+    dialog.style.maxWidth = '1060px';
+
+    const header = el('div', 'hud-modal-header');
+    header.append(
+      el(
+        'h2',
+        'hud-modal-title',
+        '🏰 ARCHITECTE DU BASTION — INFRASTRUCTURES & ÉCLAIREURS [H]'
+      ),
+      (this.bastionModalCloseBtn = el(
+        'button',
+        'hud-btn hud-btn-amber',
+        'Fermer [H / Échap]'
+      ))
+    );
+    this.bastionModalCloseBtn.type = 'button';
+    this.bastionModalCloseBtn.addEventListener('click', () =>
+      this.toggleBastionArchitectModal(false)
+    );
+
+    const body = el('div', 'hud-modal-body');
+
+    const pauseBanner = el('div', 'hud-pause-banner');
+    pauseBanner.append(
+      el('span', 'hud-pause-banner-icon', '⏸️'),
+      el(
+        'span',
+        '',
+        'JEU EN PAUSE — Construisez et améliorez les 5 Bâtiments du Bastion (Niv. 0 → 3) ici ou en vous approchant des socles dorés autour du feu avec [E].'
+      )
+    );
+    body.appendChild(pauseBanner);
+
+    this.bastionArchitectResBar = el('div', 'hud-resources-group');
+    this.bastionArchitectResBar.style.marginBottom = '12px';
+    body.appendChild(this.bastionArchitectResBar);
+
+    this.bastionArchitectGridEl = el('div', 'bastion-architect-grid');
+    body.appendChild(this.bastionArchitectGridEl);
+
+    dialog.append(header, body);
+    this.bastionModalBackdrop.appendChild(dialog);
+    this.bastionModalBackdrop.addEventListener('click', (evt) => {
+      if (evt.target === this.bastionModalBackdrop) {
+        this.toggleBastionArchitectModal(false);
+      }
+    });
+
+    this.root.appendChild(this.bastionModalBackdrop);
+  }
+
+  /**
+   * Ouvre ou ferme la modale Architecte du Bastion (`[H]`) et met le jeu en pause (`isBastionModalOpen`).
+   * @param {boolean} [forceState]
+   * @param {Object} [bastionAndNpcs]
+   * @param {Object} [player]
+   * @returns {boolean}
+   */
+  toggleBastionArchitectModal(forceState, bastionAndNpcs = null, player = null) {
+    this.isBastionModalOpen =
+      typeof forceState === 'boolean' ? forceState : !this.isBastionModalOpen;
+    if (this.bastionModalBackdrop) {
+      this.bastionModalBackdrop.classList.toggle('is-hidden', !this.isBastionModalOpen);
+    }
+    if (this.isBastionModalOpen) {
+      this.renderBastionArchitectContent(
+        bastionAndNpcs || this.lastBastionRef,
+        player || this.lastPlayerRef
+      );
+    }
+    return this.isBastionModalOpen;
+  }
+
+  /**
+   * Construit les 5 cartes détaillées de l'Architecte du Bastion (Niv. 0 -> 1 -> 2 -> 3).
+   * @param {Object} [bastionAndNpcs]
+   * @param {Object} [player]
+   */
+  renderBastionArchitectContent(bastionAndNpcs = null, player = null) {
+    if (!this.bastionArchitectGridEl) return;
+    const bRef = bastionAndNpcs || this.lastBastionRef;
+    const pRef = player || this.lastPlayerRef;
+    const res = pRef?.resources || { wood: 0, crystal: 0, biomass: 0 };
+
+    if (this.bastionArchitectResBar) {
+      this.bastionArchitectResBar.replaceChildren(
+        el('div', 'hud-resource-badge res-wood', `🪵 Bois dispo: ${Math.floor(res.wood ?? 0)}`),
+        el(
+          'div',
+          'hud-resource-badge res-crystal',
+          `💎 Cristal dispo: ${Math.floor(res.crystal ?? 0)}`
+        ),
+        el(
+          'div',
+          'hud-resource-badge res-biomass',
+          `🌿 Biomasse dispo: ${Math.floor(res.biomass ?? 0)}`
+        )
+      );
+    }
+
+    this.bastionArchitectGridEl.replaceChildren();
+
+    for (const bDef of BASTION_BUILDINGS_CATALOG) {
+      const currentLevel =
+        bRef && typeof bRef.getBuildingLevel === 'function'
+          ? bRef.getBuildingLevel(bDef.id)
+          : bRef?.buildingLevels?.[bDef.id] ?? bDef.initialLevel;
+      const spec = getBuildingUpgradeSpec(bDef.id, currentLevel);
+      const affordable = canAffordBuildingUpgrade(bDef.id, currentLevel, res);
+
+      const card = el(
+        'div',
+        `bastion-architect-card${spec.isMaxLevel ? ' is-max-level' : ''}`
+      );
+
+      const header = el('div', 'bastion-architect-header');
+      const titleGroup = el('div', 'bastion-architect-title-group');
+      titleGroup.append(
+        el('span', 'bastion-architect-icon', spec.icon),
+        el('div', 'bastion-architect-name', `${spec.name} [${spec.hotkey}]`)
+      );
+      const lvlBadge = el(
+        'span',
+        `hud-building-lvl-badge${currentLevel === 0 ? ' lvl-0' : spec.isMaxLevel ? ' lvl-max' : ''}`,
+        spec.isMaxLevel ? 'NIV. 3 MAX' : `Niv. ${currentLevel} / ${spec.maxLevel}`
+      );
+      header.append(titleGroup, lvlBadge);
+
+      const summary = el('p', 'bastion-architect-summary', bDef.summary);
+
+      const tiersWrap = el('div', 'bastion-architect-tiers');
+      for (const tier of bDef.levels || []) {
+        let stateCls = 'is-locked';
+        if (tier.level === currentLevel) stateCls = 'is-current';
+        else if (tier.level < currentLevel) stateCls = 'is-unlocked';
+
+        const tierRow = el('div', `bastion-tier-item ${stateCls}`);
+        tierRow.append(
+          el(
+            'div',
+            'bastion-tier-title',
+            `${tier.level <= currentLevel ? '✅' : '🔒'} Niv. ${tier.level} — ${tier.label}`
+          ),
+          el('div', '', tier.effectText)
+        );
+        tiersWrap.appendChild(tierRow);
+      }
+
+      const footer = el('div', 'hud-building-bottom');
+      const costSpan = el(
+        'span',
+        `hud-building-cost${spec.isMaxLevel ? '' : affordable ? ' is-affordable' : ' is-missing'}`,
+        spec.isMaxLevel ? '✨ Niveau Maximum Atteint' : `Coût Niv. ${spec.nextLevel}: ${spec.costText}`
+      );
+
+      const actBtn = el(
+        'button',
+        `hud-btn hud-building-upgrade-btn${!spec.isMaxLevel && affordable ? ' is-ready-glow' : ''}`,
+        spec.isMaxLevel
+          ? '✅ Niv. 3 Max'
+          : `⬆️ ${spec.actionVerb} → Niv. ${spec.nextLevel} [${spec.hotkey}]`
+      );
+      actBtn.type = 'button';
+      actBtn.disabled = spec.isMaxLevel || !affordable;
+      actBtn.addEventListener('click', () => {
+        if (this.callbacks.onBuildStructure) {
+          this.callbacks.onBuildStructure(bDef.id);
+          this.renderBastionArchitectContent(
+            bastionAndNpcs || this.lastBastionRef,
+            player || this.lastPlayerRef
+          );
+        }
+      });
+
+      footer.append(costSpan, actBtn);
+      card.append(header, summary, tiersWrap, footer);
+      this.bastionArchitectGridEl.appendChild(card);
+    }
+  }
+
+  /**
+   * Met à jour les 5 lignes de bâtiments du Bastion dans le panneau gauche.
+   * @param {Object} bastionAndNpcs
+   * @param {Object} player
+   */
+  _updateBastionBuildingsUI(bastionAndNpcs, player) {
+    if (!bastionAndNpcs || !this.buildingRowEls) return;
+    const res = player?.resources || { wood: 0, crystal: 0, biomass: 0 };
+
+    for (const bDef of BASTION_BUILDINGS_CATALOG) {
+      const ui = this.buildingRowEls[bDef.id];
+      if (!ui) continue;
+
+      const currentLevel =
+        typeof bastionAndNpcs.getBuildingLevel === 'function'
+          ? bastionAndNpcs.getBuildingLevel(bDef.id)
+          : bastionAndNpcs.buildingLevels?.[bDef.id] ?? bDef.initialLevel;
+      const spec = getBuildingUpgradeSpec(bDef.id, currentLevel);
+      const affordable = canAffordBuildingUpgrade(bDef.id, currentLevel, res);
+
+      ui.row.className = `hud-building-row${currentLevel > 0 ? ' is-built' : ''}${spec.isMaxLevel ? ' is-max' : ''}`;
+      ui.nameEl.textContent = `${spec.icon} ${spec.shortName}`;
+      ui.lvlBadge.className = `hud-building-lvl-badge${currentLevel === 0 ? ' lvl-0' : spec.isMaxLevel ? ' lvl-max' : ''}`;
+      ui.lvlBadge.textContent = spec.isMaxLevel
+        ? 'NIV. MAX (3/3)'
+        : `Niv. ${currentLevel}/${spec.maxLevel}`;
+
+      ui.effectEl.textContent = spec.isMaxLevel
+        ? `Actif : ${spec.currentEffectDesc}`
+        : currentLevel > 0
+          ? `Actif : ${spec.currentEffectDesc} → Prochain : ${spec.nextEffectDesc}`
+          : `Effet Niv. 1 : ${spec.nextEffectDesc}`;
+
+      ui.costEl.className = `hud-building-cost${spec.isMaxLevel ? '' : affordable ? ' is-affordable' : ' is-missing'}`;
+      ui.costEl.textContent = spec.isMaxLevel ? '✨ Maximisé' : `Coût: ${spec.costText}`;
+
+      ui.upgBtn.disabled = spec.isMaxLevel || !affordable;
+      ui.upgBtn.classList.toggle('is-ready-glow', !spec.isMaxLevel && affordable);
+      ui.upgBtn.textContent = spec.isMaxLevel
+        ? '✅ Max'
+        : `⬆️ ${spec.actionVerb} [${spec.hotkey}]`;
+    }
+  }
+
+  /**
+   * Met à jour le Centre de Commandement des Missions d'Éclaireurs (panneau gauche)
+   * et la Carte d'Opération / Quête Dynamique en 2 Phases (panneau droit).
+   * @param {Object} bastionAndNpcs
+   * @param {Array<Object>} enemies
+   * @param {Object} questSystem
+   */
+  _updateQuestAndScoutMissionUI(bastionAndNpcs, enemies = [], questSystem = null) {
+    // 1. Mise à jour du panneau Ordre de Mission des Éclaireurs (Gauche)
+    if (bastionAndNpcs && this.scoutMissionStatusEl) {
+      const mission =
+        typeof bastionAndNpcs.getScoutMission === 'function'
+          ? bastionAndNpcs.getScoutMission()
+          : {
+              type: bastionAndNpcs.scoutMissionType || 'track_lineage',
+              targetMutationId: bastionAndNpcs.scoutMissionTargetId || 'pyro_gland',
+            };
+      const mType = mission.type || 'track_lineage';
+      const targetMutId = mission.targetMutationId || this.selectedLineageId || 'pyro_gland';
+
+      if (mType === 'track_lineage') {
+        const prog =
+          typeof bastionAndNpcs.getLineageTrackingProgress === 'function'
+            ? bastionAndNpcs.getLineageTrackingProgress(enemies, targetMutId)
+            : {
+                targetLabel: targetMutId,
+                spottedCarriers: 0,
+                totalCarriers: 0,
+                allSpotted: false,
+              };
+        this.scoutMissionStatusEl.textContent =
+          prog.totalCarriers > 0
+            ? `🔍 Mission Active : Traquer [${prog.targetLabel}] (Repérés : ${prog.spottedCarriers} / ${prog.totalCarriers})`
+            : `✅ Mission Active : Traquer [${prog.targetLabel}] (Aucun porteur survivant)`;
+      } else {
+        const spec = getScoutMissionSpec(mType, targetMutId);
+        this.scoutMissionStatusEl.textContent = `${spec.icon} Mission Active : ${spec.label}`;
+      }
+
+      for (const [id, ui] of Object.entries(this.scoutMissionBtns || {})) {
+        ui.btn.classList.toggle('is-active', id === mType);
+      }
+    }
+
+    // 2. Mise à jour de la Quête Dynamique en 2 phases (Panneau Droit)
+    if (!questSystem || !this.questCardEl) return;
+    const qState =
+      typeof questSystem.getQuestHUDState === 'function'
+        ? questSystem.getQuestHUDState(enemies, bastionAndNpcs)
+        : null;
+    if (!qState) return;
+
+    this.questCardEl.classList.toggle('is-phase-2', qState.phase === 2);
+    this.questTitleEl.textContent = qState.title;
+    this.questPhaseBadgeEl.textContent = qState.phaseBadge;
+    this.questDescEl.textContent = qState.objectiveText;
+
+    // Étape 1 : Éclaireurs
+    this.questStep1Row.className = `hud-quest-step${
+      qState.step1Done ? ' is-done' : qState.phase === 1 ? ' is-active' : ''
+    }`;
+    this.questStep1Icon.textContent = qState.step1Done ? '✅' : '1️⃣';
+    this.questStep1Text.textContent = qState.step1Label;
+
+    // Étape 2 : Extermination
+    this.questStep2Row.className = `hud-quest-step${
+      qState.step2Done ? ' is-done' : qState.phase === 2 ? ' is-active' : ''
+    }`;
+    this.questStep2Icon.textContent = qState.step2Done
+      ? '✅'
+      : qState.phase === 2
+        ? '⚔️'
+        : '2️⃣';
+    this.questStep2Text.textContent = qState.step2Label;
+
+    this.questProgressFillEl.style.width = `${Math.min(100, Math.max(0, qState.progressPct || 0))}%`;
+    this.questRewardEl.textContent = `🎁 Récompense : ${qState.rewardText}`;
+
+    if (this.questActionBtnEl) {
+      if (qState.type === 'track_and_eradicate' && !qState.step1Done) {
+        this.questActionBtnEl.textContent = `🦅 Ordonner aux Éclaireurs : Localiser la Lignée (${qState.spottedCarriers}/${qState.totalCarriers})`;
+      } else if (qState.type === 'track_and_eradicate') {
+        this.questActionBtnEl.textContent = `🎯 Centrer Radar sur la Lignée (${qState.totalCarriers} restant${qState.totalCarriers > 1 ? 's' : ''})`;
+      } else {
+        this.questActionBtnEl.textContent = '🏰 Ouvrir l’Architecte du Bastion [H]';
+      }
+    }
+  }
+
+  /* ==========================================================================
      8. BOUCLE DE MISE À JOUR PRINCIPALE DU HUD (`update`)
      ========================================================================== */
   /**
@@ -2193,6 +2703,7 @@ export class HUDManager {
    * @param {Object} [state.enemyManager] - Instance `EnemyManager`.
    * @param {Object} [state.player] - Instance `PlayerController`.
    * @param {Object} [state.bastionAndNpcs] - Instance `BastionAndNPCs`.
+   * @param {Object} [state.questSystem] - Instance `DynamicQuestSystem`.
    */
   update(state = {}) {
     const {
@@ -2201,10 +2712,17 @@ export class HUDManager {
       enemyManager = null,
       player = null,
       bastionAndNpcs = null,
+      questSystem = null,
     } = state;
 
     if (player) {
       this.lastPlayerRef = player;
+    }
+    if (bastionAndNpcs) {
+      this.lastBastionRef = bastionAndNpcs;
+    }
+    if (questSystem) {
+      this.lastQuestSystemRef = questSystem;
     }
 
     // 1. Horloge Jour / Nuit
@@ -2277,7 +2795,7 @@ export class HUDManager {
       this._updateMasteryPanel(player);
     }
 
-    // 4. Bastion & PNJ Alliés (Éclaireurs en expédition lointaine, Gardes, Récolteurs)
+    // 4. Bastion & PNJ Alliés (Éclaireurs en expédition lointaine, Gardes, Récolteurs, Bâtiments Niv. 0->3)
     if (bastionAndNpcs) {
       const bHp = Math.max(0, Math.round(bastionAndNpcs.hp ?? bastionAndNpcs.bastionHp ?? 500));
       const bMaxHp = Math.max(
@@ -2318,10 +2836,18 @@ export class HUDManager {
       const totalCages = cages.length || 6;
       const rescuedCages = cages.filter((c) => c && (c.rescued || c.isRescued)).length;
       this.rescueCounterEl.textContent = `PNJ: ${counts.total || 0} (${rescuedCages}/${totalCages} cages)`;
+
+      // Mise à jour des 5 Bâtiments du Bastion (Niv. 0 -> 3)
+      this._updateBastionBuildingsUI(bastionAndNpcs, player);
     }
 
-    // 5. Panneau droit : Radar Génétique & Lignées Mutantes
+    // 5. Panneau droit : Radar Génétique, Lignées Mutantes & Opération / Quête Active
     this._updateLineagesPanel(ecoSim, enemies);
+    this._updateQuestAndScoutMissionUI(bastionAndNpcs, enemies, questSystem);
+
+    if (this.isBastionModalOpen) {
+      this.renderBastionArchitectContent(bastionAndNpcs, player);
+    }
   }
 }
 

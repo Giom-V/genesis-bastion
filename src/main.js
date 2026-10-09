@@ -38,6 +38,10 @@ import {
   logOnboardingTransition,
   FULL_UNLOCKED_HUD,
 } from './ecosystem/OnboardingSteps.js';
+import {
+  DynamicQuestSystem,
+  getBuildingUpgradeSpec,
+} from './ecosystem/BaseAndQuestsDesign.js';
 import { EnemyManager } from './entities/EnemyManager.js';
 import { PlayerController } from './entities/PlayerController.js';
 import { BastionAndNPCs } from './entities/BastionAndNPCs.js';
@@ -68,9 +72,11 @@ export class GenesisBastionGame {
     /** @type {VFXManager} */
     this.vfx = new VFXManager(this.sceneManager.scene);
 
-    // 2. Simulateur d'Écosystème (Jeu de la Vie de Conway + Algorithme Génétique)
+    // 2. Simulateur d'Écosystème (Jeu de la Vie de Conway + Algorithme Génétique) & Système de Quêtes Dynamiques
     /** @type {EcosystemSimulator} */
     this.ecoSim = new EcosystemSimulator();
+    /** @type {DynamicQuestSystem} */
+    this.questSystem = new DynamicQuestSystem();
 
     // 3. Gestionnaire d'Ennemis, Joueur & Bastion + Éclaireurs (Scouts)
     /** @type {EnemyManager} */
@@ -83,6 +89,9 @@ export class GenesisBastionGame {
 
     /** @type {PlayerController} */
     this.player = new PlayerController(this.sceneManager.scene, this.terrain, this.vfx);
+    if (typeof this.player.setQuestSystem === 'function') {
+      this.player.setQuestSystem(this.questSystem);
+    }
 
     /** @type {BastionAndNPCs} */
     this.bastionAndNpcs = new BastionAndNPCs(
@@ -92,6 +101,15 @@ export class GenesisBastionGame {
       this.ecoSim,
       { tutorialMode: options.startWithTutorial !== false }
     );
+
+    // Rendu immédiat de la frame 0 du monde 3D pour garantir que le canvas WebGL n'est jamais noir
+    try {
+      this.sceneManager.update(0.016, 0, this.player.position);
+    } catch (err) {
+      logger.error('RENDER', 'Erreur lors du rendu initial de la scène 3D', {
+        error: String(err),
+      });
+    }
 
     // 4. Interface Tactique (HUDManager) & Radar Cartographique 2D (Minimap)
     /** @type {HUDManager} */
@@ -104,7 +122,11 @@ export class GenesisBastionGame {
       onSelectUpgrade: (upgrade) => this.handleSelectUpgrade(upgrade),
       onSkipTutorial: () => this.skipTutorial(),
       onSetCombatMode: (mode) => this.handleSetCombatMode(mode),
+      onChangeCombatMode: (mode) => this.handleSetCombatMode(mode),
       onCastSpellSlot: (slotIndex) => this.handleCastSpellSlot(slotIndex),
+      onSetScoutMission: (missionType, targetMutationId) =>
+        this.handleSetScoutMission(missionType, targetMutationId),
+      onTriggerQuestAction: (quest) => this.handleTriggerQuestAction(quest),
     });
     this.hud.registerExtraUpgrades(DESIGNED_UPGRADES);
 
@@ -157,16 +179,32 @@ export class GenesisBastionGame {
       this.skipTutorial();
     }
 
-    // 7. Raccourcis clavier globaux (Tab, P, T, M, G, 1, 2, 3, Escape)
+    // 7. Raccourcis clavier globaux (Tab, P, T, M, G, H, 1-4, F1-F5, Escape)
     this._bindGlobalShortcuts();
 
-    // 8. État de la boucle d'animation
+    // 8. État de la boucle d'animation & synchronisation initiale HUD + 3D
     /** @type {number} */
     this.lastFrameTime = performance.now();
     /** @type {number} */
     this.elapsedTime = 0;
     /** @type {boolean} */
     this.isRunning = true;
+
+    try {
+      this.hud.update({
+        sceneManager: this.sceneManager,
+        ecoSim: this.ecoSim,
+        enemyManager: this.enemyManager,
+        player: this.player,
+        bastionAndNpcs: this.bastionAndNpcs,
+        questSystem: this.questSystem,
+      });
+      this.sceneManager.update(0.016, 0, this.player.position);
+    } catch (err) {
+      logger.error('INIT', 'Erreur lors de la synchronisation initiale HUD/3D', {
+        error: String(err),
+      });
+    }
 
     logger.info(
       'SYSTEM',
@@ -1047,7 +1085,24 @@ export class GenesisBastionGame {
       return;
     }
 
-    // 3. Gisement de Bois / Cristal à proximité (pendant l'Acte 3B ou quand le joueur est proche <= 6.2m)
+    // 3. Socle de Bâtiment 3D du Bastion à proximité (<= 4.8m)
+    if (this.bastionAndNpcs && typeof this.bastionAndNpcs.getNearestBuildingPad === 'function') {
+      const pad = this.bastionAndNpcs.getNearestBuildingPad(px, pz, 4.8, this.player?.resources);
+      if (pad && !pad.isMaxLevel) {
+        const py = this.terrain ? this.terrain.getHeightAt(pad.x, pad.z) : 0;
+        const screenPos = this.sceneManager.worldToScreen(
+          new THREE.Vector3(pad.x, py, pad.z),
+          2.9
+        );
+        const label =
+          pad.worldPromptText ||
+          `${pad.actionVerb} : ${pad.shortName} → Niv. ${pad.nextLevel} (${pad.costText})`;
+        this.hud.updateContextualPrompt(screenPos, 'E', label, 'prompt-build');
+        return;
+      }
+    }
+
+    // 4. Gisement de Bois / Cristal à proximité (pendant l'Acte 3B ou quand le joueur est proche <= 6.2m)
     if (this.terrain && typeof this.terrain.getNearestResourceNode === 'function') {
       const searchRad = this.tutorialActive && this.tutorialAct === 3 && this.tutorialSubStep === '3B' ? 8.5 : 5.5;
       const node = this.terrain.getNearestResourceNode(px, pz, searchRad);
@@ -1066,7 +1121,7 @@ export class GenesisBastionGame {
   /**
    * Connecte les événements entre les Éclaireurs, le gestionnaire d'ennemis, le joueur et le HUD.
    * Intercepte également `enemyManager.damageEnemy` et `player.interact` pour afficher les nombres
-   * de dégâts flottants 3D->2D et détecter la récolte du tutoriel.
+   * de dégâts flottants 3D->2D et détecter la récolte ou la construction sur socle 3D.
    * @private
    */
   _wireGameCallbacks() {
@@ -1135,19 +1190,32 @@ export class GenesisBastionGame {
       return res;
     };
 
-    // Interception de `player.interact` pour détecter la récolte de Bois/Cristal en Acte 3B
+    // Interception de `player.interact` pour détecter la récolte de Bois/Cristal en Acte 3B ou la construction sur socle 3D en Acte 4A
     if (this.player && typeof this.player.interact === 'function') {
       const origInteract = this.player.interact.bind(this.player);
       this.player.interact = (bastionAndNpcs) => {
         const prevWood = this.player.resources?.wood || 0;
         const prevCrystal = this.player.resources?.crystal || 0;
         const prevRescued = bastionAndNpcs?.rescuedCount || 0;
+        const prevWatchtowerLvl =
+          typeof bastionAndNpcs?.getBuildingLevel === 'function'
+            ? bastionAndNpcs.getBuildingLevel('watchtower')
+            : 0;
 
-        origInteract(bastionAndNpcs);
+        const interactResult = origInteract(bastionAndNpcs);
 
         const newWood = this.player.resources?.wood || 0;
         const newCrystal = this.player.resources?.crystal || 0;
         const newRescued = bastionAndNpcs?.rescuedCount || 0;
+        const newWatchtowerLvl =
+          typeof bastionAndNpcs?.getBuildingLevel === 'function'
+            ? bastionAndNpcs.getBuildingLevel('watchtower')
+            : 0;
+
+        if (newWatchtowerLvl > prevWatchtowerLvl) {
+          this.tutState.watchtowerBuiltInAct4 = true;
+          this.hud.refreshLogFeed();
+        }
 
         // Si le joueur a récolté un gisement (sans que ce soit le bonus d'ouverture d'une cage)
         if (newRescued === prevRescued && (newWood > prevWood || newCrystal > prevCrystal)) {
@@ -1164,6 +1232,7 @@ export class GenesisBastionGame {
             this.hud.spawnFloatingNumber(screenPos, gainTxt, 'dmg-heal');
           }
         }
+        return interactResult;
       };
     }
 
@@ -1251,6 +1320,62 @@ export class GenesisBastionGame {
       return this.player.triggerAbilitySlot(slotIndex, this.enemyManager);
     }
     return false;
+  }
+
+  /**
+   * Assigne un Ordre de Mission aux Éclaireurs (`'track_lineage'`, `'find_cages'`, `'scout_volcano'`, `'perimeter_alert'`).
+   * @param {string} missionType
+   * @param {string|null} [targetMutationId=null]
+   */
+  handleSetScoutMission(missionType, targetMutationId = null) {
+    if (!this.bastionAndNpcs || typeof this.bastionAndNpcs.setScoutMission !== 'function') return;
+    const mutId = targetMutationId || this.hud.selectedLineageId || 'pyro_gland';
+    this.bastionAndNpcs.setScoutMission(missionType, mutId);
+    if (missionType === 'track_lineage' && mutId) {
+      this.hud.selectedLineageId = mutId;
+      this.minimap.setHighlightedLineage(mutId);
+    }
+    this.hud.refreshLogFeed();
+  }
+
+  /**
+   * Exécute l'action rapide associée à la carte de Quête Dynamique en cours (panneau droit).
+   * @param {Object|null} [quest=null]
+   */
+  handleTriggerQuestAction(quest = null) {
+    const activeQuest =
+      quest || (this.questSystem && this.questSystem.getActiveQuest()) || null;
+    if (!activeQuest) return;
+
+    if (activeQuest.type === 'track_and_eradicate') {
+      const mutId = activeQuest.targetMutationId || 'pyro_gland';
+      this.handleSetScoutMission('track_lineage', mutId);
+
+      // Si aucun porteur de cette mutation n'est présent sur l'île (ex. pendant ou juste après le tutoriel), en faire apparaître un pack
+      const enemies = this.enemyManager.getEnemies();
+      let carriers = enemies.filter(
+        (e) =>
+          e &&
+          !e.dead &&
+          e.hp > 0 &&
+          Array.isArray(e.genome?.mutations) &&
+          e.genome.mutations.includes(mutId)
+      );
+      if (carriers.length === 0 && typeof this.enemyManager.spawnQuestLineagePack === 'function') {
+        carriers = this.enemyManager.spawnQuestLineagePack(
+          mutId,
+          activeQuest.targetSpeciesId || 'troll',
+          activeQuest.initialPackSize || 3
+        );
+      }
+
+      const targetCarrier = carriers.find((c) => c.spottedByScout) || carriers[0] || null;
+      if (targetCarrier) {
+        this.focusWorldPosition(targetCarrier.x, targetCarrier.z, mutId);
+      }
+    } else if (activeQuest.type === 'build_bastion') {
+      this.hud.toggleBastionArchitectModal(true, this.bastionAndNpcs, this.player);
+    }
   }
 
   /**
@@ -1346,16 +1471,24 @@ export class GenesisBastionGame {
   }
 
   /**
-   * Construit une structure défensive ou scientifique au Bastion (`watchtower`, `palisade`, `biolab`).
+   * Construit ou améliore un bâtiment du Bastion (`sanctuary_hearth`, `watchtower`, `scout_guild`, `lumber_forge`/`palisade`, `biolab`).
    * @param {string} structureId
+   * @returns {boolean}
    */
   handleBuildStructure(structureId) {
-    if (!this.bastionAndNpcs || typeof this.bastionAndNpcs.buildStructure !== 'function') return;
-    const built = this.bastionAndNpcs.buildStructure(structureId, this.player?.resources);
+    if (!this.bastionAndNpcs) return false;
+    const fn =
+      typeof this.bastionAndNpcs.upgradeBuilding === 'function'
+        ? this.bastionAndNpcs.upgradeBuilding.bind(this.bastionAndNpcs)
+        : this.bastionAndNpcs.buildStructure?.bind(this.bastionAndNpcs);
+    if (!fn) return false;
+
+    const built = fn(structureId, this.player?.resources);
     if (built && structureId === 'watchtower') {
       this.tutState.watchtowerBuiltInAct4 = true;
     }
     this.hud.refreshLogFeed();
+    return Boolean(built);
   }
 
   /**
@@ -1402,6 +1535,9 @@ export class GenesisBastionGame {
         if (isOpen) {
           this.tutState.codexOpenedInAct6 = true;
         }
+      } else if (evt.code === 'KeyH' && !evt.ctrlKey && !evt.metaKey) {
+        evt.preventDefault();
+        this.hud.toggleBastionArchitectModal(undefined, this.bastionAndNpcs, this.player);
       } else if (evt.code === 'KeyP' && !evt.ctrlKey && !evt.metaKey) {
         if (this.tutorialActive) {
           this.skipTutorial();
@@ -1420,6 +1556,9 @@ export class GenesisBastionGame {
         }
         if (this.hud.isCombatModeModalOpen) {
           this.hud.hideCombatModeModal();
+        }
+        if (this.hud.isBastionModalOpen) {
+          this.hud.toggleBastionArchitectModal(false);
         }
         this.hud.hideAlertBanner();
       } else if (evt.code === 'KeyT' && !evt.ctrlKey && !evt.metaKey) {
@@ -1450,10 +1589,16 @@ export class GenesisBastionGame {
         this.handleBuildStructure('watchtower');
       } else if (evt.code === 'F2') {
         evt.preventDefault();
-        this.handleBuildStructure('palisade');
+        this.handleBuildStructure('lumber_forge');
       } else if (evt.code === 'F3') {
         evt.preventDefault();
         this.handleBuildStructure('biolab');
+      } else if (evt.code === 'F4') {
+        evt.preventDefault();
+        this.handleBuildStructure('scout_guild');
+      } else if (evt.code === 'F5') {
+        evt.preventDefault();
+        this.handleBuildStructure('sanctuary_hearth');
       }
     });
   }
@@ -1461,83 +1606,151 @@ export class GenesisBastionGame {
   /**
    * Exécute un pas de simulation et de rendu (`requestAnimationFrame`).
    * Si une modale tactique est ouverte (`this.hud.isModalPaused === true` : Level-Up, Mode de Combat,
-   * ou Codex Phylogénétique), toute la simulation de gameplay est mise en PAUSE STRICTE afin que
-   * le joueur puisse lire et choisir ses compétences sans subir d'attaques.
+   * Architecte du Bastion `[H]` ou Codex Phylogénétique `[Tab]`), toute la simulation de gameplay est mise
+   * en PAUSE STRICTE afin que le joueur puisse lire et planifier sans subir d'attaques.
    *
    * @param {number} nowMs - Timestamp haute précision fourni par `requestAnimationFrame`.
    */
   tickFrame(nowMs) {
     if (!this.isRunning) return;
 
-    const rawDt = (nowMs - this.lastFrameTime) * 0.001;
-    this.lastFrameTime = nowMs;
-    const dt = Math.min(Math.max(rawDt, 0.001), 0.1);
+    // Planifier immédiatement la frame suivante pour garantir que la boucle 3D ne s'arrête jamais
+    requestAnimationFrame((t) => this.tickFrame(t));
+
+    const safeNow = Number.isFinite(nowMs) ? nowMs : performance.now();
+    const rawDt = (safeNow - this.lastFrameTime) * 0.001;
+    this.lastFrameTime = safeNow;
+    const dt = Number.isFinite(rawDt) ? Math.min(Math.max(rawDt, 0.001), 0.1) : 0.016;
 
     const isPaused = Boolean(this.hud.isModalPaused);
 
     if (!isPaused) {
       this.elapsedTime += dt;
 
-      const camYaw =
-        typeof this.sceneManager.getCameraYaw === 'function'
-          ? this.sceneManager.getCameraYaw()
-          : this.sceneManager.cameraYaw || 0;
+      try {
+        const camYaw =
+          typeof this.sceneManager.getCameraYaw === 'function'
+            ? this.sceneManager.getCameraYaw()
+            : this.sceneManager.cameraYaw || 0;
 
-      // 1. Mise à jour du Joueur (Mouvement, Auto-Cast Vampire Survivors ou Sorts Actifs Diablo)
-      this.player.update(dt, this.elapsedTime, this.enemyManager, this.bastionAndNpcs, camYaw);
+        // 1. Mise à jour du Joueur (Mouvement, Auto-Cast Vampire Survivors ou Sorts Actifs Diablo)
+        this.player.update(dt, this.elapsedTime, this.enemyManager, this.bastionAndNpcs, camYaw);
 
-      // 2. Mise à jour du Bastion, des Gardes, Récolteurs et Éclaireurs (Scouts hors-frontière)
-      if (this.bastionAndNpcs && typeof this.bastionAndNpcs.update === 'function') {
-        this.bastionAndNpcs.update(
+        // 2. Mise à jour du Bastion, des Gardes, Récolteurs et Éclaireurs (Scouts hors-frontière)
+        if (this.bastionAndNpcs && typeof this.bastionAndNpcs.update === 'function') {
+          this.bastionAndNpcs.update(
+            dt,
+            this.elapsedTime,
+            this.enemyManager,
+            this.player,
+            this.handleScoutDiscovery
+          );
+        }
+
+        // 3. Progression du Tutoriel Guidé en 7 Actes & Bulles Contextuelles 3D->2D
+        this._updateTutorialAndWorldPrompts(dt);
+
+        // 4. Mise à jour des Créatures Sauvages, Meutes, Croissance Bébé -> Adulte & Eco-Ticks
+        this.enemyManager.update(
           dt,
           this.elapsedTime,
-          this.enemyManager,
           this.player,
-          this.handleScoutDiscovery
+          this.bastionAndNpcs,
+          this.handleLineageEradicated
         );
+
+        // 4B. Évaluation des Quêtes Dynamiques en 2 phases (Repérage Éclaireur -> Extermination)
+        if (this.questSystem && typeof this.questSystem.evaluateProgress === 'function') {
+          this.questSystem.evaluateProgress({
+            enemies: this.enemyManager.getEnemies(),
+            bastionAndNpcs: this.bastionAndNpcs,
+            player: this.player,
+            onStep1Complete: () => {
+              this.hud.refreshLogFeed();
+            },
+            onQuestComplete: (reward) => {
+              if (this.player && typeof this.player.applyQuestReward === 'function') {
+                this.player.applyQuestReward(reward);
+              }
+              this.hud.refreshLogFeed();
+              const nextQ = this.questSystem.advanceToNextQuest();
+              if (
+                nextQ &&
+                nextQ.type === 'track_and_eradicate' &&
+                typeof this.enemyManager.spawnQuestLineagePack === 'function'
+              ) {
+                const existing = this.enemyManager
+                  .getEnemies()
+                  .filter(
+                    (e) =>
+                      e &&
+                      e.hp > 0 &&
+                      Array.isArray(e.genome?.mutations) &&
+                      e.genome.mutations.includes(nextQ.targetMutationId)
+                  );
+                if (existing.length === 0) {
+                  this.enemyManager.spawnQuestLineagePack(
+                    nextQ.targetMutationId,
+                    nextQ.targetSpeciesId,
+                    nextQ.initialPackSize || 3
+                  );
+                }
+              }
+            },
+          });
+        }
+      } catch (err) {
+        logger.error('GAMEPLAY', 'Erreur interceptée dans la mise à jour gameplay', {
+          error: String(err),
+        });
       }
-
-      // 3. Progression du Tutoriel Guidé en 7 Actes & Bulles Contextuelles 3D->2D
-      this._updateTutorialAndWorldPrompts(dt);
-
-      // 4. Mise à jour des Créatures Sauvages, Meutes, Croissance Bébé -> Adulte & Eco-Ticks
-      this.enemyManager.update(
-        dt,
-        this.elapsedTime,
-        this.player,
-        this.bastionAndNpcs,
-        this.handleLineageEradicated
-      );
     }
 
     // 5. Mise à jour de l'Océan, de la Végétation et des Particules / Balises 3D (dt = 0 en pause)
     const renderDt = isPaused ? 0 : dt;
-    const sunDir = this.sceneManager.getSunDirection();
-    this.terrain.update(renderDt, this.elapsedTime, sunDir);
-    this.vfx.update(renderDt, this.elapsedTime);
+    try {
+      const sunDir = this.sceneManager.getSunDirection();
+      this.terrain.update(renderDt, this.elapsedTime, sunDir);
+      this.vfx.update(renderDt, this.elapsedTime);
+    } catch (err) {
+      logger.error('VFX', 'Erreur interceptée dans terrain/vfx.update', {
+        error: String(err),
+      });
+    }
 
-    // 6. Mise à jour de la Caméra 3D Tactique / Isométrique & Rendu Post-Processing
-    this.sceneManager.update(renderDt, this.elapsedTime, this.player.position);
+    // 6. Mise à jour de la Caméra 3D Tactique / Isométrique & Rendu Post-Processing (TOUJOURS exécuté)
+    try {
+      this.sceneManager.update(renderDt, this.elapsedTime, this.player.position);
+    } catch (err) {
+      logger.error('RENDER', 'Erreur interceptée dans sceneManager.update', {
+        error: String(err),
+      });
+    }
 
     // 7. Mise à jour du HUD et du Radar Minimap 2D
-    this.hud.update({
-      sceneManager: this.sceneManager,
-      ecoSim: this.ecoSim,
-      enemyManager: this.enemyManager,
-      player: this.player,
-      bastionAndNpcs: this.bastionAndNpcs,
-    });
+    try {
+      this.hud.update({
+        sceneManager: this.sceneManager,
+        ecoSim: this.ecoSim,
+        enemyManager: this.enemyManager,
+        player: this.player,
+        bastionAndNpcs: this.bastionAndNpcs,
+        questSystem: this.questSystem,
+      });
 
-    this.minimap.update({
-      terrain: this.terrain,
-      ecoSim: this.ecoSim,
-      enemies: this.enemyManager.getEnemies(),
-      player: this.player,
-      bastionAndNpcs: this.bastionAndNpcs,
-      elapsedTime: this.elapsedTime,
-    });
-
-    requestAnimationFrame((t) => this.tickFrame(t));
+      this.minimap.update({
+        terrain: this.terrain,
+        ecoSim: this.ecoSim,
+        enemies: this.enemyManager.getEnemies(),
+        player: this.player,
+        bastionAndNpcs: this.bastionAndNpcs,
+        elapsedTime: this.elapsedTime,
+      });
+    } catch (err) {
+      logger.error('HUD', 'Erreur interceptée dans hud/minimap.update', {
+        error: String(err),
+      });
+    }
   }
 
   /**
@@ -1564,6 +1777,7 @@ function bootstrapGenesisBastion() {
       terrain: gameInstance.terrain,
       vfx: gameInstance.vfx,
       ecoSim: gameInstance.ecoSim,
+      questSystem: gameInstance.questSystem,
       enemyManager: gameInstance.enemyManager,
       player: gameInstance.player,
       bastionAndNpcs: gameInstance.bastionAndNpcs,
@@ -1575,6 +1789,15 @@ function bootstrapGenesisBastion() {
       startTutorialAct: (actNum) => gameInstance.startTutorialAct(actNum),
       toggleCodex: () =>
         gameInstance.hud.toggleCodexModal(undefined, gameInstance.enemyManager.getEnemies()),
+      toggleBastionArchitect: (forceState) =>
+        gameInstance.hud.toggleBastionArchitectModal(
+          forceState,
+          gameInstance.bastionAndNpcs,
+          gameInstance.player
+        ),
+      upgradeBuilding: (buildingId) => gameInstance.handleBuildStructure(buildingId),
+      setScoutMission: (missionType, mutId) =>
+        gameInstance.handleSetScoutMission(missionType, mutId),
       setCombatMode: (mode) => gameInstance.hud.setCombatMode(mode, true),
       toggleCombatMode: () => gameInstance.hud.toggleCombatMode(),
       openCombatModeModal: () => gameInstance.hud.showCombatModeModal(),
