@@ -175,11 +175,14 @@ export class SceneManager {
         ? document.querySelector(containerEl)
         : containerEl || document.getElementById('app') || document.body;
 
-    const width = this.container?.clientWidth || window.innerWidth || 1280;
-    const height = this.container?.clientHeight || window.innerHeight || 720;
+    const rawW = this.container?.clientWidth || window.innerWidth || 1280;
+    const rawH = this.container?.clientHeight || window.innerHeight || 720;
+    const width = Math.max(320, Number.isFinite(rawW) ? rawW : 1280);
+    const height = Math.max(240, Number.isFinite(rawH) ? rawH : 720);
 
     /** @type {THREE.Scene} */
     this.scene = new THREE.Scene();
+    this.scene.background = new THREE.Color(0x3a6ea5);
     this.scene.fog = new THREE.FogExp2(0x7fb2d9, 0.0036);
 
     /** @type {THREE.WebGLRenderer} */
@@ -195,8 +198,18 @@ export class SceneManager {
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
+    const canvasEl = this.renderer.domElement;
+    if (canvasEl && canvasEl.style) {
+      canvasEl.style.display = 'block';
+      canvasEl.style.width = '100%';
+      canvasEl.style.height = '100%';
+      canvasEl.style.position = 'absolute';
+      canvasEl.style.inset = '0';
+      canvasEl.style.zIndex = '0';
+    }
+
     if (this.container) {
-      this.container.appendChild(this.renderer.domElement);
+      this.container.appendChild(canvasEl);
     }
 
     /** @type {THREE.PerspectiveCamera} */
@@ -204,7 +217,7 @@ export class SceneManager {
 
     // Tactical 3D Isometric-style (3/4 top-down V Rising / Ravenswatch) camera state
     /** @type {THREE.Vector3} */
-    this.cameraTarget = new THREE.Vector3(0, 2.2, 0);
+    this.cameraTarget = new THREE.Vector3(0, 2.2, 6.5);
     /** @type {number} Default 45-degree isometric diagonal yaw */
     this.cameraYaw = Math.PI * 0.25;
     /** @type {number} */
@@ -217,6 +230,11 @@ export class SceneManager {
     this.cameraDistance = 42;
     /** @type {number} */
     this.targetCameraDistance = 42;
+
+    /** @type {boolean} Tutorial camera flags */
+    this.hasZoomed = false;
+    /** @type {boolean} */
+    this.hasRotatedCamera = false;
 
     // Temporary focus override (e.g. when player clicks a mutant lineage in the HUD)
     /** @type {THREE.Vector3|null} */
@@ -269,6 +287,7 @@ export class SceneManager {
     this._initLighting();
     this._bindEvents();
     this._updateCameraTransform(1.0);
+    this._updateAtmosphere(0.016, 0);
 
     logger.info('WORLD', 'SceneManager initialized (ACESFilmic + PCFSoftShadowMap + Hillaire Sky + Bloom)', {
       viewport: `${width}x${height}`,
@@ -470,23 +489,45 @@ export class SceneManager {
    * @private
    */
   _updateCameraTransform(dt, playerPos) {
+    const safeDt = Number.isFinite(dt) ? clamp(dt, 0.001, 0.1) : 0.016;
     const yawSpeed = 1.85;
     if (this._camInput.rotateLeft) {
-      this.targetCameraYaw += yawSpeed * dt;
+      this.targetCameraYaw += yawSpeed * safeDt;
     }
     if (this._camInput.rotateRight) {
-      this.targetCameraYaw -= yawSpeed * dt;
+      this.targetCameraYaw -= yawSpeed * safeDt;
     }
 
-    const smoothFactor = clamp(dt * 9.5, 0.01, 1.0);
-    this.cameraYaw = lerp(this.cameraYaw, this.targetCameraYaw, smoothFactor);
-    this.cameraPitch = lerp(this.cameraPitch, this.targetCameraPitch, smoothFactor);
-    this.cameraDistance = lerp(this.cameraDistance, this.targetCameraDistance, smoothFactor);
+    if (!Number.isFinite(this.targetCameraYaw)) this.targetCameraYaw = Math.PI * 0.25;
+    if (!Number.isFinite(this.targetCameraPitch)) this.targetCameraPitch = 0.78;
+    if (!Number.isFinite(this.targetCameraDistance)) this.targetCameraDistance = 42;
+
+    const smoothFactor = clamp(safeDt * 9.5, 0.01, 1.0);
+    this.cameraYaw = lerp(
+      Number.isFinite(this.cameraYaw) ? this.cameraYaw : Math.PI * 0.25,
+      this.targetCameraYaw,
+      smoothFactor
+    );
+    this.cameraPitch = lerp(
+      Number.isFinite(this.cameraPitch) ? this.cameraPitch : 0.78,
+      this.targetCameraPitch,
+      smoothFactor
+    );
+    this.cameraDistance = lerp(
+      Number.isFinite(this.cameraDistance) ? this.cameraDistance : 42,
+      this.targetCameraDistance,
+      smoothFactor
+    );
 
     // Dynamically attenuate fog density when zoomed out wide for clear tactical ecosystem visibility
     if (this.scene.fog) {
       const zoomOutFactor = clamp((this.cameraDistance - 45) / 95, 0.0, 1.0);
       this.scene.fog.density = lerp(0.0034, 0.0014, zoomOutFactor);
+    }
+
+    // Ensure cameraTarget itself is finite before interpolating
+    if (!Number.isFinite(this.cameraTarget.x) || !Number.isFinite(this.cameraTarget.y) || !Number.isFinite(this.cameraTarget.z)) {
+      this.cameraTarget.set(0, 3.6, 6.5);
     }
 
     // Determine target anchor (either temporary focus override or player position)
@@ -495,20 +536,25 @@ export class SceneManager {
     let targetZ = this.cameraTarget.z;
 
     if (this.focusOverrideTimer > 0 && this.focusOverridePos) {
-      this.focusOverrideTimer = Math.max(0, this.focusOverrideTimer - dt);
-      targetX = this.focusOverridePos.x;
-      targetY = this.focusOverridePos.y;
-      targetZ = this.focusOverridePos.z;
+      this.focusOverrideTimer = Math.max(0, this.focusOverrideTimer - safeDt);
+      if (Number.isFinite(this.focusOverridePos.x) && Number.isFinite(this.focusOverridePos.z)) {
+        targetX = this.focusOverridePos.x;
+        targetY = Number.isFinite(this.focusOverridePos.y) ? this.focusOverridePos.y : 3.6;
+        targetZ = this.focusOverridePos.z;
+      }
     } else if (playerPos) {
-      const px = playerPos.x ?? playerPos.position?.x ?? 0;
-      const py = playerPos.y ?? playerPos.position?.y ?? 2.0;
-      const pz = playerPos.z ?? playerPos.position?.z ?? 0;
+      const rawPx = playerPos.x ?? playerPos.position?.x;
+      const rawPy = playerPos.y ?? playerPos.position?.y;
+      const rawPz = playerPos.z ?? playerPos.position?.z;
+      const px = Number.isFinite(rawPx) ? rawPx : 0;
+      const py = Number.isFinite(rawPy) ? rawPy : 2.2;
+      const pz = Number.isFinite(rawPz) ? rawPz : 6.5;
       targetX = px;
       targetY = py + 1.4;
       targetZ = pz;
     }
 
-    const followLerp = clamp(dt * 7.5, 0.01, 1.0);
+    const followLerp = clamp(safeDt * 7.5, 0.01, 1.0);
     this.cameraTarget.x = lerp(this.cameraTarget.x, targetX, followLerp);
     this.cameraTarget.y = lerp(this.cameraTarget.y, targetY, followLerp);
     this.cameraTarget.z = lerp(this.cameraTarget.z, targetZ, followLerp);
@@ -516,11 +562,16 @@ export class SceneManager {
     const horizontalDist = this.cameraDistance * Math.cos(this.cameraPitch);
     const verticalDist = this.cameraDistance * Math.sin(this.cameraPitch);
 
-    this.camera.position.set(
-      this.cameraTarget.x + Math.sin(this.cameraYaw) * horizontalDist,
-      this.cameraTarget.y + verticalDist,
-      this.cameraTarget.z + Math.cos(this.cameraYaw) * horizontalDist
-    );
+    const camX = this.cameraTarget.x + Math.sin(this.cameraYaw) * horizontalDist;
+    const camY = this.cameraTarget.y + verticalDist;
+    const camZ = this.cameraTarget.z + Math.cos(this.cameraYaw) * horizontalDist;
+
+    if (Number.isFinite(camX) && Number.isFinite(camY) && Number.isFinite(camZ)) {
+      this.camera.position.set(camX, camY, camZ);
+    } else {
+      this.cameraTarget.set(0, 3.6, 6.5);
+      this.camera.position.set(21, 32, 27);
+    }
     this.camera.lookAt(this.cameraTarget);
 
     if (this.skyDome) {
@@ -627,26 +678,34 @@ export class SceneManager {
   /**
    * Main per-frame update: smoothly tracks `playerPos` with the 3rd-person tactical camera,
    * advances the Hillaire atmospheric sky & sun cycle, and renders the scene through the
-   * post-processing `EffectComposer`.
+   * post-processing `EffectComposer` (with automatic direct-renderer fallback).
    *
    * @param {number} dt - Delta time in seconds.
    * @param {number} elapsedTime - Total elapsed session time in seconds.
    * @param {THREE.Vector3|{x: number, y?: number, z: number}} [playerPos] - Player world position.
    */
   update(dt, elapsedTime, playerPos) {
-    const safeDt = clamp(dt || 0.016, 0.001, 0.1);
-    const safeElapsed = elapsedTime || 0;
+    const safeDt = Number.isFinite(dt) ? clamp(dt, 0.001, 0.1) : 0.016;
+    const safeElapsed = Number.isFinite(elapsedTime) ? elapsedTime : 0;
 
     this._updateCameraTransform(safeDt, playerPos);
     this._updateAtmosphere(safeDt, safeElapsed);
-    this.composer.render();
+    this.render();
   }
 
   /**
-   * Explicit render helper if invoked separately.
+   * Explicit render helper with automatic direct-renderer fallback if post-processing fails.
    */
   render() {
-    this.composer.render();
+    try {
+      if (this.composer) {
+        this.composer.render();
+      } else {
+        this.renderer.render(this.scene, this.camera);
+      }
+    } catch (_err) {
+      this.renderer.render(this.scene, this.camera);
+    }
   }
 
   /**
