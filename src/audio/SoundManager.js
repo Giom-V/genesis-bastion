@@ -179,10 +179,20 @@ export const TTS_VOICE_CATALOG = {
     url: '/assets/audio/tts/alert_island_victory.wav',
     text: "Victoire ! Le Bouclier d'Éden rayonne sur toute l'île et purifie l'écosystème ! Notre Bastion est inviolable : prépare-toi à voguer vers la prochaine île !",
   },
+  alert_gameover_requiem: {
+    key: 'alert_gameover_requiem',
+    actNumber: null,
+    speaker: 'Aldric',
+    speakerTitle: 'Maître Biologiste & Forgeron du Bastion',
+    voiceModel: 'gemini-v4s-tts',
+    voiceName: 'Fenrir',
+    url: '/assets/audio/tts/alert_gameover_requiem.wav',
+    text: "Le Gardien est tombé et les ombres se referment sur le Bastion. Dans ce monde impitoyable, toute mort scelle le destin d'une expédition. Veux-tu repartir à zéro pour une nouvelle lignée, ou invoquer la Grâce du Sanctuaire pour continuer ?",
+  },
 };
 
 /**
- * Catalogue des 4 pistes musicales adaptatives générées via Lyria 3 (`lyria-3-mp3`).
+ * Catalogue des 5 pistes musicales adaptatives générées via Lyria 3 (`lyria-3-mp3`).
  */
 export const LYRIA_MUSIC_STEMS = {
   tutorial: {
@@ -220,6 +230,15 @@ export const LYRIA_MUSIC_STEMS = {
     baseVolume: 0.56,
     prompt:
       'Epic apocalyptic boss battle music, blazing brass, intense fast percussion, dark choir and volcanic fire energy, 145 bpm',
+  },
+  gameover: {
+    id: 'gameover',
+    title: 'Requiem des Cendres (Game Over — 64 BPM)',
+    url: '/assets/audio/music/lyria_gameover_requiem.mp3',
+    bpm: 64,
+    baseVolume: 0.62,
+    prompt:
+      'Tragic, deeply sad melancholic dark-fantasy game over requiem in D minor, weeping solo cello, slow sorrowful piano chords, solo viola, ethereal mournful choir and distant rain, emotional farewell, 64 bpm',
   },
 };
 
@@ -560,6 +579,7 @@ export class SoundManager {
       peace: 0,
       combat: 0,
       boss: 0,
+      gameover: 0,
     };
     /** @type {string} */
     this.activeStemId = 'tutorial';
@@ -576,6 +596,7 @@ export class SoundManager {
       hpRatio: 1.0,
       isLowHp: false,
       isCriticalHp: false,
+      isGameOver: false,
       inCombat: false,
       nearbyEnemyCount: 0,
       dominantClade: null,
@@ -609,7 +630,7 @@ export class SoundManager {
 
     logger.info(
       'AUDIO',
-      'SoundManager initialisé (Gemini TTS Français 9 voix + Lyria Adaptive 4 stems + WebAudio SFX)',
+      'SoundManager initialisé (Gemini TTS Français + Lyria Adaptive 5 stems + WebAudio SFX)',
       {
         ttsTracks: Object.keys(TTS_VOICE_CATALOG).length,
         lyriaStems: Object.keys(LYRIA_MUSIC_STEMS),
@@ -740,6 +761,9 @@ export class SoundManager {
     const raw = String(actNumberOrKey).trim().toLowerCase();
     if (TTS_VOICE_CATALOG[raw]) return TTS_VOICE_CATALOG[raw];
     if (TTS_VOICE_CATALOG[`alert_${raw}`]) return TTS_VOICE_CATALOG[`alert_${raw}`];
+    if (raw === 'gameover' || raw === 'game_over' || raw === 'gameover_requiem') {
+      return TTS_VOICE_CATALOG.alert_gameover_requiem;
+    }
 
     const shortActMatch = raw.match(/^act([1-7])$/);
     if (shortActMatch) {
@@ -1064,12 +1088,22 @@ export class SoundManager {
       this.isVoiceSpeaking ||
       (tutorialActive && !inCombat);
 
-    // 3. Sélection de la piste maîtresse Lyria 3 (`tutorial`, `peace`, `combat`, `boss`)
+    const isGameOver = Boolean(
+      state.isGameOver ||
+        state.player?.isDead ||
+        (state.player && typeof state.player.hp === 'number' && state.player.hp <= 0)
+    );
+
+    // 3. Sélection de la piste maîtresse Lyria 3 (`tutorial`, `peace`, `combat`, `boss`, `gameover`)
     let targetStemId = 'peace';
     let modeLabelFR = '🌿 Paix du Bastion (92 BPM)';
     let targetBpm = 92;
 
-    if (fightingDragon) {
+    if (isGameOver) {
+      targetStemId = 'gameover';
+      targetBpm = 64;
+      modeLabelFR = '🕯️ Requiem des Cendres — Game Over (64 BPM)';
+    } else if (fightingDragon) {
       targetStemId = 'boss';
       targetBpm = 145;
       modeLabelFR = '🐉 Courroux Draconique (145 BPM)';
@@ -1110,10 +1144,12 @@ export class SoundManager {
       modeLabelFR = '💓 Survie Critique (132 BPM)';
     }
 
-    const elementBadges = activeElements
-      .slice(0, 2)
-      .map((el) => ELEMENT_SIGNATURES[el]?.labelFR.split(' ')[0] || '')
-      .join('');
+    const elementBadges = isGameOver
+      ? ''
+      : activeElements
+          .slice(0, 2)
+          .map((el) => ELEMENT_SIGNATURES[el]?.labelFR.split(' ')[0] || '')
+          .join('');
     const shortStatusFR = this.muted
       ? '🔇 Audio Muet'
       : `🔊 Lyria : ${modeLabelFR}${elementBadges ? ` ${elementBadges}` : ''}`;
@@ -1131,6 +1167,7 @@ export class SoundManager {
           trackUrl: LYRIA_MUSIC_STEMS[targetStemId]?.url,
           bpm: targetBpm,
           hpRatio: Number(hpRatio.toFixed(2)),
+          isGameOver,
           dominantClade,
           dominantSpecies,
           activeElements,
@@ -1147,6 +1184,7 @@ export class SoundManager {
       hpRatio,
       isLowHp,
       isCriticalHp,
+      isGameOver,
       inCombat,
       nearbyEnemyCount,
       dominantClade,
@@ -1160,8 +1198,8 @@ export class SoundManager {
     // 4. Crossfade fluide des volumes HTMLAudio + Ducking (-12dB) pendant les voix TTS
     this._updateStemCrossfades(state.isModalPaused);
 
-    // 5. Battement de cœur sub-bass WebAudio si PV faibles (< 45%)
-    if (isLowHp && !this.muted) {
+    // 5. Battement de cœur sub-bass WebAudio si PV faibles (< 45%), mais PAS pendant le Requiem de Game Over
+    if (isLowHp && !isGameOver && !this.muted) {
       const heartbeatIntervalMs = isCriticalHp ? 460 : 760;
       if (nowMs - this._lastHeartbeatMs >= heartbeatIntervalMs) {
         this._lastHeartbeatMs = nowMs;
@@ -1169,8 +1207,8 @@ export class SoundManager {
       }
     }
 
-    // 6. Texture harmonique élémentaire WebAudio temps réel (toutes les ~1.6s si élément actif)
-    if (activeElements.length > 0 && !this.muted && nowMs - this._lastElementalPulseMs >= 1650) {
+    // 6. Texture harmonique élémentaire WebAudio temps réel (toutes les ~1.6s si élément actif et hors Game Over)
+    if (activeElements.length > 0 && !isGameOver && !this.muted && nowMs - this._lastElementalPulseMs >= 1650) {
       this._lastElementalPulseMs = nowMs;
       const chosenEl = activeElements[Math.floor(nowMs / 1650) % activeElements.length];
       this._playElementalTexturePulse(chosenEl, inCombat);
@@ -1180,14 +1218,18 @@ export class SoundManager {
     if (nowMs - this._lastStateEvalMs >= 1500) {
       this._lastStateEvalMs = nowMs;
       const weightedPrompts = this._buildLyriaWeightedPrompts();
-      const density = fightingDragon
+      const density = isGameOver
+        ? 0.28
+        : fightingDragon
         ? 0.92
         : inCombat
         ? 0.75
         : isTutorialDialogue
         ? 0.35
         : 0.45;
-      const brightness = activeElements.includes('ice') || activeElements.includes('lightning')
+      const brightness = isGameOver
+        ? 0.22
+        : activeElements.includes('ice') || activeElements.includes('lightning')
         ? 0.78
         : isLowHp
         ? 0.38
@@ -1209,6 +1251,19 @@ export class SoundManager {
    */
   _buildLyriaWeightedPrompts() {
     const s = this.adaptiveState;
+    if (s.isGameOver) {
+      return [
+        {
+          text: LYRIA_MUSIC_STEMS.gameover.prompt,
+          weight: 1.0,
+        },
+        {
+          text: 'Mournful solo cello and weeping slow piano in D minor, fallen hero elegy, 64 bpm',
+          weight: 0.95,
+        },
+      ];
+    }
+
     const prompts = [];
 
     // Couche de base selon l'état (Tutoriel / Paix / Combat / Boss)
@@ -1269,7 +1324,7 @@ export class SoundManager {
   }
 
   /**
-   * Effectue le fondu enchaîné (crossfade) entre les 4 pistes MP3 Lyria et applique le ducking `-12 dB`
+   * Effectue le fondu enchaîné (crossfade) entre les 5 pistes MP3 Lyria et applique le ducking `-12 dB`
    * lorsqu'une voix française Gemini TTS est en train de parler.
    *
    * @param {boolean} [isModalPaused=false]
@@ -1278,9 +1333,12 @@ export class SoundManager {
   _updateStemCrossfades(isModalPaused = false) {
     if (!this.isBrowser) return;
 
-    const modalAttenuation = isModalPaused ? 0.55 : 1.0;
+    const isGameOverStem = this.activeStemId === 'gameover' || Boolean(this.adaptiveState.isGameOver);
+    const modalAttenuation = isGameOverStem ? 1.0 : isModalPaused ? 0.55 : 1.0;
     const duckMult = this.isVoiceSpeaking ? 0.22 : 1.0;
-    const speedRate = this.adaptiveState.isCriticalHp
+    const speedRate = isGameOverStem
+      ? 1.0
+      : this.adaptiveState.isCriticalHp
       ? 1.06
       : this.adaptiveState.isLowHp
       ? 1.03
@@ -1328,6 +1386,7 @@ export class SoundManager {
       hpRatio: this.adaptiveState.hpRatio,
       isLowHp: this.adaptiveState.isLowHp,
       isCriticalHp: this.adaptiveState.isCriticalHp,
+      isGameOver: Boolean(this.adaptiveState.isGameOver),
       inCombat: this.adaptiveState.inCombat,
       dominantClade: this.adaptiveState.dominantClade,
       dominantSpecies: this.adaptiveState.dominantSpecies,
@@ -1820,6 +1879,123 @@ export class SoundManager {
     if (triggerVoice) {
       this.playTutorialVoice('alert_island_victory');
     }
+  }
+
+  /**
+   * SFX + Musique Lyria + Voix TTS : Déclenche le Requiem de Game Over (`playGameOverRequiem`) —
+   * bascule immédiatement sur `lyria_gameover_requiem.mp3` (64 BPM), joue un glas funèbre solennel
+   * en Ré mineur (cloche grave + violoncelle synthétisé WebAudio) et lance la voix d'Aldric (`alert_gameover_requiem.wav`).
+   *
+   * @param {boolean} [playVoice=true] - Si false, ne lance pas la voix française TTS.
+   */
+  playGameOverRequiem(playVoice = true) {
+    const prevStem = this.activeStemId;
+    this.activeStemId = 'gameover';
+    this.adaptiveState.isGameOver = true;
+    this.adaptiveState.stemId = 'gameover';
+    this.adaptiveState.bpm = 64;
+    this.adaptiveState.modeLabelFR = '🕯️ Requiem des Cendres — Game Over (64 BPM)';
+    this.adaptiveState.shortStatusFR = this.muted
+      ? '🔇 Audio Muet'
+      : '🔊 Lyria : 🕯️ Requiem des Cendres — Game Over (64 BPM)';
+
+    logger.info(
+      'AUDIO',
+      `[LLM Lyria 3 Stem] Transition Game Over Requiem : "${prevStem}" -> "gameover" (64 BPM)`,
+      {
+        fromStem: prevStem,
+        toStem: 'gameover',
+        trackUrl: LYRIA_MUSIC_STEMS.gameover.url,
+        bpm: 64,
+      }
+    );
+
+    this._ensureActiveStemPlaying();
+    this._updateStemCrossfades(true);
+
+    // Mise à jour immédiate de Lyria Realtime (`models/lyria-realtime-exp`)
+    this.lyriaRealtime.sendWeightedPrompts(
+      [
+        {
+          text: LYRIA_MUSIC_STEMS.gameover.prompt,
+          weight: 1.0,
+        },
+        {
+          text: 'Mournful solo cello and weeping slow piano in D minor, fallen hero elegy, 64 bpm',
+          weight: 0.95,
+        },
+      ],
+      {
+        bpm: 64,
+        density: 0.28,
+        brightness: 0.22,
+        guidance: 4.5,
+      },
+      true
+    );
+
+    // Glas funèbre en Ré mineur (D2=73.42, A2=110, D3=146.83, F3=174.61, A3=220)
+    const dMinorRequiem = [73.42, 110.0, 146.83, 174.61, 220.0];
+    dMinorRequiem.forEach((freq, idx) => {
+      this._playTone('triangle', freq, freq * 0.985, 0.85, 0.20, idx * 0.09);
+      this._playTone('sine', freq * 0.5, freq * 0.5, 0.95, 0.14, idx * 0.09);
+    });
+
+    if (playVoice !== false) {
+      this.playTutorialVoice('alert_gameover_requiem');
+    }
+  }
+
+  /**
+   * SFX : Grâce Temporaire du Sanctuaire (`playReviveGrace`) lorsque le joueur choisit
+   * l'option « ✨ Continuer quand même » depuis l'écran de Game Over.
+   * Interrompt le Requiem, repasse sur la piste `peace` et joue un arpège de harpe dorée ascendant.
+   */
+  playReviveGrace() {
+    this.stopVoice();
+    this.adaptiveState.isGameOver = false;
+    this.activeStemId = 'peace';
+    this.adaptiveState.stemId = 'peace';
+    this.adaptiveState.bpm = 92;
+    this.adaptiveState.modeLabelFR = '🌿 Paix du Bastion (92 BPM)';
+    this.adaptiveState.shortStatusFR = this.muted
+      ? '🔇 Audio Muet'
+      : '🔊 Lyria : 🌿 Paix du Bastion (92 BPM)';
+
+    this._ensureActiveStemPlaying();
+    this._updateStemCrossfades(false);
+
+    // Arpège céleste de résurrection (Ré Majeur lumineux)
+    const graceNotes = [293.66, 369.99, 440.0, 587.33, 739.99, 880.0, 1174.66];
+    graceNotes.forEach((freq, idx) => {
+      this._playTone('sine', freq, freq, 0.36, 0.20, idx * 0.055);
+      this._playTone('triangle', freq * 0.5, freq * 0.5, 0.32, 0.12, idx * 0.055);
+    });
+  }
+
+  /**
+   * SFX : Nouvelle Run Roguelike (`playNewRunReset`) lorsque le joueur choisit
+   * « 🔄 Repartir à Zéro (Niv. 1, Île #1) » depuis l'écran de Game Over.
+   * Interrompt le Requiem, repasse sur la piste `peace` et sonne le cor d'expédition runique.
+   */
+  playNewRunReset() {
+    this.stopVoice();
+    this.adaptiveState.isGameOver = false;
+    this.activeStemId = 'peace';
+    this.adaptiveState.stemId = 'peace';
+    this.adaptiveState.bpm = 92;
+    this.adaptiveState.modeLabelFR = '🌿 Paix du Bastion (92 BPM)';
+    this.adaptiveState.shortStatusFR = this.muted
+      ? '🔇 Audio Muet'
+      : '🔊 Lyria : 🌿 Paix du Bastion (92 BPM)';
+
+    this._ensureActiveStemPlaying();
+    this._updateStemCrossfades(false);
+
+    // Cor d'expédition runique (quinte héroïque ascendante : Sol3 -> Ré4 -> Sol4)
+    this._playTone('sawtooth', 196.0, 196.0, 0.24, 0.22, 0);
+    this._playTone('sawtooth', 293.66, 293.66, 0.26, 0.24, 0.16);
+    this._playTone('triangle', 392.0, 392.0, 0.45, 0.26, 0.32);
   }
 }
 

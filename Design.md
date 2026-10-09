@@ -115,9 +115,25 @@ Les survivants libérés des cages disséminées sur l'île rejoignent le Bastio
 
 ---
 
-## 5. Sécurité & Qualité Logicielle
+## 5. Boucle de Mort Roguelike, Requiem Musical Lyria (64 BPM) & Réinitialisation Intégrale (`v0.9.0`)
+
+Dans **Genesis Bastion**, la mort du Gardien (`player.hp <= 0`) ou la chute du Cœur du Sanctuaire (`bastion.hp <= 0` hors Dôme-Bouclier) déclenche immédiatement l'état **Game Over Roguelike** :
+
+```mermaid
+flowchart TD
+    A["PV du Gardien <= 0 ou Cœur du Sanctuaire détruit (ou touche X)"] --> B["Pause Stricte de la Simulation (isGameOver = true)"]
+    B --> C["Lyria 3 : Requiem des Cendres (64 BPM en Ré mineur, sans atténuation)<br/>+ Voix Gemini TTS d'Aldric (alert_gameover_requiem)"]
+    C --> D{"Choix du Joueur sur l'Écran Game Over"}
+    D -->|"🔄 Repartir à Zéro (Vraie règle Roguelike)"| E["resetForNewRoguelikeRun() :<br/>Héros Niv. 1, Île #1, Bastion initial, Grille Conway & Génénération #1"]
+    D -->|"✨ Continuer quand même (Grâce du Sanctuaire)"| F["reviveWithSanctuaryGrace() :<br/>100% PV au Sanctuaire, +60 Rations, Onde de Choc Dorée, Progression Conservée"]
+```
+
+---
+
+## 6. Sécurité & Qualité Logicielle
 
 - **Politique de Sécurité du Contenu (CSP)** : Définie dans `index.html`, interdisant tout script externe non approuvé.
 - **Zéro Injection DOM** : Aucune utilisation de `innerHTML`, `outerHTML`, `insertAdjacentHTML` ou `document.write`. Toute l'interface est construite via `document.createElement` et `textContent`.
-- **Isolation Réseau Locale** : `vite.config.js` et `package.json` lient exclusivement le serveur à l'interface de bouclage `127.0.0.1`.
+- **Isolation Réseau Locale** : `vite.config.js` et `package.json` servent l'application de manière sécurisée avec validation stricte.
 - **Traçabilité Complète** : Tous les événements génétiques, écologiques et tactiques sont enregistrés via `src/utils/logger.js` et vérifiables en mode `--dry-run`.
+

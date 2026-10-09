@@ -152,6 +152,16 @@ export class GenesisBastionGame {
       onToggleAudioMute: () => this.sound.toggleMute(),
       onReplayTutorialVoice: (actNum) =>
         this.sound.playTutorialVoice(actNum || this.tutorialAct || 1),
+      onReplayGameOverVoice: () => {
+        if (this.sound && typeof this.sound.playGameOverRequiem === 'function') {
+          this.sound.playGameOverRequiem(true);
+        } else if (this.sound && typeof this.sound.playTutorialVoice === 'function') {
+          this.sound.playTutorialVoice('alert_gameover_requiem');
+        }
+      },
+      onTriggerGameOverTest: () => this.triggerGameOverForTest(),
+      onRestartFromZero: () => this.restartFromZero(),
+      onContinueAfterGameOver: () => this.continueAfterGameOver(),
     });
     this.hud.registerExtraUpgrades(DESIGNED_UPGRADES);
 
@@ -167,6 +177,9 @@ export class GenesisBastionGame {
         this.focusWorldPosition(wx, wz, null);
       },
     });
+
+    /** @type {boolean} Indique si la session est actuellement sur l'écran de Game Over Roguelike */
+    this.isGameOver = false;
 
     // 5. Câblage des callbacks de découverte Éclaireur, d'éradication, de dégâts flottants et de Level-Up
     this._wireGameCallbacks();
@@ -204,7 +217,7 @@ export class GenesisBastionGame {
       this.skipTutorial();
     }
 
-    // 7. Raccourcis clavier globaux (Tab, P, T, M, G, H, 1-4, F1-F5, Escape)
+    // 7. Raccourcis clavier globaux (Tab, P, T, M, G, H, K, V, X, 1-4, F1-F5, Escape)
     this._bindGlobalShortcuts();
 
     // 8. État de la boucle d'animation & synchronisation initiale HUD + 3D
@@ -1325,6 +1338,7 @@ export class GenesisBastionGame {
         }
         this.hud?.refreshLogFeed?.();
       };
+      this.bastionAndNpcs.onBastionDestroyed = (deathInfo) => this.handleGameOver(deathInfo);
     }
 
     /**
@@ -1709,7 +1723,291 @@ export class GenesisBastionGame {
         }
         this.hud.refreshLogFeed();
       };
+
+      this.player.onPlayerDeath = (deathInfo) => this.handleGameOver(deathInfo);
     }
+  }
+
+  /**
+   * Phase 9 — Déclenche l'écran de Game Over Roguelike en pause, lance la musique triste Lyria
+   * ("Requiem des Cendres" à 64 BPM) et la voix d'Aldric (`alert_gameover_requiem.wav`), et laisse
+   * au joueur le choix entre Repartir à Zéro (Niv. 1, Île #1) ou Continuer quand même (Grâce 100% PV).
+   *
+   * @param {Object} [deathInfo={}] - Informations sur la cause de la défaite (`reason`, `killerName`, `attackerEnemy`).
+   * @returns {boolean}
+   */
+  handleGameOver(deathInfo = {}) {
+    if (this.isGameOver && this.hud?.isGameOverModalOpen) {
+      return true;
+    }
+
+    this.isGameOver = true;
+    if (this.player) {
+      this.player.isDead = true;
+      this.player.hp = 0;
+    }
+
+    // Fermer toute autre modale ou bannière pour afficher proprement l'écran de Game Over
+    this.hud?.hideLevelUpModal?.();
+    this.hud?.hideCombatModeModal?.();
+    this.hud?.toggleBastionArchitectModal?.(false);
+    this.hud?.toggleWeaponModal?.(false);
+    this.hud?.hideIslandVictoryModal?.();
+    this.hud?.hideAlertBanner?.();
+
+    if (this.vfx && this.player && typeof this.vfx.spawnDeathEffect === 'function') {
+      this.vfx.spawnDeathEffect(
+        new THREE.Vector3(this.player.x || 0, (this.player.y || 0) + 1.2, this.player.z || 0),
+        0xdc143c
+      );
+    }
+
+    if (this.sound) {
+      if (typeof this.sound.playGameOverRequiem === 'function') {
+        this.sound.playGameOverRequiem(true);
+      }
+      if (typeof this.sound.updateAdaptiveMusic === 'function') {
+        this.sound.updateAdaptiveMusic({
+          isGameOver: true,
+          player: this.player,
+          enemies: this.enemyManager?.getEnemies?.() || [],
+          tutorialActive: this.tutorialActive,
+          tutorialAct: this.tutorialAct,
+          isTutorialDialogue: false,
+          isModalPaused: true,
+          dragonWrathActive: false,
+        });
+      }
+    }
+
+    const reason = deathInfo?.reason || this.player?.lastDeathReason || 'hero_slain';
+    const killerName =
+      deathInfo?.killerName ||
+      this.player?.lastKillerName ||
+      (reason === 'bastion_fallen' || reason === 'bastion_destroyed'
+        ? 'Siège contre le Cœur du Sanctuaire'
+        : 'Prédateur Mutant de l’Archipel');
+
+    if (this.hud && typeof this.hud.showGameOverModal === 'function') {
+      this.hud.showGameOverModal({
+        reason,
+        killerName,
+        player: this.player,
+        bastionAndNpcs: this.bastionAndNpcs,
+        enemyManager: this.enemyManager,
+        ecoSim: this.ecoSim,
+      });
+    }
+
+    this.hud?.refreshLogFeed?.();
+    return true;
+  }
+
+  /**
+   * Phase 9 — Déclenche immédiatement l'écran de Game Over Roguelike et la musique triste Lyria
+   * pour test depuis le bouton Laboratoire `[X]` ou la console.
+   *
+   * @param {Object} [customInfo={}]
+   * @returns {boolean}
+   */
+  triggerGameOverForTest(customInfo = {}) {
+    return this.handleGameOver({
+      reason: customInfo?.reason || 'hero_slain',
+      killerName: customInfo?.killerName || 'Patient Zéro : Troll de Feu (Test Roguelike)',
+      ...customInfo,
+    });
+  }
+
+  /**
+   * Phase 9 — Option « ✨ Continuer quand même (Grâce Temporaire du Sanctuaire — 100% PV) » :
+   * Relève le Gardien devant le Sanctuaire avec 100% PV, +60 Rations, repousse les ennemis proches,
+   * répare le Bastion et reprend l'expédition en conservant toute la progression acquise.
+   *
+   * @returns {boolean}
+   */
+  continueAfterGameOver() {
+    this.isGameOver = false;
+    this.hud?.hideGameOverModal?.();
+
+    if (this.player) {
+      if (typeof this.player.reviveWithSanctuaryGrace === 'function') {
+        this.player.reviveWithSanctuaryGrace();
+      } else {
+        this.player.isDead = false;
+        this.player.hp = this.player.maxHp || 160;
+        this.player.x = 0;
+        this.player.z = 5.5;
+        if (this.player.resources) {
+          this.player.resources.food = Math.min(
+            this.player.resources.maxFood || 150,
+            Math.max(85, (this.player.resources.food || 0) + 60)
+          );
+        }
+      }
+      if (this.terrain && typeof this.terrain.getHeightAt === 'function') {
+        this.player.y = this.terrain.getHeightAt(this.player.x, this.player.z);
+      }
+    }
+
+    if (this.bastionAndNpcs) {
+      this.bastionAndNpcs.hp = this.bastionAndNpcs.maxHp || 500;
+    }
+
+    // Repousser les ennemis hostiles proches du Sanctuaire pour offrir un répit à la résurrection
+    const enemies = this.enemyManager?.getEnemies ? this.enemyManager.getEnemies() : [];
+    for (const e of enemies) {
+      if (!e || e.hp <= 0) continue;
+      const d = Math.hypot(e.x || 0, e.z || 0);
+      if (d < 18 && d > 0.01) {
+        const pushScale = 22 / d;
+        e.x *= pushScale;
+        e.z *= pushScale;
+        if (e.mesh) {
+          e.mesh.position.x = e.x;
+          e.mesh.position.z = e.z;
+        }
+      }
+    }
+
+    if (this.vfx && typeof this.vfx.spawnBirthEffect === 'function') {
+      this.vfx.spawnBirthEffect(
+        new THREE.Vector3(
+          this.player?.x || 0,
+          (this.player?.y || 0) + 1.5,
+          this.player?.z || 5.5
+        ),
+        true,
+        true,
+        0xffd166
+      );
+    }
+
+    if (this.sound) {
+      if (typeof this.sound.playReviveGrace === 'function') {
+        this.sound.playReviveGrace();
+      }
+      if (typeof this.sound.updateAdaptiveMusic === 'function') {
+        this.sound.updateAdaptiveMusic({
+          isGameOver: false,
+          player: this.player,
+          enemies: enemies,
+          tutorialActive: this.tutorialActive,
+          tutorialAct: this.tutorialAct,
+          isTutorialDialogue: this.tutorialActive,
+          isModalPaused: false,
+          dragonWrathActive: false,
+        });
+      }
+    }
+
+    logger.evolution(
+      '✨ GRÂCE DU SANCTUAIRE : Le Gardien se relève à 100% PV avec toute sa progression conservée !',
+      {
+        level: this.player?.level || 1,
+        continueCount: this.player?.continueCount || 1,
+      }
+    );
+
+    this.hud?.refreshLogFeed?.();
+    return true;
+  }
+
+  /**
+   * Phase 9 — Option « 🔄 Repartir à Zéro (Nouvelle Run Roguelike — Niv. 1, Île #1) » :
+   * Applique la vraie règle Roguelike en réinitialisant intégralement le Gardien au Niveau 1,
+   * les Bâtiments du Bastion, la Grille de Conway et la Population Sauvage sur l'Île #1.
+   *
+   * @returns {boolean}
+   */
+  restartFromZero() {
+    this.isGameOver = false;
+    this.hud?.hideGameOverModal?.();
+    this.hud?.hideIslandVictoryModal?.();
+    this.hud?.hideAlertBanner?.();
+
+    if (this.tutorialActive) {
+      this.tutorialActive = false;
+      this.tutorialAct = 7;
+      this.ecoPaused = false;
+      this.hud?.hideOnboardingBanner?.();
+      this.hud?.setTutorialHighlight?.(null);
+      this._updateTutorialWaypointAndArrow(null);
+    }
+
+    // 1. Réinitialiser l'écosystème de Conway & la génétique (Génération #1, Île #1)
+    if (this.ecoSim && typeof this.ecoSim.resetForNewRoguelikeRun === 'function') {
+      this.ecoSim.resetForNewRoguelikeRun();
+    }
+
+    // 2. Réinitialiser le Bastion, ses bâtiments, ses PNJs alliés, ses Cages, ses Autels d'Armes et ses 3 Reliques
+    if (this.bastionAndNpcs && typeof this.bastionAndNpcs.resetForNewRoguelikeRun === 'function') {
+      this.bastionAndNpcs.resetForNewRoguelikeRun();
+    }
+
+    // 3. Réinitialiser les Ennemis et faire apparaître la population fraîche de l'Île #1
+    if (this.enemyManager) {
+      this.enemyManager.ecoPaused = false;
+      if (typeof this.enemyManager.resetForNewRoguelikeRun === 'function') {
+        this.enemyManager.resetForNewRoguelikeRun();
+      } else {
+        this.enemyManager.islandNumber = 1;
+        this.enemyManager.islandDifficultyMult = 1.0;
+        this.enemyManager.islandShieldActive = false;
+        this.enemyManager.clearAllEnemies();
+        this.enemyManager.spawnInitialPopulation(CONFIG.ECO?.INITIAL_POPULATION || 42);
+      }
+      this._ensurePhase7EcosystemPopulated();
+    }
+
+    // 4. Réinitialiser intégralement le Gardien au Niveau 1 (Arme d'Acier Runique, 0 relique, maîtrise vierge)
+    if (this.player && typeof this.player.resetForNewRoguelikeRun === 'function') {
+      this.player.resetForNewRoguelikeRun();
+      if (this.terrain && typeof this.terrain.getHeightAt === 'function') {
+        this.player.y = this.terrain.getHeightAt(this.player.x, this.player.z);
+      }
+    }
+
+    // 5. Réinitialiser le système de Quêtes Dynamiques et les balises VFX
+    if (this.questSystem && typeof this.questSystem.resetForNewRoguelikeRun === 'function') {
+      this.questSystem.resetForNewRoguelikeRun();
+    }
+    this._wrathBannerShownForSpecies?.clear?.();
+    if (this.vfx && typeof this.vfx.clearIslandShieldDome === 'function') {
+      this.vfx.clearIslandShieldDome();
+    }
+
+    this.hud.setHudVisibility(FULL_UNLOCKED_HUD, this.minimap);
+
+    if (this.sound) {
+      if (typeof this.sound.playNewRunReset === 'function') {
+        this.sound.playNewRunReset();
+      }
+      if (typeof this.sound.updateAdaptiveMusic === 'function') {
+        this.sound.updateAdaptiveMusic({
+          isGameOver: false,
+          player: this.player,
+          enemies: this.enemyManager?.getEnemies?.() || [],
+          tutorialActive: false,
+          tutorialAct: 7,
+          isTutorialDialogue: false,
+          isModalPaused: false,
+          dragonWrathActive: false,
+        });
+      }
+    }
+
+    logger.evolution(
+      '🔄 NOUVELLE RUN ROGUELIKE : Reparti à zéro au Niveau 1 sur l’Île #1 (Berceau d’Éden) !',
+      {
+        level: this.player?.level || 1,
+        islandNumber: this.enemyManager?.islandNumber || 1,
+        generation: this.ecoSim?.generation || 1,
+        population: this.enemyManager?.getEnemies?.().length || 0,
+      }
+    );
+
+    this.hud?.refreshLogFeed?.();
+    return true;
   }
 
   /**
@@ -2340,6 +2638,13 @@ export class GenesisBastionGame {
         } else {
           this.triggerIslandShieldAndVictory(true);
         }
+      } else if (evt.code === 'KeyX' && !evt.ctrlKey && !evt.metaKey) {
+        evt.preventDefault();
+        if (this.hud.isGameOverModalOpen) {
+          this.continueAfterGameOver();
+        } else {
+          this.triggerGameOverForTest();
+        }
       } else if (evt.code === 'KeyP' && !evt.ctrlKey && !evt.metaKey) {
         if (this.tutorialActive) {
           this.skipTutorial();
@@ -2414,7 +2719,7 @@ export class GenesisBastionGame {
   /**
    * Exécute un pas de simulation et de rendu (`requestAnimationFrame`).
    * Si une modale tactique est ouverte (`this.hud.isModalPaused === true` : Level-Up, Mode de Combat,
-   * Architecte du Bastion `[H]`, Forge des Armes `[K]`, Dôme-Bouclier `[V]` ou Codex Phylogénétique `[Tab]`),
+   * Architecte du Bastion `[H]`, Forge des Armes `[K]`, Dôme-Bouclier `[V]`, Game Over `[X]` ou Codex Phylogénétique `[Tab]`),
    * toute la simulation de gameplay est mise en PAUSE STRICTE afin que le joueur puisse lire et planifier sans subir d'attaques.
    *
    * @param {number} nowMs - Timestamp haute précision fourni par `requestAnimationFrame`.
@@ -2568,6 +2873,9 @@ export class GenesisBastionGame {
             ? this.enemyManager.isSpeciesProvoked('dragon')
             : false;
         this.sound.updateAdaptiveMusic({
+          isGameOver: Boolean(
+            this.isGameOver || this.hud.isGameOverModalOpen || this.player?.isDead
+          ),
           player: this.player,
           enemies: this.enemyManager.getEnemies(),
           tutorialActive: this.tutorialActive,
@@ -2677,6 +2985,10 @@ function bootstrapGenesisBastion() {
       collectNextRelic: () => gameInstance.collectNextRelicFragmentForTest(),
       activateIslandShield: (force = true) => gameInstance.triggerIslandShieldAndVictory(force),
       advanceToNextIsland: () => gameInstance.advanceToNextIsland(),
+      triggerGameOverForTest: (info) => gameInstance.triggerGameOverForTest(info),
+      handleGameOver: (info) => gameInstance.handleGameOver(info),
+      continueAfterGameOver: () => gameInstance.continueAfterGameOver(),
+      restartFromZero: () => gameInstance.restartFromZero(),
       skipTutorial: () => gameInstance.skipTutorial(),
       startTutorialAct: (actNum) => gameInstance.startTutorialAct(actNum),
       playTutorialVoice: (actOrKey) => gameInstance.sound?.playTutorialVoice?.(actOrKey),

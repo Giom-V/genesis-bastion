@@ -51,6 +51,7 @@ npm run build
 | **`G`** | Afficher / Masquer la **Grille de Densité de Conway** sur la Minimap |
 | **`T`** | **[Labo Test]** Forcer immédiatement un **Cycle Écologique (Eco-Tick)** |
 | **`M`** | **[Labo Test]** Faire apparaître un **Patient Zéro (Troll de Feu)** dans la nature |
+| **`X`** | **[Labo Test]** Tester l'**Écran Game Over Roguelike** & la musique triste **Lyria « Requiem des Cendres » (64 BPM)** |
 | **`F1`..`F5`** | Construire / Améliorer les **5 Bâtiments du Bastion** (Tour de Guet, Scierie, Bio-Labo, Guilde des Éclaireurs, Cœur) |
 
 ---
@@ -67,32 +68,32 @@ genesis-bastion/
 ├── README.md                         # Guide utilisateur, commandes et vue d'ensemble
 ├── Design.md                         # Spécifications mathématiques, génétiques et IA
 ├── scripts/
-│   └── dry-run-sim.js                # Simulateur CLI headless (--dry-run) sur 30 cycles
+│   └── dry-run-sim.js                # Simulateur CLI headless (--dry-run) sur 30 cycles + test Game Over Reset
 └── src/
     ├── config.js                     # Configuration centralisée (WORLD, ECO, SPECIES, PHYLOGENY_DIST, MUTATIONS...)
-    ├── main.js                       # Boucle principale requestAnimationFrame & orchestration
+    ├── main.js                       # Boucle principale requestAnimationFrame, Game Over Roguelike & orchestration
     ├── utils/
     │   ├── logger.js                 # Journalisation structurée avec anneau mémoire (INFO, WARN, EVOLUTION, ALERT)
     │   └── math.js                   # PRNG Mulberry32, Bruit de Perlin 2D, FBM, utilitaires géométriques
     ├── world/
     │   ├── SceneManager.js           # Rendu Three.js, dôme atmosphérique Hillaire, cycle jour/nuit, Bloom, Caméra 3/4
     │   ├── Terrain.js                # Île 3D procédurale (5 biomes), shader océan Gerstner/mousse, végétation instanciée
-    │   └── VFXManager.js             # Particules 3D (naissance ADN, combat, mort) & Faisceau Céleste Patient Zéro
+    │   └── VFXManager.js             # Particules 3D (naissance ADN, combat, mort), Balises Reliques & Dôme Planétaire
     ├── ecosystem/
-    │   ├── Phylogeny.js              # Matrice phylogénétique 7x7, règles d'hybridation et noms d'hybrides
+    │   ├── Phylogeny.js              # Matrice phylogénétique 11x11, règles d'hybridation et noms d'hybrides
     │   ├── Genome.js                 # Génome continu, calcul de fitness (stats + mutations), croisement mendélien
     │   └── EcosystemSimulator.js     # Grille 24x24 du Jeu de la Vie de Conway, biomasse, maturité Bébé -> Adulte
     ├── entities/
     │   ├── CreatureMeshBuilder.js    # Morphologie 3D procédurale pilotée par le génome, les hybrides et les mutations
     │   ├── EnemyManager.js           # IA ennemie, croissance Bébé (0.5x) -> Adulte (1.0x), famine et éradication
-    │   ├── PlayerController.js       # Contrôles action-roguelike du joueur, combat, récolte et améliorations
-    │   └── BastionAndNPCs.js         # Sanctuaire central, cages de survivants, Gardes, Récolteurs et IA Éclaireurs
+    │   ├── PlayerController.js       # Contrôles action-roguelike du joueur, mort Roguelike, grâce & remise à zéro
+    │   └── BastionAndNPCs.js         # Sanctuaire central, cages, Autels d'Armes, Reliques d'Éden et IA Éclaireurs
     ├── audio/
-    │   └── SoundManager.js           # Musique adaptative Lyria Realtime + 4 stems Lyria 3, voix Gemini TTS FR & SFX WebAudio
+    │   └── SoundManager.js           # Musique adaptative Lyria Realtime + 5 stems Lyria 3 (dont Requiem Game Over 64 BPM), voix Gemini TTS FR & SFX WebAudio
     ├── ui/
-    │   ├── CharacterPortraitsConfig.js # 8 portraits Nano Banana (Aldric, Kaelen, Troll de Feu, Dragon) & animations Simagrées
-    │   ├── HUDManager.js             # Interface tactique DOM (zéro innerHTML), Alertes Éclaireurs, Codex Phylogénétique
-    │   └── Minimap.js                # Radar 2D temps réel (biomasse Conway, cônes de vue Éclaireurs, balises Mutants)
+    │   ├── CharacterPortraitsConfig.js # Portraits Nano Banana (Aldric, Kaelen, Troll de Feu, Dragon, Requin, Taupe) & Simagrées
+    │   ├── HUDManager.js             # Interface tactique DOM (zéro innerHTML), Modale Game Over, Forge [K], Dôme [V], Codex [Tab]
+    │   └── Minimap.js                # Radar 2D temps réel (biomasse Conway, cônes de vue Éclaireurs, balises Mutants & Reliques)
     └── styles/
         └── main.css                  # Design système cartographique & biologique dark-fantasy
 ```
@@ -107,3 +108,15 @@ genesis-bastion/
 4. **Alerte Patient Zéro** : Dès qu'un Éclaireur aperçoit le Troll de Feu (ou un hybride inédit), une **Alerte Prioritaire** retentit sur le HUD, un **Faisceau Céleste** s'élève en 3D sur la position du monstre, et sa lignée apparaît dans le **Radar Génétique**.
 5. **Course contre l'Évolution** : Parce que les mutations sont **mendéliennes dominantes (78% à 92% de transmission)** et augmentent fortement le `fitnessScore`, si le Troll de Feu adulte se reproduit, ses enfants hériteront presque tous du gène du feu. En quelques générations, toute l'espèce Troll deviendra ignée !
 6. **Éradication Ciblée** : Le joueur utilise la boussole et la minimap pour traquer et éliminer le Patient Zéro (et ses éventuels descendants juvéniles avant leur maturité), éradiquant la lignée mutante avant l'extinction du Bastion.
+
+---
+
+## Mort Roguelike, Musique Triste Lyria (« Requiem des Cendres ») & Choix de Fin de Run (`v0.9.0`)
+
+Lorsque les PV du Gardien tombent à `0` (ou que le Cœur du Sanctuaire est détruit par un siège) — ou à tout moment via le bouton Labo **`💀 Tester Game Over [X]`** / touche **`X`** :
+1. **Pause Stricte & Requiem Lyria (64 BPM)** : La simulation se met immédiatement en pause, le directeur musical bascule sur le 5e stem **Lyria 3 `lyria_gameover_requiem.mp3`** (*Requiem des Cendres en Ré mineur, violoncelle solo mélancolique, piano lent et chœur éthéré à 64 BPM*, joué à plein volume sans atténuation de pause) accompagné de l'élégie vocale française d'**Aldric** (`alert_gameover_requiem.wav`).
+2. **Bilan Complet de l'Expédition** : La modale affiche la cause de la défaite ainsi que 6 cartes récapitulatives (Île atteinte, Niveau & Mode de combat, Arme Élémentaire équipée, Sorts 3D & Rangs de Maîtrise, Monstres & Mutants éliminés, Reliques d'Éden & Génération darwinienne).
+3. **Deux Options Explicites** :
+   - **`🔄 Repartir à Zéro (Nouvelle Run Roguelike — Niv. 1, Île #1)`** : Applique la vraie règle Roguelike en réinitialisant intégralement le Héros au Niveau 1, les Bâtiments du Bastion, la Grille de Conway et la Population Sauvage sur l'Île #1 (`resetForNewRoguelikeRun()`).
+   - **`✨ Continuer quand même (Grâce Temporaire du Sanctuaire — 100% PV)`** : Relève le Gardien devant le Sanctuaire avec `100 % PV`, `+60 Rations`, une onde de choc dorée qui repousse les assaillants, et conserve toute la progression acquise.
+
