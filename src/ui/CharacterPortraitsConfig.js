@@ -3,7 +3,7 @@
  * @description Direction Artistique (DA), catalogue des portraits 2D générés via Nano Banana
  * (`gempix-2-flash-lite-png` / `gempix2-flash`), profils d'expressions animées (« Simagrées »)
  * et métadonnées de dialogues vocaux (Gemini TTS) pour l'Onboarding en 7 Actes et les bannières
- * d'alerte tactique de **Genesis Bastion**.
+ * d'alerte tactique et écologique de **Genesis Bastion**.
  *
  * Cas d'usage :
  * 1. **Bannière d'Onboarding Guidé (Actes 1 à 7)** (`src/ui/HUDManager.js`) :
@@ -12,18 +12,20 @@
  *    de la voix TTS (`act1_aldric` .. `act7_kaelen`), et applique la classe CSS de « simagrée »
  *    (`simagree-talk-bounce`, `simagree-battle-shake`, `simagree-scholar-nod`, `simagree-panic-pulse`,
  *    `simagree-proud-glow`, `simagree-roar-tremble`).
- * 2. **Bannière Centrale d'Alerte Éclaireur & Courroux Draconique** (`src/ui/HUDManager.js`) :
+ * 2. **Bannière Centrale d'Alerte Éclaireur, Émergences & Courroux Draconique** (`src/ui/HUDManager.js`) :
  *    Illustre les découvertes de Patients Zéro (`kaelen_shocked.png` + `specimen_fire_troll.png`),
- *    l'éradication d'une lignée mutante (`kaelen_proud.png`) et le Courroux Collectif des Dragons
- *    Souverains (`specimen_dragon_sovereign.png`).
+ *    l'éradication d'une lignée mutante (`kaelen_proud.png`), le Courroux Collectif des Dragons
+ *    Souverains (`specimen_dragon_sovereign.png`), le débarquement des Requins Marcheurs Amphibies
+ *    (`specimen_land_shark.png`), l'éruption souterraine des Taupes Géantes (`specimen_giant_mole.png`)
+ *    et les Crises Écologiques du Gibier (`prey_crisis`).
  * 3. **Codex Phylogénétique [Tab] & Journal de Bord** :
- *    Fournit les illustrations naturalistes de référence pour les spécimens Apex et les mentors.
+ *    Fournit les illustrations naturalistes de référence pour les spécimens émergents et les mentors.
  */
 
 import { logger } from '../utils/logger.js';
 
 /**
- * Direction Artistique (DA) unifiée utilisée pour la génération Nano Banana des 8 portraits.
+ * Direction Artistique (DA) unifiée utilisée pour la génération Nano Banana des 10 portraits.
  * Inspirée de *Hades*, *Ravenswatch* et des carnets naturalistes enluminés du XIXe siècle.
  */
 export const NANO_BANANA_ART_DIRECTION = Object.freeze({
@@ -48,7 +50,7 @@ export const SIMAGREE_ANIMATION_CLASSES = Object.freeze({
 });
 
 /**
- * Définition complète des 8 fichiers PNG de portraits générés dans `public/assets/portraits/`.
+ * Définition complète des 10 fichiers PNG de portraits générés dans `public/assets/portraits/`.
  */
 export const PORTRAIT_ASSETS = Object.freeze({
   aldric_neutral: '/assets/portraits/aldric_neutral.png',
@@ -59,6 +61,8 @@ export const PORTRAIT_ASSETS = Object.freeze({
   kaelen_proud: '/assets/portraits/kaelen_proud.png',
   specimen_fire_troll: '/assets/portraits/specimen_fire_troll.png',
   specimen_dragon_sovereign: '/assets/portraits/specimen_dragon_sovereign.png',
+  specimen_land_shark: '/assets/portraits/specimen_land_shark.png',
+  specimen_giant_mole: '/assets/portraits/specimen_giant_mole.png',
 });
 
 /**
@@ -182,7 +186,7 @@ const KAELEN_EXPRESSIONS = Object.freeze({
 });
 
 // ============================================================================
-// PORTRAITS DE MENACES / SPÉCIMENS (Troll de Feu & Dragon Souverain)
+// PORTRAITS DE MENACES / SPÉCIMENS (Troll de Feu, Dragon, Requin Marcheur, Taupe Géante)
 // ============================================================================
 const FIRE_TROLL_EXPRESSION = createExpressionEntry({
   characterId: 'fire_troll',
@@ -210,11 +214,37 @@ const DRAGON_SOVEREIGN_EXPRESSION = createExpressionEntry({
   simagreeClass: SIMAGREE_ANIMATION_CLASSES.ROAR_TREMBLE,
 });
 
+const LAND_SHARK_EXPRESSION = createExpressionEntry({
+  characterId: 'land_shark',
+  characterName: 'Requin Marcheur des Abysses',
+  title: 'Prédateur Amphibie Émergent (Pattes & Branchies Amphibies)',
+  emotion: 'roar',
+  emotionLabel: '🦈 Débarquement Amphibie !',
+  url: PORTRAIT_ASSETS.specimen_land_shark,
+  secondaryUrl: PORTRAIT_ASSETS.kaelen_shocked,
+  themeColor: '#0ea5e9',
+  accentColor: '#38bdf8',
+  simagreeClass: SIMAGREE_ANIMATION_CLASSES.ROAR_TREMBLE,
+});
+
+const GIANT_MOLE_EXPRESSION = createExpressionEntry({
+  characterId: 'giant_mole',
+  characterName: 'Taupe Géante Fouisseuse',
+  title: 'Colosse Souterrain Émergent (Griffes Foreuses)',
+  emotion: 'roar',
+  emotionLabel: '🕳️ Éruption Souterraine !',
+  url: PORTRAIT_ASSETS.specimen_giant_mole,
+  secondaryUrl: PORTRAIT_ASSETS.kaelen_shocked,
+  themeColor: '#d97706',
+  accentColor: '#f59e0b',
+  simagreeClass: SIMAGREE_ANIMATION_CLASSES.BATTLE_SHAKE,
+});
+
 /**
  * Catalogue principal `CHARACTER_PORTRAITS` exporté pour l'interface utilisateur.
- * Expose les 4 entités clés (`aldric`, `kaelen`, `fire_troll`, `dragon_sovereign`) avec leurs
- * sous-expressions (`neutral`, `combat`, `scholar`, `scout`, `shocked`, `proud`, `roar`) ainsi
- * que des raccourcis directs par nom de fichier pour une compatibilité totale.
+ * Expose les personnages et spécimens clés (`aldric`, `kaelen`, `fire_troll`, `dragon_sovereign`,
+ * `land_shark`, `giant_mole`) avec leurs sous-expressions (`neutral`, `combat`, `scholar`,
+ * `scout`, `shocked`, `proud`, `roar`) ainsi que des raccourcis directs par nom de fichier ou d'espèce.
  */
 export const CHARACTER_PORTRAITS = Object.freeze({
   aldric: Object.freeze({
@@ -235,7 +265,6 @@ export const CHARACTER_PORTRAITS = Object.freeze({
       neutral: ALDRIC_EXPRESSIONS.neutral,
       combat: ALDRIC_EXPRESSIONS.combat,
       scholar: ALDRIC_EXPRESSIONS.scholar,
-      // Alias de sécurité
       scout: ALDRIC_EXPRESSIONS.neutral,
       shocked: ALDRIC_EXPRESSIONS.combat,
       proud: ALDRIC_EXPRESSIONS.scholar,
@@ -264,7 +293,6 @@ export const CHARACTER_PORTRAITS = Object.freeze({
       scout: KAELEN_EXPRESSIONS.scout,
       shocked: KAELEN_EXPRESSIONS.shocked,
       proud: KAELEN_EXPRESSIONS.proud,
-      // Alias de sécurité
       neutral: KAELEN_EXPRESSIONS.scout,
       combat: KAELEN_EXPRESSIONS.shocked,
       scholar: KAELEN_EXPRESSIONS.scout,
@@ -324,6 +352,54 @@ export const CHARACTER_PORTRAITS = Object.freeze({
     combat: DRAGON_SOVEREIGN_EXPRESSION,
   }),
 
+  land_shark: Object.freeze({
+    id: 'land_shark',
+    name: 'Requin Marcheur des Abysses',
+    characterName: 'Requin Marcheur des Abysses',
+    fullName: 'Requin Marcheur Amphibie (amphibious_lungs)',
+    title: 'Prédateur Amphibie Émergent des Plages',
+    themeColor: '#0ea5e9',
+    accentColor: '#38bdf8',
+    defaultEmotion: 'roar',
+    defaultPortraitUrl: PORTRAIT_ASSETS.specimen_land_shark,
+    portraitUrl: PORTRAIT_ASSETS.specimen_land_shark,
+    url: PORTRAIT_ASSETS.specimen_land_shark,
+    simagreeClass: SIMAGREE_ANIMATION_CLASSES.ROAR_TREMBLE,
+    expressions: Object.freeze({
+      roar: LAND_SHARK_EXPRESSION,
+      neutral: LAND_SHARK_EXPRESSION,
+      combat: LAND_SHARK_EXPRESSION,
+      shocked: LAND_SHARK_EXPRESSION,
+    }),
+    roar: LAND_SHARK_EXPRESSION,
+    neutral: LAND_SHARK_EXPRESSION,
+    combat: LAND_SHARK_EXPRESSION,
+  }),
+
+  giant_mole: Object.freeze({
+    id: 'giant_mole',
+    name: 'Taupe Géante Fouisseuse',
+    characterName: 'Taupe Géante Fouisseuse',
+    fullName: 'Taupe Géante Fouisseuse des Profondeurs',
+    title: 'Colosse Souterrain Émergent',
+    themeColor: '#d97706',
+    accentColor: '#f59e0b',
+    defaultEmotion: 'roar',
+    defaultPortraitUrl: PORTRAIT_ASSETS.specimen_giant_mole,
+    portraitUrl: PORTRAIT_ASSETS.specimen_giant_mole,
+    url: PORTRAIT_ASSETS.specimen_giant_mole,
+    simagreeClass: SIMAGREE_ANIMATION_CLASSES.BATTLE_SHAKE,
+    expressions: Object.freeze({
+      roar: GIANT_MOLE_EXPRESSION,
+      neutral: GIANT_MOLE_EXPRESSION,
+      combat: GIANT_MOLE_EXPRESSION,
+      shocked: GIANT_MOLE_EXPRESSION,
+    }),
+    roar: GIANT_MOLE_EXPRESSION,
+    neutral: GIANT_MOLE_EXPRESSION,
+    combat: GIANT_MOLE_EXPRESSION,
+  }),
+
   // Raccourcis directs par identifiant de fichier ou d'espèce
   aldric_neutral: ALDRIC_EXPRESSIONS.neutral,
   aldric_combat: ALDRIC_EXPRESSIONS.combat,
@@ -333,8 +409,12 @@ export const CHARACTER_PORTRAITS = Object.freeze({
   kaelen_proud: KAELEN_EXPRESSIONS.proud,
   specimen_fire_troll: FIRE_TROLL_EXPRESSION,
   specimen_dragon_sovereign: DRAGON_SOVEREIGN_EXPRESSION,
+  specimen_land_shark: LAND_SHARK_EXPRESSION,
+  specimen_giant_mole: GIANT_MOLE_EXPRESSION,
   troll: FIRE_TROLL_EXPRESSION,
   dragon: DRAGON_SOVEREIGN_EXPRESSION,
+  shark: LAND_SHARK_EXPRESSION,
+  mole: GIANT_MOLE_EXPRESSION,
 });
 
 /**
@@ -623,7 +703,7 @@ export function getTutorialDialoguePresentation(actNumber = 1, subStep = null) {
 /**
  * Récupère un descripteur de portrait par identifiant de personnage et émotion.
  *
- * @param {'aldric'|'kaelen'|'fire_troll'|'dragon_sovereign'|string} [characterId='aldric']
+ * @param {'aldric'|'kaelen'|'fire_troll'|'dragon_sovereign'|'land_shark'|'giant_mole'|string} [characterId='aldric']
  * @param {'neutral'|'combat'|'scholar'|'scout'|'shocked'|'proud'|'roar'|string} [emotion='neutral']
  * @returns {Object} Descripteur de portrait avec `url`, `simagreeClass`, `emotionLabel`, etc.
  */
@@ -641,9 +721,9 @@ export function getCharacterPortrait(characterId = 'aldric', emotion = 'neutral'
 
 /**
  * Retourne la configuration visuelle et vocale pour la Bannière Centrale d'Alerte
- * (`patient_zero`, `eradicated`, `dragon_wrath`).
+ * (`patient_zero`, `eradicated`, `dragon_wrath`, `shark_landing`, `mole_eruption`, `prey_crisis`).
  *
- * @param {'patient_zero'|'eradicated'|'dragon_wrath'|string} [alertType='patient_zero']
+ * @param {'patient_zero'|'eradicated'|'dragon_wrath'|'shark_landing'|'mole_eruption'|'prey_crisis'|string} [alertType='patient_zero']
  * @returns {{
  *   alertType: string,
  *   speaker: string,
@@ -660,6 +740,65 @@ export function getCharacterPortrait(characterId = 'aldric', emotion = 'neutral'
  * }}
  */
 export function getAlertBannerPortraitPresentation(alertType = 'patient_zero') {
+  if (alertType === 'shark_landing' || alertType === 'land_shark' || alertType === 'shark') {
+    return {
+      alertType: 'shark_landing',
+      speaker: 'Kaelen',
+      speakerTitle: 'Cheffe des Éclaireurs Hors-Frontière',
+      emotionLabel: '🦈 DÉBARQUEMENT AMPHIBIE !',
+      portraitUrl: PORTRAIT_ASSETS.specimen_land_shark,
+      secondaryExpressionUrl: PORTRAIT_ASSETS.kaelen_shocked,
+      specimenPortraitUrl: PORTRAIT_ASSETS.specimen_land_shark,
+      simagreeClass: SIMAGREE_ANIMATION_CLASSES.ROAR_TREMBLE,
+      specimenSimagreeClass: SIMAGREE_ANIMATION_CLASSES.ROAR_TREMBLE,
+      themeColor: '#0ea5e9',
+      voiceAudioKey: 'alert_patient_zero',
+      quote:
+        '« Les Requins des Abysses ont développé des pattes musclées et des branchies amphibies ! Ils sortent de la mer et débarquent sur nos plages ! »',
+    };
+  }
+
+  if (alertType === 'mole_eruption' || alertType === 'giant_mole' || alertType === 'mole') {
+    return {
+      alertType: 'mole_eruption',
+      speaker: 'Kaelen',
+      speakerTitle: 'Cheffe des Éclaireurs Hors-Frontière',
+      emotionLabel: '🕳️ ÉRUPTION SOUTERRAINE !',
+      portraitUrl: PORTRAIT_ASSETS.specimen_giant_mole,
+      secondaryExpressionUrl: PORTRAIT_ASSETS.kaelen_shocked,
+      specimenPortraitUrl: PORTRAIT_ASSETS.specimen_giant_mole,
+      simagreeClass: SIMAGREE_ANIMATION_CLASSES.BATTLE_SHAKE,
+      specimenSimagreeClass: SIMAGREE_ANIMATION_CLASSES.BATTLE_SHAKE,
+      themeColor: '#d97706',
+      voiceAudioKey: 'alert_patient_zero',
+      quote:
+        '« Le sol tremble ! Des Taupes Géantes Fouisseuses surgissent des galeries souterraines et menacent de s’hybrider avec les Trolls ! »',
+    };
+  }
+
+  if (
+    alertType === 'prey_crisis' ||
+    alertType === 'prey_extinction' ||
+    alertType === 'herbivore_crisis' ||
+    alertType === 'famine_crisis'
+  ) {
+    return {
+      alertType: 'prey_crisis',
+      speaker: 'Aldric',
+      speakerTitle: 'Maître Biologiste & Forgeron Runique',
+      emotionLabel: '🦌 CRISE ÉCOLOGIQUE DU GIBIER !',
+      portraitUrl: PORTRAIT_ASSETS.aldric_scholar,
+      secondaryExpressionUrl: PORTRAIT_ASSETS.kaelen_shocked,
+      specimenPortraitUrl: PORTRAIT_ASSETS.aldric_scholar,
+      simagreeClass: SIMAGREE_ANIMATION_CLASSES.PANIC_PULSE,
+      specimenSimagreeClass: SIMAGREE_ANIMATION_CLASSES.PANIC_PULSE,
+      themeColor: '#eab308',
+      voiceAudioKey: null,
+      quote:
+        '« Attention à tes sorts de zone ! Les Biches et les Lapins ne réapparaissent pas tout seuls : s’ils s’éteignent, notre camp tombera en famine et les prédateurs affamés fondront sur le Bastion ! »',
+    };
+  }
+
   if (alertType === 'dragon_wrath' || alertType === 'species_wrath') {
     return {
       alertType: 'dragon_wrath',
@@ -716,7 +855,7 @@ export function getAlertBannerPortraitPresentation(alertType = 'patient_zero') {
 // Journalisation de l'initialisation des portraits Nano Banana pour la traçabilité
 logger.info(
   'PORTRAITS',
-  'Catalogue Nano Banana (8 portraits 256x256 PNG & 6 profils de simagrées) initialisé.',
+  'Catalogue Nano Banana (10 portraits 256x256 PNG & 6 profils de simagrées) initialisé.',
   {
     style: NANO_BANANA_ART_DIRECTION.styleName,
     models: NANO_BANANA_ART_DIRECTION.modelsUsed,

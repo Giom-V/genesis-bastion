@@ -129,6 +129,36 @@ export const TTS_VOICE_CATALOG = {
     url: '/assets/audio/tts/alert_dragon_wrath.wav',
     text: "Malheur ! Tu as provoqué un Dragon Souverain ! Toute l'espèce entre en fureur et fond sur notre Bastion !",
   },
+  alert_shark_landing: {
+    key: 'alert_shark_landing',
+    actNumber: null,
+    speaker: 'Kaelen',
+    speakerTitle: 'Cheffe des Éclaireurs Hors-Frontière',
+    voiceModel: 'gemini-v4s-tts',
+    voiceName: 'Kore',
+    url: '/assets/audio/tts/alert_shark_landing.wav',
+    text: 'Alerte côtière ! Les Requins des Abysses ont développé des pattes amphibies et débarquent sur nos plages !',
+  },
+  alert_mole_eruption: {
+    key: 'alert_mole_eruption',
+    actNumber: null,
+    speaker: 'Kaelen',
+    speakerTitle: 'Cheffe des Éclaireurs Hors-Frontière',
+    voiceModel: 'gemini-v4s-tts',
+    voiceName: 'Kore',
+    url: '/assets/audio/tts/alert_mole_eruption.wav',
+    text: 'Attention sous vos pieds ! Des Taupes Géantes Fouisseuses surgissent des galeries souterraines !',
+  },
+  alert_prey_crisis: {
+    key: 'alert_prey_crisis',
+    actNumber: null,
+    speaker: 'Kaelen',
+    speakerTitle: 'Cheffe des Éclaireurs Hors-Frontière',
+    voiceModel: 'gemini-v4s-tts',
+    voiceName: 'Kore',
+    url: '/assets/audio/tts/alert_prey_crisis.wav',
+    text: 'Alerte écologique ! Nos sorts ont décimé le gibier herbivore ! Sans biches ni lapins, la famine menace et les prédateurs deviennent fous !',
+  },
 };
 
 /**
@@ -689,6 +719,7 @@ export class SoundManager {
 
     const raw = String(actNumberOrKey).trim().toLowerCase();
     if (TTS_VOICE_CATALOG[raw]) return TTS_VOICE_CATALOG[raw];
+    if (TTS_VOICE_CATALOG[`alert_${raw}`]) return TTS_VOICE_CATALOG[`alert_${raw}`];
 
     const shortActMatch = raw.match(/^act([1-7])$/);
     if (shortActMatch) {
@@ -740,10 +771,10 @@ export class SoundManager {
 
   /**
    * Joue la ligne de dialogue française Gemini TTS correspondant à l'Acte du tutoriel (`1..7`)
-   * ou à une alerte (`'alert_patient_zero'`, `'alert_dragon_wrath'`), avec atténuation automatique
-   * (`-12 dB`) de la musique Lyria pendant la prise de parole.
+   * ou à une alerte (`'alert_patient_zero'`, `'alert_dragon_wrath'`, `'alert_shark_landing'`, `'alert_mole_eruption'`, `'alert_prey_crisis'`),
+   * avec atténuation automatique (`-12 dB`) de la musique Lyria pendant la prise de parole.
    *
-   * @param {number|string} actNumberOrKey - Numéro d'acte (`1..7`) ou clé (`'act1_aldric'`, `'alert_patient_zero'`, `'alert_dragon_wrath'`).
+   * @param {number|string} actNumberOrKey - Numéro d'acte (`1..7`) ou clé d'alerte.
    * @param {Function} [onStart] - Callback appelé au démarrage effectif de la voix.
    * @param {Function} [onEnd] - Callback appelé à la fin de la voix.
    * @returns {Object|null} Métadonnées de la voix lancée.
@@ -872,7 +903,7 @@ export class SoundManager {
    * en fonction :
    * 1. De l'état Tutoriel / Dialogue (`tutorialActive`, `isVoiceSpeaking`),
    * 2. Du ratio de PV du joueur (`player.hp / player.maxHp`),
-   * 3. De l'état Combat vs Paix et de l'espèce / clade combattu (`greenskin`, `beast`, `mutant`, `dragon`),
+   * 3. De l'état Combat vs Paix et de l'espèce / clade combattu (`greenskin`, `beast`, `mutant`, `dragon`, `shark`, `giant_mole`),
    * 4. Des éléments actifs utilisés par les monstres et par les sorts du joueur (`fire`, `ice`, `venom`, `lightning`, `arcane`, `earth`).
    *
    * @param {Object} [state={}]
@@ -920,6 +951,19 @@ export class SoundManager {
     for (let i = 0; i < enemies.length; i++) {
       const e = enemies[i];
       if (!e || e.isDead || e.hp <= 0) continue;
+      const spId = e.speciesId || e.genome?.speciesId || 'goblin';
+
+      // Les proies herbivores pacifiques (Biches / Lapins) et les Requins encore au large ne déclenchent pas le combat
+      if (
+        spId === 'deer' ||
+        spId === 'rabbit' ||
+        e.clade === 'herbivore' ||
+        e.aggroStance === 'prey_pacifist' ||
+        (spId === 'shark' && e.isAquatic)
+      ) {
+        continue;
+      }
+
       const ex = e.position?.x ?? e.x ?? 0;
       const ez = e.position?.z ?? e.z ?? 0;
       const dx = ex - px;
@@ -927,7 +971,6 @@ export class SoundManager {
       const dSq = dx * dx + dz * dz;
       if (dSq > combatRadiusSq) continue;
 
-      const spId = e.speciesId || e.genome?.speciesId || 'goblin';
       // Un dragon pacifique non provoqué ne déclenche pas la musique de combat à lui seul
       if (spId === 'dragon' && !state.dragonWrathActive && e.state !== 'attack' && e.state !== 'chase') {
         continue;
@@ -936,10 +979,13 @@ export class SoundManager {
       nearbyEnemyCount++;
       speciesCounts[spId] = (speciesCounts[spId] || 0) + 1;
 
-      if (spId === 'goblin' || spId === 'orc' || spId === 'troll') {
+      if (spId === 'goblin' || spId === 'orc' || spId === 'troll' || spId === 'giant_mole') {
         cladeCounts.greenskin++;
-      } else if (spId === 'wolf' || spId === 'lion' || spId === 'vulture') {
+        if (spId === 'giant_mole') activeElementSet.add('earth');
+      } else if (spId === 'wolf' || spId === 'lion' || spId === 'vulture' || spId === 'shark' || spId === 'storm_harpy') {
         cladeCounts.beast++;
+        if (spId === 'shark') activeElementSet.add('ice');
+        if (spId === 'storm_harpy') activeElementSet.add('lightning');
       } else if (spId === 'dragon') {
         cladeCounts.apex++;
         fightingDragon = true;
@@ -951,7 +997,7 @@ export class SoundManager {
         for (const m of muts) {
           const mId = typeof m === 'string' ? m : m?.id;
           if (mId === 'pyro_gland') activeElementSet.add('fire');
-          else if (mId === 'cryo_blood') activeElementSet.add('ice');
+          else if (mId === 'cryo_blood' || mId === 'amphibious_lungs') activeElementSet.add('ice');
           else if (mId === 'venom_sacs') activeElementSet.add('venom');
           else if (mId === 'vampiric_maw') activeElementSet.add('arcane');
           else if (mId === 'titan_growth' || mId === 'osteo_plating') activeElementSet.add('earth');
@@ -1005,11 +1051,19 @@ export class SoundManager {
       targetBpm = 145;
       modeLabelFR = isCriticalHp
         ? '💔 Urgence Vitale & Combat (145 BPM)'
+        : dominantSpecies === 'shark'
+        ? '🦈 Requins Marcheurs Mutants (145 BPM)'
+        : dominantSpecies === 'giant_mole'
+        ? '🕳️ Taupes Géantes Fouisseuses (145 BPM)'
         : '🧬 Traque Patient Zéro (145 BPM)';
     } else if (inCombat) {
       targetStemId = 'combat';
       targetBpm = isLowHp ? 136 : 128;
-      if (dominantClade === 'greenskin') {
+      if (dominantSpecies === 'shark') {
+        modeLabelFR = `🦈 Assaut Requins Marcheurs (${targetBpm} BPM)`;
+      } else if (dominantSpecies === 'giant_mole') {
+        modeLabelFR = `🕳️ Assaut Taupes Géantes (${targetBpm} BPM)`;
+      } else if (dominantClade === 'greenskin') {
         modeLabelFR = `⚔️ Combat Peaux-Vertes (${targetBpm} BPM)`;
       } else if (dominantClade === 'beast') {
         modeLabelFR = `🐺 Meute Bêtes Sauvages (${targetBpm} BPM)`;
@@ -1606,6 +1660,60 @@ export class SoundManager {
 
     if (triggerVoice) {
       this.playTutorialVoice('alert_dragon_wrath');
+    }
+  }
+
+  /**
+   * SFX : Débarquement des Requins Marcheurs Amphibies sur la plage (`playSharkLanding`) —
+   * déferlante d'écume océanique + motif de cuivres menaçant demi-ton (Mi1 -> Fa1) + pas lourds amphibies.
+   * @param {boolean} [triggerVoice=false] - Si true, lance également `alert_shark_landing.wav`.
+   */
+  playSharkLanding(triggerVoice = false) {
+    this.registerActiveElement('ice', 9000);
+    // Déferlante d'écume sur le rivage
+    this._playNoiseBurst(0.52, 'bandpass', 1100, 280, 0.30);
+    // Motif grave menaçant en demi-ton (façon prédateur des abysses : E2 -> F2 -> E2 -> F2)
+    this._playTone('sawtooth', 82.41, 82.41, 0.22, 0.28, 0.02);
+    this._playTone('sawtooth', 87.31, 87.31, 0.24, 0.32, 0.25);
+    this._playTone('triangle', 164.81, 174.61, 0.35, 0.22, 0.48);
+
+    if (triggerVoice) {
+      this.playTutorialVoice('alert_shark_landing');
+    }
+  }
+
+  /**
+   * SFX : Éruption souterraine des Taupes Géantes Fouisseuses (`playMoleEruption`) —
+   * grondement tectonique sub-bass + fracas de roche percée + griffes métalliques.
+   * @param {boolean} [triggerVoice=false] - Si true, lance également `alert_mole_eruption.wav`.
+   */
+  playMoleEruption(triggerVoice = false) {
+    this.registerActiveElement('earth', 9000);
+    // Grondement tellurique montant des profondeurs
+    this._playTone('sine', 44.0, 110.0, 0.42, 0.34, 0);
+    this._playNoiseBurst(0.45, 'lowpass', 720, 140, 0.32);
+    // Crépitement des griffes métalliques de fouissage
+    this._playTone('sawtooth', 580, 1240, 0.14, 0.18, 0.18);
+    this._playTone('sawtooth', 640, 1380, 0.14, 0.18, 0.28);
+
+    if (triggerVoice) {
+      this.playTutorialVoice('alert_mole_eruption');
+    }
+  }
+
+  /**
+   * SFX : Alerte Écologique Gibier Herbivore décimé / risque d'extinction (`playPreyWarning`) —
+   * appel de détresse sylvestre + carillon d'alerte dissonant.
+   * @param {boolean} [triggerVoice=false] - Si true, lance également `alert_prey_crisis.wav`.
+   */
+  playPreyWarning(triggerVoice = false) {
+    // Double note d'alerte écologique descendante (quinte diminuée / triton d'avertissement)
+    this._playTone('triangle', 659.25, 466.16, 0.26, 0.24, 0);
+    this._playTone('sawtooth', 466.16, 329.63, 0.34, 0.22, 0.22);
+    this._playTone('sine', 932.33, 659.25, 0.30, 0.16, 0.12);
+
+    if (triggerVoice) {
+      this.playTutorialVoice('alert_prey_crisis');
     }
   }
 }
