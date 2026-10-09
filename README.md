@@ -36,15 +36,19 @@ npm run build
 | Touche / Action | Fonction |
 | :--- | :--- |
 | **`WASD` / `ZQSD` / Flèches** | Déplacement 3D fluide du Héros |
-| **`Espace` / `Clic Gauche`** | Attaque de fente circulaire (**Cleave 3D**) |
+| **`Espace` / `Clic Gauche`** | Attaque de fente circulaire (**Cleave 3D**) *(automatique en mode Vampire Survivors)* |
+| **`1` / `2` / `3` / `4`** | Lancer les **Sorts 3D Évolutifs** en mode Actif Diablo *(auto-cast en mode Vampire Survivors)* |
+| **`C` / `B`** | Basculer en direct entre le mode **Auto (Vampire Survivors)** et **Actif (Diablo)** / Ouvrir le sélecteur |
 | **`Shift` / `Clic Droit`** | Esquive rapide (**Dash / Roulade**) |
 | **`E`** | Interagir : libérer un PNJ en cage, récolter bois/cristal, se soigner au Bastion |
 | **`Q` / `E` ou Glisser Clic Droit** | Rotation orbitale de la caméra 3D tactique |
 | **`Molette Souris`** | Zoom / Dézoom tactique (vue rapprochée action $\leftrightarrow$ vue stratégique écosystème) |
-| **`Tab`** | Ouvrir / Fermer le **Codex de l'Arbre Phylogénétique & Génome** |
+| **`Tab`** | Ouvrir / Fermer le **Codex de l'Arbre Phylogénétique & Génome** *(met le jeu 100% en pause)* |
+| **`P`** | Passer l'**Onboarding Guidé en 7 Actes** et éveiller immédiatement l'écosystème |
+| **`G`** | Afficher / Masquer la **Grille de Densité de Conway** sur la Minimap |
 | **`T`** | **[Labo Test]** Forcer immédiatement un **Cycle Écologique (Eco-Tick)** |
 | **`M`** | **[Labo Test]** Faire apparaître un **Patient Zéro (Troll de Feu)** dans la nature |
-| **`1` / `2` / `3`** | Actions rapides du Bastion (Assigner Éclaireur, Garde, Récolteur) |
+| **`F1` / `F2` / `F3`** | Actions rapides du Bastion (Construire Tour de Guet, Palissade, Bio-Labo) |
 
 ---
 
