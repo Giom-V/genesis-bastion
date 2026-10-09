@@ -817,6 +817,50 @@ export function getAlertBannerPortraitPresentation(alertType = 'patient_zero') {
     };
   }
 
+  if (
+    alertType === 'relic_found' ||
+    alertType === 'relic_collected' ||
+    alertType === 'relic'
+  ) {
+    return {
+      alertType: 'relic_found',
+      speaker: 'Aldric',
+      speakerTitle: 'Maître Biologiste & Forgeron Runique',
+      emotionLabel: '🏛️ RELIQUE D’ÉDEN ACTIVÉE !',
+      portraitUrl: PORTRAIT_ASSETS.aldric_scholar,
+      secondaryExpressionUrl: PORTRAIT_ASSETS.aldric_neutral,
+      specimenPortraitUrl: PORTRAIT_ASSETS.aldric_scholar,
+      simagreeClass: SIMAGREE_ANIMATION_CLASSES.SCHOLAR_NOD,
+      specimenSimagreeClass: SIMAGREE_ANIMATION_CLASSES.PROUD_GLOW,
+      themeColor: '#00e5ff',
+      voiceAudioKey: 'alert_relic_found',
+      quote:
+        '« Un Fragment de Relique d’Éden résonne avec le Foyer du Sanctuaire ! Réunis les trois fragments pour ériger le Dôme-Bouclier Planétaire ! »',
+    };
+  }
+
+  if (
+    alertType === 'island_victory' ||
+    alertType === 'island_shield' ||
+    alertType === 'shield_activated'
+  ) {
+    return {
+      alertType: 'island_victory',
+      speaker: 'Kaelen',
+      speakerTitle: 'Cheffe des Éclaireurs Hors-Frontière',
+      emotionLabel: '🛡️ DÔME PLANÉTAIRE D’ÉDEN !',
+      portraitUrl: PORTRAIT_ASSETS.kaelen_proud,
+      secondaryExpressionUrl: PORTRAIT_ASSETS.aldric_scholar,
+      specimenPortraitUrl: PORTRAIT_ASSETS.kaelen_proud,
+      simagreeClass: SIMAGREE_ANIMATION_CLASSES.PROUD_GLOW,
+      specimenSimagreeClass: SIMAGREE_ANIMATION_CLASSES.PROUD_GLOW,
+      themeColor: '#38bdf8',
+      voiceAudioKey: 'alert_island_victory',
+      quote:
+        '« Les trois Reliques d’Éden sont réunies ! Le Dôme-Bouclier Planétaire protège l’île entière et pacifie les prédateurs sauvages ! »',
+    };
+  }
+
   if (alertType === 'eradicated' || alertType === 'lineage_eradicated') {
     return {
       alertType: 'eradicated',

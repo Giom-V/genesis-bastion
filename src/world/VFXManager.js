@@ -106,6 +106,8 @@ export class VFXManager {
     this.activeProjectiles = [];
     /** @type {Map<string|number, Object>} Active Patient Zero beacons keyed by enemyId */
     this.patientZeroBeacons = new Map();
+    /** @type {THREE.Group|null} Persistent 3D Planetary Island Shield Dome (Phase 8) */
+    this.islandShieldDomeMesh = null;
 
     // Shared reusable geometries (never disposed until shutdown)
     this._sparkGeo = new THREE.OctahedronGeometry(0.18, 0);
@@ -132,7 +134,7 @@ export class VFXManager {
 
     this._crestGeo = new THREE.OctahedronGeometry(0.75, 0);
 
-    logger.info('WORLD', 'VFXManager initialized (3D particles, DNA helices, Patient Zero beacons & 8 Roguelike Ability VFX)');
+    logger.info('WORLD', 'VFXManager initialized (3D particles, DNA helices, Patient Zero beacons, Relic Beacons & Planetary Island Shield Dome)');
   }
 
   /**
@@ -601,6 +603,141 @@ export class VFXManager {
   }
 
   /**
+   * Phase 8 — Creates, updates, or removes a glowing vertical 3D Sky-Beam Beacon on an Ancient
+   * Relic Monolith (`relic_dawn_north`, `relic_breakers_southeast`, `relic_caldera_southwest`).
+   *
+   * @param {string|number} relicId - Unique relic identifier.
+   * @param {THREE.Vector3|{x: number, y?: number, z: number}|null} pos - World position of the monolith.
+   * @param {number|string} [colorHex=0x00e5ff] - Relic beam color.
+   * @param {boolean} [active=true] - True while the relic fragment has not yet been collected.
+   */
+  setRelicBeacon(relicId, pos, colorHex = 0x00e5ff, active = true) {
+    this.setPatientZeroBeacon(`relic_${relicId}`, pos, colorHex, active);
+  }
+
+  /**
+   * Phase 8 — Spawns a double elemental shockwave and ascending DNA/rune spiral when the Hero
+   * unlocks or forges a Legendary Elemental Weapon at a Weapon Shrine.
+   *
+   * @param {THREE.Vector3|{x: number, y?: number, z: number}} pos - Weapon shrine world position.
+   * @param {number|string} [colorHex=0xff5252] - Elemental weapon highlight color.
+   */
+  spawnWeaponShrineBurst(pos, colorHex = 0xff5252) {
+    const p = this._resolvePos(pos, 2.2);
+    this._spawnShockRing(p, colorHex, 0.7, 5.8, 0.58);
+    this._spawnShockRing({ x: p.x, y: p.y + 0.5, z: p.z }, 0xffd166, 0.4, 4.4, 0.68);
+    this.spawnBirthEffect(p, true, false, colorHex);
+  }
+
+  /**
+   * Phase 8 — Spawns the grand 3D hemispherical Planetary Island Shield Dome (`this.islandShieldDomeMesh`)
+   * over the entire island once all 3 Relic Fragments are collected (`[V]`), complete with a runic
+   * perimeter ring on the ground and a dual planetary shockwave.
+   *
+   * @param {THREE.Vector3|{x: number, y?: number, z: number}} centerPos - Island center coordinate.
+   * @param {number} [radius=115] - Dome radius covering the island.
+   * @param {number|string} [colorHex=0x38bdf8] - Primary shield dome color.
+   * @returns {THREE.Group} Created dome group.
+   */
+  spawnIslandShieldDome(centerPos, radius = 115, colorHex = 0x38bdf8) {
+    this.clearIslandShieldDome();
+
+    const p = this._resolvePos(centerPos, 0);
+    const safeRadius = Math.max(24, Number(radius) || 115);
+    const primaryColor = new THREE.Color(colorHex || 0x38bdf8);
+    const goldColor = new THREE.Color(0xffd166);
+
+    // Expanding planetary shockwaves + central ascension helix
+    this._spawnShockRing({ x: p.x, y: p.y + 1.2, z: p.z }, primaryColor, 2.0, safeRadius * 0.95, 1.45);
+    this._spawnShockRing({ x: p.x, y: p.y + 2.4, z: p.z }, goldColor, 1.5, safeRadius * 0.78, 1.25);
+    this.spawnBirthEffect({ x: p.x, y: p.y + 2.2, z: p.z }, true, true, colorHex);
+
+    const domeGroup = new THREE.Group();
+    domeGroup.name = 'PlanetaryIslandShieldDome';
+    domeGroup.position.set(p.x, p.y, p.z);
+
+    // 1. Translucent hemispherical energy shell
+    const shellGeo = new THREE.SphereGeometry(safeRadius, 32, 20, 0, Math.PI * 2, 0, Math.PI * 0.52);
+    const shellMat = new THREE.MeshBasicMaterial({
+      color: primaryColor,
+      transparent: true,
+      opacity: 0.16,
+      blending: THREE.AdditiveBlending,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+    });
+    const shellMesh = new THREE.Mesh(shellGeo, shellMat);
+
+    // 2. Golden-cyan wireframe geodesic lattice overlay
+    const wireGeo = new THREE.SphereGeometry(safeRadius * 1.002, 24, 14, 0, Math.PI * 2, 0, Math.PI * 0.52);
+    const wireMat = new THREE.MeshBasicMaterial({
+      color: goldColor,
+      wireframe: true,
+      transparent: true,
+      opacity: 0.28,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+    const wireMesh = new THREE.Mesh(wireGeo, wireMat);
+
+    // 3. Ground runic perimeter ring around the island shoreline
+    const groundRingGeo = new THREE.RingGeometry(safeRadius * 0.96, safeRadius * 1.02, 64);
+    groundRingGeo.rotateX(-Math.PI / 2);
+    const groundRingMat = new THREE.MeshBasicMaterial({
+      color: goldColor,
+      transparent: true,
+      opacity: 0.65,
+      blending: THREE.AdditiveBlending,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+    });
+    const groundRingMesh = new THREE.Mesh(groundRingGeo, groundRingMat);
+    groundRingMesh.position.y = 0.6;
+
+    domeGroup.add(shellMesh, wireMesh, groundRingMesh);
+    domeGroup.userData = {
+      shellGeo,
+      shellMat,
+      wireGeo,
+      wireMat,
+      groundRingGeo,
+      groundRingMat,
+      wireMesh,
+      groundRingMesh,
+    };
+
+    this.vfxGroup.add(domeGroup);
+    this.islandShieldDomeMesh = domeGroup;
+
+    logger.info('WORLD', `Planetary Island Shield 3D Dome deployed (radius=${safeRadius}m)`, {
+      radius: safeRadius,
+      x: Math.round(p.x),
+      z: Math.round(p.z),
+    });
+
+    return domeGroup;
+  }
+
+  /**
+   * Phase 8 — Removes and disposes the persistent 3D Planetary Island Shield Dome when departing
+   * for the next island (`resetForNextIsland`).
+   */
+  clearIslandShieldDome() {
+    if (!this.islandShieldDomeMesh) return;
+    const d = this.islandShieldDomeMesh;
+    this.vfxGroup.remove(d);
+    if (d.userData) {
+      d.userData.shellGeo?.dispose?.();
+      d.userData.shellMat?.dispose?.();
+      d.userData.wireGeo?.dispose?.();
+      d.userData.wireMat?.dispose?.();
+      d.userData.groundRingGeo?.dispose?.();
+      d.userData.groundRingMat?.dispose?.();
+    }
+    this.islandShieldDomeMesh = null;
+  }
+
+  /**
    * Normalizes `targetsOrTargetPos` into an array of `{x, y, z}` positions.
    *
    * @param {Array<Object>|Object|null} targetsOrTargetPos - Single target or array of targets/positions.
@@ -686,6 +823,8 @@ export class VFXManager {
    * - `'seismic_slam'` (Onde Sismique)
    * - `'spinning_blades'` (Lames Orbitales)
    * - `'mastery_rank_up'` (Évolution Adaptative du Héros)
+   * - `'island_shield'` (Dôme-Bouclier Planétaire d'Éden)
+   * - `'weapon_shrine_burst'` (Forge d'Arme Élémentaire Légendaire)
    *
    * @param {string} abilityId - Identifier of the cast ability.
    * @param {THREE.Vector3|{x: number, y?: number, z: number}} originPos - Caster world position.
@@ -734,6 +873,16 @@ export class VFXManager {
       case 'burrow_eruption':
       case 'mole_eruption':
         this.spawnBurrowEruption(originPos, options?.colorHex || 0x8c6239);
+        break;
+      case 'island_shield':
+        this.spawnIslandShieldDome(
+          originPos,
+          options?.radius || 115,
+          options?.colorHex || 0x38bdf8
+        );
+        break;
+      case 'weapon_shrine_burst':
+        this.spawnWeaponShrineBurst(originPos, options?.colorHex || 0xff5252);
         break;
       default:
         this.spawnHitEffect(originPos, options?.colorHex || 0x44ddff);
@@ -1458,6 +1607,20 @@ export class VFXManager {
       // Floating diamond threat crest rotation & bobbing
       beacon.crestMesh.rotation.y = t * 2.8;
       beacon.crestMesh.position.y = 5.5 + Math.sin(t * 3.6) * 0.45;
+    }
+
+    // 7. Animate persistent Planetary Island Shield Dome (Phase 8)
+    if (this.islandShieldDomeMesh && this.islandShieldDomeMesh.userData) {
+      const ud = this.islandShieldDomeMesh.userData;
+      if (ud.wireMesh) {
+        ud.wireMesh.rotation.y = t * 0.08;
+      }
+      if (ud.shellMat) {
+        ud.shellMat.opacity = 0.14 + 0.04 * Math.sin(t * 2.2);
+      }
+      if (ud.groundRingMat) {
+        ud.groundRingMat.opacity = 0.55 + 0.2 * Math.sin(t * 3.0);
+      }
     }
   }
 }
