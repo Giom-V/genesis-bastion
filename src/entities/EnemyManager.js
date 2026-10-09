@@ -385,14 +385,66 @@ export class EnemyManager {
       targetId: null,
       attackCooldown: 0,
       hitFlash: 0,
+      burnTimer: 0,
+      burnDps: 0,
+      poisonTimer: 0,
+      poisonDps: 0,
+      slowTimer: 0,
+      slowFactor: 1.0,
+      stunTimer: 0,
+      dotTickTimer: 0,
       wanderAngle: Math.random() * Math.PI * 2,
       wanderTimer: 1.5 + Math.random() * 3.0,
       homeX: x,
       homeZ: z,
     };
 
+    enemy.applyBurn = (dps = 8, duration = 4.0) => {
+      enemy.burnDps = Math.max(enemy.burnDps || 0, dps);
+      enemy.burnTimer = Math.max(enemy.burnTimer || 0, duration);
+    };
+    enemy.applyPoison = (dps = 7, duration = 5.0) => {
+      enemy.poisonDps = Math.max(enemy.poisonDps || 0, dps);
+      enemy.poisonTimer = Math.max(enemy.poisonTimer || 0, duration);
+    };
+    enemy.applySlow = (factor = 0.5, duration = 4.5) => {
+      enemy.slowFactor = Math.min(enemy.slowFactor || 1.0, clamp(factor, 0.2, 0.9));
+      enemy.slowTimer = Math.max(enemy.slowTimer || 0, duration);
+    };
+    enemy.applyStun = (duration = 1.6) => {
+      enemy.stunTimer = Math.max(enemy.stunTimer || 0, duration);
+    };
+
     this.enemies.push(enemy);
     return enemy;
+  }
+
+  /**
+   * Applies elemental/crowd-control status effects (Burn DoT, Poison DoT, Cryo Slow, Stun)
+   * to an enemy from hero roguelike abilities (`pyro_nova`, `frost_spear`, `venom_volley`, `seismic_slam`, `meteor_strike`).
+   *
+   * @param {string|Object} enemyIdOrObj - Enemy ID or enemy object.
+   * @param {Object} [statusSpec={}] - `{ burnDps, burnDuration, poisonDps, poisonDuration, slowFactor, slowDuration, stunDuration }`.
+   * @returns {boolean} True if applied.
+   */
+  applyEnemyStatus(enemyIdOrObj, statusSpec = {}) {
+    const targetId = typeof enemyIdOrObj === 'object' ? enemyIdOrObj?.id : enemyIdOrObj;
+    const enemy = this.enemies.find((e) => e.id === targetId);
+    if (!enemy || enemy.hp <= 0) return false;
+
+    if (statusSpec.burnDuration > 0 && statusSpec.burnDps > 0) {
+      enemy.applyBurn(statusSpec.burnDps, statusSpec.burnDuration);
+    }
+    if (statusSpec.poisonDuration > 0 && statusSpec.poisonDps > 0) {
+      enemy.applyPoison(statusSpec.poisonDps, statusSpec.poisonDuration);
+    }
+    if (statusSpec.slowDuration > 0) {
+      enemy.applySlow(statusSpec.slowFactor ?? 0.5, statusSpec.slowDuration);
+    }
+    if (statusSpec.stunDuration > 0) {
+      enemy.applyStun(statusSpec.stunDuration);
+    }
+    return true;
   }
 
   /**
@@ -747,6 +799,9 @@ export class EnemyManager {
     if (typeof onLineageEradicated === 'function') {
       this.onLineageEradicated = onLineageEradicated;
     }
+    if (player) {
+      this.playerRef = player;
+    }
 
     // 1. Automatic Genetic Eco-Tick Timer (paused during Acts 1–6 of the guided tutorial)
     if (!this.ecoPaused) {
@@ -785,6 +840,44 @@ export class EnemyManager {
       }
       if (!enemy.isAdult && enemy.age >= matTime) {
         this._matureEnemyToAdult(enemy);
+      }
+
+      // Tick Burn & Poison DoT status effects
+      const hadBurn = (enemy.burnTimer || 0) > 0;
+      const hadPoison = (enemy.poisonTimer || 0) > 0;
+      if (hadBurn || hadPoison) {
+        enemy.burnTimer = Math.max(0, (enemy.burnTimer || 0) - dt);
+        enemy.poisonTimer = Math.max(0, (enemy.poisonTimer || 0) - dt);
+        enemy.dotTickTimer = (enemy.dotTickTimer || 0) + dt;
+        if (enemy.dotTickTimer >= 0.5) {
+          const tickSpan = enemy.dotTickTimer;
+          enemy.dotTickTimer = 0;
+          const activeDps = (hadBurn ? enemy.burnDps || 0 : 0) + (hadPoison ? enemy.poisonDps || 0 : 0);
+          if (activeDps > 0) {
+            const dotRes = this.damageEnemy(
+              enemy.id,
+              Math.max(1, Math.round(activeDps * tickSpan)),
+              null,
+              this.onLineageEradicated
+            );
+            if (dotRes.killed) {
+              continue;
+            }
+          }
+        }
+      } else {
+        enemy.dotTickTimer = 0;
+      }
+
+      // Tick Slow & Stun timers
+      if ((enemy.slowTimer || 0) > 0) {
+        enemy.slowTimer = Math.max(0, enemy.slowTimer - dt);
+        if (enemy.slowTimer <= 0) {
+          enemy.slowFactor = 1.0;
+        }
+      }
+      if ((enemy.stunTimer || 0) > 0) {
+        enemy.stunTimer = Math.max(0, enemy.stunTimer - dt);
       }
 
       // Starvation HP drain & migration pressure
@@ -855,10 +948,15 @@ export class EnemyManager {
         }
       }
 
-      let moveSpeed = enemy.speed;
+      const slowMult = (enemy.slowTimer || 0) > 0 ? clamp(enemy.slowFactor || 0.5, 0.2, 1.0) : 1.0;
+      let moveSpeed = enemy.speed * slowMult;
       let isAttacking = false;
 
-      if (targetType) {
+      if ((enemy.stunTimer || 0) > 0) {
+        enemy.state = 'stunned';
+        enemy.vx *= 0.25;
+        enemy.vz *= 0.25;
+      } else if (targetType) {
         enemy.state = 'chase';
         const attackRange = targetType === 'bastion' ? bastionRadius + 2.5 : 2.6;
         const hasPyro =
@@ -1018,18 +1116,28 @@ export class EnemyManager {
   }
 
   /**
+   * Determines the primary damage type (`'fire' | 'poison' | 'ice' | 'physical'`) of an enemy attack.
+   * @param {Object} enemy
+   * @returns {'fire'|'poison'|'ice'|'physical'}
+   */
+  _getEnemyDamageType(enemy) {
+    const muts = Array.isArray(enemy?.genome?.mutations) ? enemy.genome.mutations : [];
+    if (muts.includes('pyro_gland') || enemy?.genome?.speciesId === 'dragon') return 'fire';
+    if (muts.includes('venom_sacs')) return 'poison';
+    if (muts.includes('cryo_blood')) return 'ice';
+    return 'physical';
+  }
+
+  /**
    * Executes a melee or elemental attack from an enemy against its target.
    */
   _performEnemyAttack(enemy, targetType, targetEntity, bastionAndNpcs) {
-    const isElemental =
-      Array.isArray(enemy.genome?.mutations) &&
-      (enemy.genome.mutations.includes('pyro_gland') ||
-        enemy.genome.mutations.includes('venom_sacs') ||
-        enemy.genome.mutations.includes('cryo_blood'));
+    const damageType = this._getEnemyDamageType(enemy);
+    const isElemental = damageType !== 'physical';
 
     if (targetType === 'player' && targetEntity) {
       if (typeof targetEntity.takeDamage === 'function') {
-        targetEntity.takeDamage(enemy.damage, isElemental, enemy);
+        targetEntity.takeDamage(enemy.damage, isElemental, enemy, damageType);
       } else {
         targetEntity.hp = Math.max(0, targetEntity.hp - enemy.damage);
       }
@@ -1079,6 +1187,7 @@ export class EnemyManager {
       ttl: 1.6,
       mesh,
       ownerId: enemy.id,
+      ownerEnemy: enemy,
     });
   }
 
@@ -1098,7 +1207,7 @@ export class EnemyManager {
       let hit = false;
       if (player && player.hp > 0 && dist2D(p.x, p.z, player.x, player.z) < 1.5) {
         if (typeof player.takeDamage === 'function') {
-          player.takeDamage(p.damage, true);
+          player.takeDamage(p.damage, true, p.ownerEnemy || null, 'fire');
         } else {
           player.hp = Math.max(0, player.hp - p.damage);
         }
@@ -1124,7 +1233,8 @@ export class EnemyManager {
 
   /**
    * Applies combat damage and optional knockback to an enemy.
-   * Checks for complete eradication of a mutant lineage when a carrier dies.
+   * Checks for complete eradication of a mutant lineage when a carrier dies, and
+   * notifies the Player's Adaptive Mastery System on kill.
    *
    * @param {string|Object} enemyIdOrObj - Enemy ID string or enemy object.
    * @param {number} amount - Damage amount.
@@ -1146,8 +1256,9 @@ export class EnemyManager {
     if (knockbackDir) {
       const kx = knockbackDir.x || 0;
       const kz = knockbackDir.z || 0;
-      enemy.x += kx * 1.45;
-      enemy.z += kz * 1.45;
+      const kbScale = knockbackDir.strength || 1.45;
+      enemy.x += kx * kbScale;
+      enemy.z += kz * kbScale;
     }
 
     if (this.vfx && typeof this.vfx.spawnHitEffect === 'function') {
@@ -1170,6 +1281,12 @@ export class EnemyManager {
 
       const cb = onLineageEradicated || this.onLineageEradicated;
       this._removeEnemyAtIndex(idx, true, cb);
+
+      if (this.playerRef && typeof this.playerRef.recordEnemyKill === 'function' && !enemy._killRecorded) {
+        enemy._killRecorded = true;
+        this.playerRef.recordEnemyKill(enemy, xpGained);
+      }
+
       if (typeof this.onEnemyKilled === 'function') {
         this.onEnemyKilled(enemy, xpGained);
       }
