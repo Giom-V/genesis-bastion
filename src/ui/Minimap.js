@@ -22,6 +22,7 @@
 
 import { CONFIG } from '../config.js';
 import { dist2D, angleBetween, clamp, getCardinalLabelFR } from '../utils/math.js';
+import { tr, onLanguageChange, translateDOMTree } from '../utils/i18n.js';
 
 /**
  * Helper sécurisé de création d'élément DOM via `document.createElement`.
@@ -80,6 +81,9 @@ export class Minimap {
     this.backdropReady = false;
 
     this._buildDOM(parentContainer);
+    this._unsubscribeLang = onLanguageChange(() => {
+      this.refreshLanguage();
+    });
   }
 
   /**
@@ -91,20 +95,34 @@ export class Minimap {
     const root = parentContainer || document.getElementById('hud-root') || document.body;
 
     this.container = createEl('section', 'hud-bottom-right hud-interactive');
-    this.container.setAttribute('aria-label', 'Radar Biomasse et Menaces Mutantes');
+    this.container.setAttribute(
+      'aria-label',
+      tr('Biomass & Mutant Threat Radar', 'Radar Biomasse et Menaces Mutantes')
+    );
 
     // En-tête avec bouton de bascule de la grille Conway
     const header = createEl('div', 'minimap-header');
-    const title = createEl('span', 'minimap-title', 'Radar Éco & Mutants');
+    this.titleEl = createEl(
+      'span',
+      'minimap-title',
+      tr('Eco & Mutant Radar', 'Radar Éco & Mutants')
+    );
 
-    this.toggleGridBtn = createEl('button', 'hud-btn hud-btn-sm hud-btn-biomass', 'Grille Conway: ON');
+    this.toggleGridBtn = createEl(
+      'button',
+      'hud-btn hud-btn-sm hud-btn-biomass',
+      tr('Conway Grid: ON', 'Grille Conway: ON')
+    );
     this.toggleGridBtn.type = 'button';
-    this.toggleGridBtn.title = 'Afficher/Masquer la densité écologique du Jeu de la Vie [G]';
+    this.toggleGridBtn.title = tr(
+      'Show/Hide Game of Life ecological density [G]',
+      'Afficher/Masquer la densité écologique du Jeu de la Vie [G]'
+    );
     this.toggleGridBtn.addEventListener('click', () => {
       this.toggleConwayOverlay();
     });
 
-    header.append(title, this.toggleGridBtn);
+    header.append(this.titleEl, this.toggleGridBtn);
 
     // Enveloppe du Canvas 220x220
     const canvasWrap = createEl('div', 'minimap-canvas-wrap');
@@ -121,20 +139,64 @@ export class Minimap {
     this.compassReadout = createEl(
       'div',
       'hud-panel-subtitle',
-      'Boussole : Aucun Patient Zéro repéré'
+      tr('Compass: No Patient Zero spotted', 'Boussole : Aucun Patient Zéro repéré')
     );
 
     // Légende cartographique
     const legend = createEl('div', 'minimap-legend');
+    this.legendScoutItem = this._createLegendItem('#1e90ff', tr('Scout', 'Éclaireur'));
+    this.legendOptItem = this._createLegendItem('#38c172', tr('Optimum', 'Optimum'));
+    this.legendPzItem = this._createLegendItem('#ff4757', tr('Patient Zero', 'Patient Zéro'));
+    this.legendBastionItem = this._createLegendItem('#e6a145', tr('Bastion', 'Bastion'));
     legend.append(
-      this._createLegendItem('#1e90ff', 'Éclaireur'),
-      this._createLegendItem('#38c172', 'Optimum'),
-      this._createLegendItem('#ff4757', 'Patient Zéro'),
-      this._createLegendItem('#e6a145', 'Bastion')
+      this.legendScoutItem,
+      this.legendOptItem,
+      this.legendPzItem,
+      this.legendBastionItem
     );
 
     this.container.append(header, canvasWrap, this.compassReadout, legend);
     root.appendChild(this.container);
+  }
+
+  /**
+   * Rafraîchit instantanément tous les libellés de la Minimap lors d'un changement de langue EN/FR.
+   */
+  refreshLanguage() {
+    if (this.container) {
+      this.container.setAttribute(
+        'aria-label',
+        tr('Biomass & Mutant Threat Radar', 'Radar Biomasse et Menaces Mutantes')
+      );
+    }
+    if (this.titleEl) {
+      this.titleEl.textContent = tr('Eco & Mutant Radar', 'Radar Éco & Mutants');
+    }
+    if (this.toggleGridBtn) {
+      this.toggleGridBtn.textContent = this.showConwayGrid
+        ? tr('Conway Grid: ON', 'Grille Conway: ON')
+        : tr('Conway Grid: OFF', 'Grille Conway: OFF');
+      this.toggleGridBtn.title = tr(
+        'Show/Hide Game of Life ecological density [G]',
+        'Afficher/Masquer la densité écologique du Jeu de la Vie [G]'
+      );
+    }
+    if (this.legendScoutItem?.lastChild) {
+      this.legendScoutItem.lastChild.textContent = tr('Scout', 'Éclaireur');
+    }
+    if (this.legendOptItem?.lastChild) {
+      this.legendOptItem.lastChild.textContent = tr('Optimum', 'Optimum');
+    }
+    if (this.legendPzItem?.lastChild) {
+      this.legendPzItem.lastChild.textContent = tr('Patient Zero', 'Patient Zéro');
+    }
+    if (this.legendBastionItem?.lastChild) {
+      this.legendBastionItem.lastChild.textContent = tr('Bastion', 'Bastion');
+    }
+    if (this.container) {
+      translateDOMTree(this.container);
+    }
+    this._lastDrawTime = 0;
   }
 
   /**
@@ -161,7 +223,9 @@ export class Minimap {
   toggleConwayOverlay(forceState) {
     this.showConwayGrid = typeof forceState === 'boolean' ? forceState : !this.showConwayGrid;
     if (this.toggleGridBtn) {
-      this.toggleGridBtn.textContent = this.showConwayGrid ? 'Grille Conway: ON' : 'Grille Conway: OFF';
+      this.toggleGridBtn.textContent = this.showConwayGrid
+        ? tr('Conway Grid: ON', 'Grille Conway: ON')
+        : tr('Conway Grid: OFF', 'Grille Conway: OFF');
       this.toggleGridBtn.className = this.showConwayGrid
         ? 'hud-btn hud-btn-sm hud-btn-biomass'
         : 'hud-btn hud-btn-sm';
@@ -181,10 +245,10 @@ export class Minimap {
    * Déclenche une impulsion visuelle temporaire sur une coordonnée du monde (ex. lors d'une alerte Éclaireur).
    * @param {number} worldX
    * @param {number} worldZ
-   * @param {string} [label='CIBLE']
+   * @param {string} [label='TARGET']
    * @param {number} [durationMs=6000]
    */
-  pingLocation(worldX, worldZ, label = 'PATIENT ZÉRO', durationMs = 6000) {
+  pingLocation(worldX, worldZ, label = tr('PATIENT ZERO', 'PATIENT ZÉRO'), durationMs = 6000) {
     this.focusedPing = {
       x: worldX,
       z: worldZ,
@@ -222,7 +286,7 @@ export class Minimap {
     const worldX = (cx / this.size) * this.worldSize - halfWorld;
     const worldZ = (cy / this.size) * this.worldSize - halfWorld;
 
-    this.pingLocation(worldX, worldZ, 'BALISE TACTIQUE', 3500);
+    this.pingLocation(worldX, worldZ, tr('TACTICAL PING', 'BALISE TACTIQUE'), 3500);
     if (this.onPingWorld) {
       this.onPingWorld(worldX, worldZ);
     }
@@ -893,14 +957,20 @@ export class Minimap {
       const sector = getCardinalLabelFR(nearestTarget.x - pxWorld, nearestTarget.z - pzWorld);
       const mutLabel = nearestTarget.mutationId
         ? CONFIG.MUTATIONS?.[nearestTarget.mutationId]?.shortLabel || nearestTarget.mutationId
-        : 'Hybride';
-      const stagePrefix = nearestTarget.isBaby ? '🐣 Bébé ' : '';
+        : tr('Hybrid', 'Hybride');
+      const stagePrefix = nearestTarget.isBaby ? tr('🐣 Baby ', '🐣 Bébé ') : '';
       if (this.compassReadout) {
-        this.compassReadout.textContent = `🎯 Cap : ${stagePrefix}${nearestTarget.speciesName} [${mutLabel}] — ${Math.round(nearestTarget.dist)}m (${sector})`;
+        this.compassReadout.textContent = tr(
+          `🎯 Bearing: ${stagePrefix}${nearestTarget.speciesName} [${mutLabel}] — ${Math.round(nearestTarget.dist)}m (${sector})`,
+          `🎯 Cap : ${stagePrefix}${nearestTarget.speciesName} [${mutLabel}] — ${Math.round(nearestTarget.dist)}m (${sector})`
+        );
         this.compassReadout.style.color = '#ff8a93';
       }
     } else if (this.compassReadout) {
-      this.compassReadout.textContent = 'Boussole : Aucun Patient Zéro actif détecté';
+      this.compassReadout.textContent = tr(
+        'Compass: No active Patient Zero detected',
+        'Boussole : Aucun Patient Zéro actif détecté'
+      );
       this.compassReadout.style.color = '';
     }
 
@@ -941,7 +1011,7 @@ export class Minimap {
 
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
-    ctx.fillText('O', 4, this.size * 0.5);
+    ctx.fillText(tr('W', 'O'), 4, this.size * 0.5);
 
     ctx.textAlign = 'right';
     ctx.fillText('E', this.size - 4, this.size * 0.5);
