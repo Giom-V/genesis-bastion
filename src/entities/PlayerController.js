@@ -202,12 +202,20 @@ export class PlayerController {
     /** @type {{ type: string, label: string, keyHint: string, worldPos: THREE.Vector3, entity: Object }|null} */
     this.nearestPrompt = null;
 
-    // Combat & Mobility Modifiers
+    // Combat & Mobility Modifiers (Phase 11 Balanced Progression: +8% to +12% per passive card)
     this.baseSpeed = CONFIG.PLAYER?.SPEED || 13.5;
     this.speedMult = 1.0;
+    this.speedMultiplier = 1.0;
     this.cleaveDamage = CONFIG.PLAYER?.CLEAVE_DAMAGE || 32;
     this.cleaveDamageMult = 1.0;
+    this.damageMultiplier = 1.0;
+    this.attackSpeedMultiplier = 1.0;
     this.mutantDamageMult = 1.0;
+    this.fireDamageMultiplier = 1.0;
+    this.iceSlowFactor = 1.0;
+    this.lightningChainBonus = 0;
+    this.poisonDpsBonus = 0;
+    this.knockbackMultiplier = 1.0;
     this.baseCleaveRange = CONFIG.PLAYER?.CLEAVE_RANGE || 5.2;
     this.cleaveRange = this.baseCleaveRange;
     this.cleaveCooldown = 0;
@@ -685,14 +693,17 @@ export class PlayerController {
    */
   _computeFinalDamageAgainst(rawDamage, enemy, isSpellDamage = false) {
     const wSpec = this.getEquippedWeapon();
-    const weaponBaseMult = !isSpellDamage ? wSpec?.cleaveDamageMult || 1.0 : 1.0;
-    let dmg = rawDamage * this.cleaveDamageMult * weaponBaseMult;
+    const weaponBaseMult = !isSpellDamage
+      ? wSpec?.damageMultiplier || wSpec?.cleaveDamageMult || 1.0
+      : 1.0;
+    const heroDmgMult = Math.max(this.cleaveDamageMult || 1.0, this.damageMultiplier || 1.0);
+    let dmg = rawDamage * heroDmgMult * weaponBaseMult;
 
     const spId = enemy?.genome?.speciesId || '';
     const clade = enemy?.genome?.clade || '';
     const muts = Array.isArray(enemy?.genome?.mutations) ? enemy.genome.mutations : [];
 
-    // Phase 8 Elemental Weapon Species & Mutation Counter-Affinities
+    // Phase 8 / Phase 11 Balanced Elemental Weapon Species & Mutation Counter-Affinities (+15% vs target clade)
     if (wSpec?.id === 'fire_greatsword') {
       if (
         spId === 'wolf' ||
@@ -702,14 +713,14 @@ export class PlayerController {
         clade === 'beast' ||
         clade === 'subterranean'
       ) {
-        dmg *= wSpec.vsBeastAndMoleMult || 1.45;
+        dmg *= wSpec.cladeBonusMultiplier || wSpec.vsBeastAndMoleMult || 1.15;
       }
     } else if (wSpec?.id === 'ice_greatsword') {
       if (muts.includes('pyro_gland') || spId === 'shark') {
-        dmg *= wSpec.vsPyroAndSharkMult || 1.5;
+        dmg *= wSpec.cladeBonusMultiplier || wSpec.vsPyroAndSharkMult || 1.15;
       }
       if (muts.includes('osteo_plating') && wSpec.shattersOsteoArmor) {
-        dmg *= 1.35;
+        dmg *= 1.12;
       }
     } else if (wSpec?.id === 'lightning_greatsword') {
       if (
@@ -719,7 +730,7 @@ export class PlayerController {
         spId === 'shark' ||
         muts.includes('amphibious_lungs')
       ) {
-        dmg *= wSpec.vsGreenskinAndAquaticMult || 1.4;
+        dmg *= wSpec.cladeBonusMultiplier || wSpec.vsGreenskinAndAquaticMult || 1.15;
       }
     }
 
@@ -731,7 +742,7 @@ export class PlayerController {
       }
     }
     if (this.juvenilePurge && enemy && enemy.isAdult === false) {
-      dmg *= 1.35;
+      dmg *= 1.12;
     }
     if (this.mastery && typeof this.mastery.getDamageMultiplierAgainst === 'function') {
       dmg *= this.mastery.getDamageMultiplierAgainst(enemy);
@@ -2055,8 +2066,16 @@ export class PlayerController {
 
     // Reset all stat & upgrade multipliers
     this.speedMult = 1.0;
+    this.speedMultiplier = 1.0;
     this.cleaveDamageMult = 1.0;
+    this.damageMultiplier = 1.0;
+    this.attackSpeedMultiplier = 1.0;
     this.mutantDamageMult = 1.0;
+    this.fireDamageMultiplier = 1.0;
+    this.iceSlowFactor = 1.0;
+    this.lightningChainBonus = 0;
+    this.poisonDpsBonus = 0;
+    this.knockbackMultiplier = 1.0;
     this.dashCooldownMult = 1.0;
     this.damageReduction = 0.0;
     this.regenPerSec = 1.2;
@@ -2154,6 +2173,7 @@ export class PlayerController {
   /**
    * Applies a chosen roguelike card (either one of the 8 3D spells from `ROGUELIKE_ABILITIES`
    * or a passive counter-adaptation upgrade from `DESIGNED_UPGRADES` / `CONFIG.UPGRADES`).
+   * Phase 11 Balanced Progression: passive cards grant grounded +8% to +12% bonuses.
    *
    * @param {string|Object} upgradeOrId - Upgrade identifier string or card object.
    * @returns {boolean} True if applied.
@@ -2175,28 +2195,36 @@ export class PlayerController {
       return true;
     }
 
-    // 2. Otherwise apply passive stat / counter-adaptation upgrade
+    // 2. Otherwise apply balanced passive stat / counter-adaptation upgrade (+8% to +12%)
     switch (upgradeId) {
       case 'cleave_damage':
       case 'pyrophage_blade':
-        this.cleaveDamageMult *= 1.35;
-        this.mutantDamageMult *= 1.25;
+      case 'melee_damage':
+        this.cleaveDamageMult = +(this.cleaveDamageMult * 1.1).toFixed(4);
+        this.damageMultiplier = this.cleaveDamageMult;
+        this.mutantDamageMult = +(this.mutantDamageMult * 1.1).toFixed(4);
         break;
       case 'move_speed':
       case 'strider_boots':
-        this.speedMult *= 1.2;
-        this.dashCooldownMult *= 0.75;
+        this.speedMult = +(this.speedMult + 0.08).toFixed(4);
+        this.speedMultiplier = this.speedMult;
+        this.dashCooldownMult = +(this.dashCooldownMult * 0.88).toFixed(4);
+        break;
+      case 'attack_speed':
+      case 'swift_strikes':
+        this.attackSpeedMultiplier = +(this.attackSpeedMultiplier + 0.1).toFixed(4);
         break;
       case 'max_hp_regen':
       case 'amber_blood_vigor':
-        this.maxHp += 50;
-        this.hp = Math.min(this.maxHp, this.hp + 60);
-        this.regenPerSec += 2.5;
+      case 'max_hp':
+        this.maxHp += 15;
+        this.hp = Math.min(this.maxHp, this.hp + 20);
+        this.regenPerSec = +(this.regenPerSec + 1.0).toFixed(2);
         break;
       case 'scout_vision':
       case 'scout_falconry':
-        this.scoutVisionMult *= 1.35;
-        this.scoutSpeedMult *= 1.2;
+        this.scoutVisionMult = +(this.scoutVisionMult * 1.12).toFixed(4);
+        this.scoutSpeedMult = +(this.scoutSpeedMult * 1.1).toFixed(4);
         if (this.lastBastionRef) {
           this.lastBastionRef.scoutVisionMultiplier = this.scoutVisionMult;
           this.lastBastionRef.scoutSpeedMultiplier = this.scoutSpeedMult;
@@ -2204,28 +2232,52 @@ export class PlayerController {
         break;
       case 'bastion_turret_power':
       case 'thorn_bulwark':
-        this.turretDamageMult *= 1.4;
+        this.turretDamageMult = +(this.turretDamageMult * 1.12).toFixed(4);
         if (this.lastBastionRef) {
           this.lastBastionRef.turretDamageMultiplier = this.turretDamageMult;
-          this.lastBastionRef.maxHp += 150;
-          this.lastBastionRef.hp = Math.min(this.lastBastionRef.maxHp, this.lastBastionRef.hp + 150);
+          this.lastBastionRef.maxHp += 50;
+          this.lastBastionRef.hp = Math.min(this.lastBastionRef.maxHp, this.lastBastionRef.hp + 50);
         }
         break;
       case 'fire_resist':
-        this.damageReduction = Math.min(0.65, this.damageReduction + 0.35);
-        this.cleaveRange += 1.2;
+      case 'elemental_ward':
+        this.damageReduction = Math.min(0.45, +(this.damageReduction + 0.1).toFixed(4));
+        this.cleaveRange = +(this.cleaveRange + 0.4).toFixed(2);
+        break;
+      case 'fire_damage':
+      case 'solar_affinity':
+        this.fireDamageMultiplier = +(this.fireDamageMultiplier + 0.12).toFixed(4);
+        break;
+      case 'ice_slow':
+      case 'cryo_affinity':
+        this.iceSlowFactor = +(this.iceSlowFactor * 0.88).toFixed(4);
+        break;
+      case 'lightning_chain':
+      case 'storm_affinity':
+        this.lightningChainBonus += 1;
+        break;
+      case 'poison_dps':
+      case 'venom_affinity':
+        this.poisonDpsBonus += 4;
+        break;
+      case 'knockback':
+      case 'seismic_impact':
+        this.knockbackMultiplier = +(this.knockbackMultiplier + 0.15).toFixed(4);
         break;
       case 'patient_zero_tracker':
         this.patientZeroTracker = true;
-        this.speedMult *= 1.18;
-        this.mutantDamageMult *= 1.35;
+        this.speedMult = +(this.speedMult + 0.08).toFixed(4);
+        this.speedMultiplier = this.speedMult;
+        this.mutantDamageMult = +(this.mutantDamageMult * 1.12).toFixed(4);
         break;
       case 'juvenile_purge':
         this.juvenilePurge = true;
-        this.cleaveDamageMult *= 1.25;
+        this.cleaveDamageMult = +(this.cleaveDamageMult * 1.1).toFixed(4);
+        this.damageMultiplier = this.cleaveDamageMult;
         break;
       default:
-        this.cleaveDamageMult *= 1.2;
+        this.cleaveDamageMult = +(this.cleaveDamageMult * 1.1).toFixed(4);
+        this.damageMultiplier = this.cleaveDamageMult;
         break;
     }
 
