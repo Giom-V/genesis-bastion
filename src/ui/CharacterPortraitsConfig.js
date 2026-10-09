@@ -54,16 +54,16 @@ export const SIMAGREE_ANIMATION_CLASSES = Object.freeze({
  * Définition complète des 10 fichiers PNG de portraits générés dans `public/assets/portraits/`.
  */
 export const PORTRAIT_ASSETS = Object.freeze({
-  aldric_neutral: '/assets/portraits/aldric_neutral.png',
-  aldric_combat: '/assets/portraits/aldric_combat.png',
-  aldric_scholar: '/assets/portraits/aldric_scholar.png',
-  kaelen_scout: '/assets/portraits/kaelen_scout.png',
-  kaelen_shocked: '/assets/portraits/kaelen_shocked.png',
-  kaelen_proud: '/assets/portraits/kaelen_proud.png',
-  specimen_fire_troll: '/assets/portraits/specimen_fire_troll.png',
-  specimen_dragon_sovereign: '/assets/portraits/specimen_dragon_sovereign.png',
-  specimen_land_shark: '/assets/portraits/specimen_land_shark.png',
-  specimen_giant_mole: '/assets/portraits/specimen_giant_mole.png',
+  aldric_neutral: 'assets/portraits/aldric_neutral.png',
+  aldric_combat: 'assets/portraits/aldric_combat.png',
+  aldric_scholar: 'assets/portraits/aldric_scholar.png',
+  kaelen_scout: 'assets/portraits/kaelen_scout.png',
+  kaelen_shocked: 'assets/portraits/kaelen_shocked.png',
+  kaelen_proud: 'assets/portraits/kaelen_proud.png',
+  specimen_fire_troll: 'assets/portraits/specimen_fire_troll.png',
+  specimen_dragon_sovereign: 'assets/portraits/specimen_dragon_sovereign.png',
+  specimen_land_shark: 'assets/portraits/specimen_land_shark.png',
+  specimen_giant_mole: 'assets/portraits/specimen_giant_mole.png',
 });
 
 /**
@@ -439,8 +439,8 @@ export const TUTORIAL_ACT_DIALOGUES = Object.freeze({
     themeColor: '#e2b76b',
     simagreeClass: SIMAGREE_ANIMATION_CLASSES.TALK_BOUNCE,
     voiceAudioKey: 'act1_aldric',
-    ttsUrlEN: '/assets/audio/tts/en/act1_aldric.wav',
-    ttsUrlFR: '/assets/audio/tts/act1_aldric.wav',
+    ttsUrlEN: 'assets/audio/tts/en/act1_aldric.wav',
+    ttsUrlFR: 'assets/audio/tts/act1_aldric.wav',
     quoteEN:
       '"Welcome to the Bastion Sanctuary, Guardian. The ecosystem around us is frozen for now. Walk to the golden beacon to the South and test your tactical camera."',
     quoteFR:
@@ -462,8 +462,8 @@ export const TUTORIAL_ACT_DIALOGUES = Object.freeze({
     themeColor: '#f59e0b',
     simagreeClass: SIMAGREE_ANIMATION_CLASSES.BATTLE_SHAKE,
     voiceAudioKey: 'act2_aldric',
-    ttsUrlEN: '/assets/audio/tts/en/act2_aldric.wav',
-    ttsUrlFR: '/assets/audio/tts/act2_aldric.wav',
+    ttsUrlEN: 'assets/audio/tts/en/act2_aldric.wav',
+    ttsUrlFR: 'assets/audio/tts/act2_aldric.wav',
     quoteEN:
       '"A Stray Goblin and a Marauder Orc are approaching! Strike them with your runic greatsword, dash with Shift, and choose your first spell at level two."',
     quoteFR:
@@ -503,8 +503,8 @@ export const TUTORIAL_ACT_DIALOGUES = Object.freeze({
     themeColor: '#48c78e',
     simagreeClass: SIMAGREE_ANIMATION_CLASSES.SCHOLAR_NOD,
     voiceAudioKey: 'act3_aldric',
-    ttsUrlEN: '/assets/audio/tts/en/act3_aldric.wav',
-    ttsUrlFR: '/assets/audio/tts/act3_aldric.wav',
+    ttsUrlEN: 'assets/audio/tts/en/act3_aldric.wav',
+    ttsUrlFR: 'assets/audio/tts/act3_aldric.wav',
     quoteEN:
       '"Slay that wolf, free the survivor locked in the South-East cage with key E, then harvest wood or crystal for our camp."',
     quoteFR:
@@ -536,8 +536,8 @@ export const TUTORIAL_ACT_DIALOGUES = Object.freeze({
     themeColor: '#e2b76b',
     simagreeClass: SIMAGREE_ANIMATION_CLASSES.TALK_BOUNCE,
     voiceAudioKey: 'act4_aldric',
-    ttsUrlEN: '/assets/audio/tts/en/act4_aldric.wav',
-    ttsUrlFR: '/assets/audio/tts/act4_aldric.wav',
+    ttsUrlEN: 'assets/audio/tts/en/act4_aldric.wav',
+    ttsUrlFR: 'assets/audio/tts/act4_aldric.wav',
     quoteEN:
       '"Use our resources to build a Watchtower on the golden pad, then repel the goblin raiders charging our ramparts!"',
     quoteFR:
@@ -577,8 +577,8 @@ export const TUTORIAL_ACT_DIALOGUES = Object.freeze({
     themeColor: '#3ec7e6',
     simagreeClass: SIMAGREE_ANIMATION_CLASSES.TALK_BOUNCE,
     voiceAudioKey: 'act5_kaelen',
-    ttsUrlEN: '/assets/audio/tts/en/act5_kaelen.wav',
-    ttsUrlFR: '/assets/audio/tts/act5_kaelen.wav',
+    ttsUrlEN: 'assets/audio/tts/en/act5_kaelen.wav',
+    ttsUrlFR: 'assets/audio/tts/act5_kaelen.wav',
     quoteEN:
       '"Thank you for freeing me! Assign a survivor to the Scout role in the left panel: we will patrol beyond the frontier to track mutations."',
     quoteFR:
@@ -600,8 +600,8 @@ export const TUTORIAL_ACT_DIALOGUES = Object.freeze({
     themeColor: '#ef4444',
     simagreeClass: SIMAGREE_ANIMATION_CLASSES.PANIC_PULSE,
     voiceAudioKey: 'act6_kaelen',
-    ttsUrlEN: '/assets/audio/tts/en/act6_kaelen.wav',
-    ttsUrlFR: '/assets/audio/tts/act6_kaelen.wav',
+    ttsUrlEN: 'assets/audio/tts/en/act6_kaelen.wav',
+    ttsUrlFR: 'assets/audio/tts/act6_kaelen.wav',
     quoteEN:
       '"Priority alert! I spotted a Baby Fire Troll in the North-East! It is a Patient Zero: eliminate it quickly before it matures into an adult and reproduces!"',
     quoteFR:
@@ -641,8 +641,8 @@ export const TUTORIAL_ACT_DIALOGUES = Object.freeze({
     themeColor: '#fbbf24',
     simagreeClass: SIMAGREE_ANIMATION_CLASSES.PROUD_GLOW,
     voiceAudioKey: 'act7_kaelen',
-    ttsUrlEN: '/assets/audio/tts/en/act7_kaelen.wav',
-    ttsUrlFR: '/assets/audio/tts/act7_kaelen.wav',
+    ttsUrlEN: 'assets/audio/tts/en/act7_kaelen.wav',
+    ttsUrlFR: 'assets/audio/tts/act7_kaelen.wav',
     quoteEN:
       '"Well done! The Darwinian ecosystem now awakens across the entire island. Beware the Dragons of the caldera: as long as we do not attack them, they leave us in peace!"',
     quoteFR:
