@@ -39,8 +39,9 @@ export class BastionAndNPCs {
    * @param {Object} terrain - Terrain instance.
    * @param {Object} vfx - VFXManager instance.
    * @param {Object} ecoSim - EcosystemSimulator instance.
+   * @param {Object} [options={}] - Optional configuration (`{ tutorialMode: boolean }`).
    */
-  constructor(scene, terrain, vfx, ecoSim) {
+  constructor(scene, terrain, vfx, ecoSim, options = {}) {
     /** @type {THREE.Scene} */
     this.scene = scene;
     /** @type {Object} */
@@ -79,6 +80,8 @@ export class BastionAndNPCs {
     };
     /** @type {Array<Object>} Active watchtower turrets */
     this.watchtowers = [];
+    /** @type {Array<THREE.Object3D>} 3D meshes for watchtowers */
+    this.watchtowerMeshes = [];
     /** @type {Array<Object>} Active bolts fired by Guards and Watchtowers */
     this.bolts = [];
 
@@ -94,8 +97,17 @@ export class BastionAndNPCs {
     /** @type {number} */
     this.rescuedCount = 0;
 
+    /** @type {boolean} Whether the 7-Act Guided Onboarding tutorial mode is active */
+    this.tutorialMode = Boolean(options?.tutorialMode);
+
     /** @type {Function|null} Optional callback when a Scout discovers a mutant/hybrid */
     this.onScoutDiscovery = null;
+    /** @type {Function|null} Optional callback `(type, level)` when a structure is built */
+    this.onStructureBuilt = null;
+    /** @type {Function|null} Optional callback `(role, counts)` when an NPC role is assigned/recruited */
+    this.onRoleAssigned = null;
+    /** @type {Function|null} Optional callback `(npc, cage)` when a cage is rescued */
+    this.onCageRescued = null;
 
     /** @type {THREE.Group|null} Root 3D group for the Bastion Sanctuary */
     this.bastionGroup = null;
@@ -103,12 +115,79 @@ export class BastionAndNPCs {
     this.campfireFlame = null;
 
     this._buildBastionSanctuary();
-    this._spawnPrisonerCages();
 
-    // Start the player with 2 initial NPCs at the Bastion (1 harvester, 1 scout)
-    // so the Scout deep-wilderness exploration mechanic is immediately active!
-    this.spawnNpc('harvester', -3.5, -2.5);
-    this.spawnNpc('scout', 4.0, -3.0);
+    if (this.tutorialMode) {
+      this.setTutorialMode(true);
+    } else {
+      this._spawnPrisonerCages();
+      // Start the player with 2 initial NPCs at the Bastion (1 harvester, 1 scout)
+      // so the Scout deep-wilderness exploration mechanic is immediately active in standard mode!
+      this.spawnNpc('harvester', -3.5, -2.5);
+      this.spawnNpc('scout', 4.0, -3.0);
+    }
+  }
+
+  /**
+   * Enables or disables the 7-Act Guided Tutorial starting state:
+   * - Clears initial NPCs (`0` NPCs at start of Act 1)
+   * - Clears initial Prisoner Cages (`0` cages until Act 3 & Act 5)
+   * - Clears the initial Watchtower (`0` watchtowers until the player builds one in Act 4)
+   *
+   * @param {boolean} [enabled=true]
+   */
+  setTutorialMode(enabled = true) {
+    this.tutorialMode = Boolean(enabled);
+    if (this.tutorialMode) {
+      this.clearAllNpcs();
+      this.clearAllCages();
+      this.watchtowers = [];
+      this.structures.watchtower = 0;
+      if (this.bastionGroup && this.watchtowerMeshes.length > 0) {
+        for (const m of this.watchtowerMeshes) {
+          this.bastionGroup.remove(m);
+        }
+      }
+      this.watchtowerMeshes = [];
+      this.rescuedCount = 0;
+    }
+  }
+
+  /**
+   * Alias for `setTutorialMode(true)`.
+   */
+  enterTutorialMode() {
+    this.setTutorialMode(true);
+  }
+
+  /**
+   * Alias for `setTutorialMode(true)`.
+   */
+  enableTutorialStart() {
+    this.setTutorialMode(true);
+  }
+
+  /**
+   * Removes all allied NPCs and their 3D meshes from the scene.
+   */
+  clearAllNpcs() {
+    for (const npc of this.npcs) {
+      if (npc.mesh && this.scene) {
+        this.scene.remove(npc.mesh);
+      }
+    }
+    this.npcs = [];
+  }
+
+  /**
+   * Removes all Prisoner Cages and their 3D meshes from the scene.
+   */
+  clearAllCages() {
+    for (const cage of this.cages) {
+      if (cage.mesh && this.scene) {
+        this.scene.remove(cage.mesh);
+      }
+    }
+    this.cages = [];
   }
 
   /**
@@ -242,6 +321,87 @@ export class BastionAndNPCs {
 
     tower.add(base, platform, roof, beacon);
     this.bastionGroup.add(tower);
+    this.watchtowerMeshes.push(tower);
+  }
+
+  /**
+   * Spawns a single Prisoner Cage at `(x, z)` holding a captive survivor NPC.
+   * @param {number} x - World X position.
+   * @param {number} z - World Z position.
+   * @param {'scout'|'guard'|'harvester'} [role='harvester'] - Captive NPC role.
+   * @param {string|null} [id=null] - Optional custom cage ID.
+   * @returns {Object} Spawned cage object.
+   */
+  spawnSingleCage(x, z, role = 'harvester', id = null) {
+    const y = this.terrain ? this.terrain.getHeightAt(x, z) : 0;
+    let mesh = null;
+    if (this.scene) {
+      mesh = new THREE.Group();
+      mesh.position.set(x, Math.max(y, CONFIG.WORLD.WATER_LEVEL + 0.2), z);
+
+      const ironMat = new THREE.MeshStandardMaterial({
+        color: 0x2f3640,
+        roughness: 0.4,
+        metalness: 0.8,
+      });
+      const beaconMat = new THREE.MeshStandardMaterial({
+        color: 0x00d8ff,
+        emissive: 0x00a8ff,
+        emissiveIntensity: 1.8,
+      });
+
+      const basePlinth = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.25, 2.2), ironMat);
+      basePlinth.position.y = 0.12;
+      const topFrame = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.25, 2.2), ironMat);
+      topFrame.position.y = 2.35;
+      mesh.add(basePlinth, topFrame);
+
+      // Cage vertical bars
+      for (let b = 0; b < 8; b++) {
+        const ba = (b / 8) * Math.PI * 2;
+        const bar = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 2.2, 6), ironMat);
+        bar.position.set(Math.cos(ba) * 0.95, 1.25, Math.sin(ba) * 0.95);
+        bar.castShadow = true;
+        mesh.add(bar);
+      }
+
+      // Captive NPC inside cage
+      const captiveMesh = buildCreatureMesh({ type: 'npc', role });
+      captiveMesh.scale.setScalar(0.85);
+      mesh.add(captiveMesh);
+
+      // Floating cyan rescue crystal above cage
+      const crystal = new THREE.Mesh(new THREE.OctahedronGeometry(0.32, 0), beaconMat);
+      crystal.position.y = 3.1;
+      mesh.userData.crystal = crystal;
+      mesh.add(crystal);
+
+      this.scene.add(mesh);
+    }
+
+    const cage = {
+      id: id || `cage_${this.cages.length + 1}`,
+      x,
+      z,
+      y,
+      role,
+      rescued: false,
+      mesh,
+    };
+    this.cages.push(cage);
+    return cage;
+  }
+
+  /**
+   * Alias for `spawnSingleCage(x, z, role, id)` used by tutorial step orchestrators.
+   * @param {number} x
+   * @param {number} z
+   * @param {'scout'|'guard'|'harvester'} [role='harvester']
+   * @param {string|null} [id=null]
+   * @returns {Object}
+   */
+  spawnCageAt(x, z, role = 'harvester', id = null) {
+    return this.spawnSingleCage(x, z, role, id);
   }
 
   /**
@@ -262,62 +422,71 @@ export class BastionAndNPCs {
       const loc = cageLocations[i];
       const x = Math.cos(loc.angle) * loc.dist;
       const z = Math.sin(loc.angle) * loc.dist;
-      const y = this.terrain ? this.terrain.getHeightAt(x, z) : 0;
+      this.spawnSingleCage(x, z, loc.role, `cage_${i + 1}`);
+    }
+  }
 
-      let mesh = null;
-      if (this.scene) {
-        mesh = new THREE.Group();
-        mesh.position.set(x, Math.max(y, CONFIG.WORLD.WATER_LEVEL + 0.2), z);
-
-        const ironMat = new THREE.MeshStandardMaterial({
-          color: 0x2f3640,
-          roughness: 0.4,
-          metalness: 0.8,
-        });
-        const beaconMat = new THREE.MeshStandardMaterial({
-          color: 0x00d8ff,
-          emissive: 0x00a8ff,
-          emissiveIntensity: 1.8,
-        });
-
-        const basePlinth = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.25, 2.2), ironMat);
-        basePlinth.position.y = 0.12;
-        const topFrame = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.25, 2.2), ironMat);
-        topFrame.position.y = 2.35;
-        mesh.add(basePlinth, topFrame);
-
-        // Cage vertical bars
-        for (let b = 0; b < 8; b++) {
-          const ba = (b / 8) * Math.PI * 2;
-          const bar = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 2.2, 6), ironMat);
-          bar.position.set(Math.cos(ba) * 0.95, 1.25, Math.sin(ba) * 0.95);
-          bar.castShadow = true;
-          mesh.add(bar);
-        }
-
-        // Captive NPC inside cage
-        const captiveMesh = buildCreatureMesh({ type: 'npc', role: loc.role });
-        captiveMesh.scale.setScalar(0.85);
-        mesh.add(captiveMesh);
-
-        // Floating cyan rescue crystal above cage
-        const crystal = new THREE.Mesh(new THREE.OctahedronGeometry(0.32, 0), beaconMat);
-        crystal.position.y = 3.1;
-        mesh.userData.crystal = crystal;
-        mesh.add(crystal);
-
-        this.scene.add(mesh);
-      }
-
-      this.cages.push({
-        id: `cage_${i + 1}`,
-        x,
-        z,
-        y,
-        role: loc.role,
-        rescued: false,
-        mesh,
+  /**
+   * Act 3 Tutorial Spawner: Spawns Cage #1 at `{ x: 20, z: 20 }` holding the 1st survivor (`'harvester'`)
+   * and optionally spawns 1 guarding Wolf nearby.
+   * @param {number} [x=20]
+   * @param {number} [z=20]
+   * @param {Object|null} [enemyManager=null]
+   * @returns {Object} Spawned Cage #1.
+   */
+  spawnTutorialCage1(x = 20, z = 20, enemyManager = null) {
+    const cage = this.spawnSingleCage(x, z, 'harvester', 'tutorial_cage_1');
+    if (enemyManager && typeof enemyManager.spawnEnemy === 'function') {
+      const wolfGenome = enemyManager._createSafeGenome
+        ? enemyManager._createSafeGenome('wolf')
+        : { speciesId: 'wolf', speciesName: 'Loup Gardien', genes: {}, mutations: [] };
+      wolfGenome.speciesName = 'Loup Gardien';
+      enemyManager.spawnEnemy(x - 3.5, z - 3.0, wolfGenome, [], {
+        hpOverride: 40,
+        damageOverride: 5,
+        speedOverride: 5.5,
+        tutorialTag: 'act3_wolf',
       });
+    }
+    logger.info('BASTION', `Acte 3 : Cage de Survivant #1 apparue en (${Math.round(x)}, ${Math.round(z)}).`);
+    return cage;
+  }
+
+  /**
+   * Act 5 Tutorial Spawner: Spawns Cage #2 at `{ x: 0, z: -38 }` holding the 2nd survivor
+   * so the player can rescue them and assign them to the **Éclaireur (`'scout'`)** role in Step 10!
+   * @param {number} [x=0]
+   * @param {number} [z=-38]
+   * @returns {Object} Spawned Cage #2.
+   */
+  spawnTutorialCage2(x = 0, z = -38) {
+    const cage = this.spawnSingleCage(x, z, 'harvester', 'tutorial_cage_2');
+    logger.info('BASTION', `Acte 5 : Cage de Survivant #2 apparue en (${Math.round(x)}, ${Math.round(z)}).`);
+    return cage;
+  }
+
+  /**
+   * Act 7 / Skip Tutorial (`[P]`): Transitions the Bastion into full Open Survival Mode,
+   * ensuring at least 1 Harvester, 1 Scout, 1 Watchtower, and remaining Prisoner Cages exist.
+   */
+  startOpenSurvivalMode() {
+    this.tutorialMode = false;
+    const counts = this.getRoleCounts();
+    if (counts.harvester === 0) {
+      this.spawnNpc('harvester', -3.5, -2.5);
+    }
+    if (counts.scout === 0) {
+      this.spawnNpc('scout', 4.0, -3.0);
+    }
+    if (this.watchtowers.length === 0) {
+      const centerY = this.terrain ? this.terrain.getHeightAt(0, 0) : 2.2;
+      this.watchtowers.push({ x: -8.5, y: centerY, z: -7.5, cooldown: 0 });
+      this.structures.watchtower = Math.max(1, this.structures.watchtower);
+      this._addWatchtowerMesh(-8.5, -7.5);
+    }
+    const activeUnrescued = this.cages.filter((c) => !c.rescued).length;
+    if (activeUnrescued < 4) {
+      this._spawnPrisonerCages();
     }
   }
 
@@ -357,6 +526,9 @@ export class BastionAndNPCs {
           `Survivant libéré ! ${rescuedNpc.name} rejoint le Bastion comme [${this._roleLabelFR(cage.role)}] (${this.rescuedCount}/${this.totalCages} cages).`,
           { npcId: rescuedNpc.id, role: cage.role, rescuedCount: this.rescuedCount }
         );
+        if (typeof this.onCageRescued === 'function') {
+          this.onCageRescued(rescuedNpc, cage);
+        }
         return rescuedNpc;
       }
     }
@@ -491,6 +663,9 @@ export class BastionAndNPCs {
       `${npc.name} réaffecté au rôle : [${this._roleLabelFR(targetRole)}].`,
       this.getRoleCounts()
     );
+    if (typeof this.onRoleAssigned === 'function') {
+      this.onRoleAssigned(targetRole, this.getRoleCounts());
+    }
     return true;
   }
 
@@ -505,15 +680,16 @@ export class BastionAndNPCs {
     const woodCost = 15;
     const biomassCost = 8;
     if (playerResources) {
-      if ((playerResources.wood || 0) < woodCost || (playerResources.biomass || 0) < biomassCost) {
+      const hasEnough = (playerResources.wood || 0) >= woodCost && (playerResources.biomass || 0) >= biomassCost;
+      if (!hasEnough && !this.tutorialMode) {
         logger.warn(
           'BASTION',
           `Ressources insuffisantes pour recruter un ${this._roleLabelFR(role)} (Requis: ${woodCost} Bois, ${biomassCost} Biomasse).`
         );
         return null;
       }
-      playerResources.wood -= woodCost;
-      playerResources.biomass -= biomassCost;
+      playerResources.wood = Math.max(0, (playerResources.wood || 0) - woodCost);
+      playerResources.biomass = Math.max(0, (playerResources.biomass || 0) - biomassCost);
     }
 
     const angle = Math.random() * Math.PI * 2;
@@ -523,6 +699,9 @@ export class BastionAndNPCs {
       `Nouveau [${this._roleLabelFR(role)}] recruté au Bastion : ${npc.name} !`,
       this.getRoleCounts()
     );
+    if (typeof this.onRoleAssigned === 'function') {
+      this.onRoleAssigned(role, this.getRoleCounts());
+    }
     return npc;
   }
 
@@ -541,22 +720,30 @@ export class BastionAndNPCs {
     const crystalCost = structDef.crystalCost || 10;
 
     if (playerResources) {
-      if ((playerResources.wood || 0) < woodCost || (playerResources.crystal || 0) < crystalCost) {
+      const hasEnough = (playerResources.wood || 0) >= woodCost && (playerResources.crystal || 0) >= crystalCost;
+      if (!hasEnough && !this.tutorialMode) {
         logger.warn(
           'BASTION',
           `Ressources insuffisantes pour bâtir [${structDef.name}] (Requis: ${woodCost} Bois, ${crystalCost} Cristal).`
         );
         return false;
       }
-      playerResources.wood -= woodCost;
-      playerResources.crystal -= crystalCost;
+      playerResources.wood = Math.max(0, (playerResources.wood || 0) - woodCost);
+      playerResources.crystal = Math.max(0, (playerResources.crystal || 0) - crystalCost);
     }
 
     this.structures[type] = (this.structures[type] || 0) + 1;
     const count = this.structures[type];
-    const angle = count * 1.65 + (type === 'watchtower' ? 0.5 : type === 'palisade' ? 2.1 : 3.9);
-    const rx = Math.cos(angle) * (this.radius - 2.2);
-    const rz = Math.sin(angle) * (this.radius - 2.2);
+    let rx;
+    let rz;
+    if (type === 'watchtower' && this.watchtowers.length === 0) {
+      rx = -8.5;
+      rz = -7.5;
+    } else {
+      const angle = count * 1.65 + (type === 'watchtower' ? 0.5 : type === 'palisade' ? 2.1 : 3.9);
+      rx = Math.cos(angle) * (this.radius - 2.2);
+      rz = Math.sin(angle) * (this.radius - 2.2);
+    }
     const centerY = this.terrain ? this.terrain.getHeightAt(rx, rz) : 2.2;
 
     if (type === 'watchtower') {
@@ -576,6 +763,9 @@ export class BastionAndNPCs {
       type,
       structures: { ...this.structures },
     });
+    if (typeof this.onStructureBuilt === 'function') {
+      this.onStructureBuilt(type, count);
+    }
     return true;
   }
 
@@ -981,16 +1171,31 @@ export class BastionAndNPCs {
       scout.vz = evasion.vz * this.scoutSpeedMultiplier;
     } else {
       scout.state = 'expedition';
-      scout.waypointTimer -= dt;
-      const dWaypoint = dist2D(scout.x, scout.z, scout.targetX, scout.targetZ);
+      const priorityTutorialTarget = enemies.find(
+        (e) =>
+          !e.spottedByScout &&
+          (e.tutorialTag === 'act6_baby_fire_troll' || (this.tutorialMode && e.isPatientZero))
+      );
 
-      if (dWaypoint < 5.0 || scout.waypointTimer <= 0) {
-        this._assignNewWildernessWaypoint(scout, enemies);
+      if (priorityTutorialTarget) {
+        scout.targetX = priorityTutorialTarget.x;
+        scout.targetZ = priorityTutorialTarget.z;
+        scout.sectorName = getCardinalLabelFR(priorityTutorialTarget.x, priorityTutorialTarget.z);
+        const angle = Math.atan2(scout.targetZ - scout.z, scout.targetX - scout.x);
+        scout.vx = Math.cos(angle) * effectiveSpeed * 1.45;
+        scout.vz = Math.sin(angle) * effectiveSpeed * 1.45;
+      } else {
+        scout.waypointTimer -= dt;
+        const dWaypoint = dist2D(scout.x, scout.z, scout.targetX, scout.targetZ);
+
+        if (dWaypoint < 5.0 || scout.waypointTimer <= 0) {
+          this._assignNewWildernessWaypoint(scout, enemies);
+        }
+
+        const angle = Math.atan2(scout.targetZ - scout.z, scout.targetX - scout.x);
+        scout.vx = Math.cos(angle) * effectiveSpeed;
+        scout.vz = Math.sin(angle) * effectiveSpeed;
       }
-
-      const angle = Math.atan2(scout.targetZ - scout.z, scout.targetX - scout.x);
-      scout.vx = Math.cos(angle) * effectiveSpeed;
-      scout.vz = Math.sin(angle) * effectiveSpeed;
     }
   }
 

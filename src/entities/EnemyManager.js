@@ -59,6 +59,61 @@ export class EnemyManager {
     this.seenMutations = new Set();
     /** @type {Function|null} Optional stored callback when a mutant lineage is eradicated */
     this.onLineageEradicated = null;
+    /** @type {Function|null} Optional callback `(enemy, xpGained)` when any enemy is killed */
+    this.onEnemyKilled = null;
+
+    /** @type {boolean} Whether the 7-Act Guided Onboarding tutorial mode is active */
+    this.tutorialMode = false;
+    /** @type {boolean} When true, automatic background Eco-Ticks are paused (Acts 1–6) */
+    this.ecoPaused = false;
+  }
+
+  /**
+   * Pauses or resumes background Conway Eco-Ticks (used during Acts 1–6 of the guided tutorial).
+   * @param {boolean} paused
+   */
+  setEcoPaused(paused = true) {
+    this.ecoPaused = Boolean(paused);
+    logger.info('ECO', this.ecoPaused ? 'Cycles Éco-Tick mis en pause (Mode Tutoriel).' : 'Cycles Éco-Tick réactivés !');
+  }
+
+  /**
+   * Enables or disables Guided Tutorial mode. When enabled, clears existing wild packs and pauses Eco-Ticks.
+   * @param {boolean} enabled
+   */
+  setTutorialMode(enabled = true) {
+    this.tutorialMode = Boolean(enabled);
+    this.ecoPaused = Boolean(enabled);
+    if (this.tutorialMode) {
+      this.clearAllEnemies();
+    }
+  }
+
+  /**
+   * Removes all active enemies and projectiles from the 3D scene and resets beacons.
+   */
+  clearAllEnemies() {
+    for (const enemy of this.enemies) {
+      if (this.vfx && typeof this.vfx.setPatientZeroBeacon === 'function') {
+        this.vfx.setPatientZeroBeacon(
+          enemy.id,
+          enemy.mesh ? enemy.mesh.position : new THREE.Vector3(enemy.x, enemy.y, enemy.z),
+          0xff3300,
+          false
+        );
+      }
+      if (enemy.mesh && this.scene) {
+        this.scene.remove(enemy.mesh);
+      }
+    }
+    this.enemies = [];
+
+    for (const p of this.projectiles) {
+      if (p.mesh && this.scene) {
+        this.scene.remove(p.mesh);
+      }
+    }
+    this.projectiles = [];
   }
 
   /**
@@ -274,9 +329,13 @@ export class EnemyManager {
     const adultDamage = +(genes.strength || spDef.baseDamage || 10).toFixed(1);
     const babyStatMult = CONFIG.ECO?.BABY_STAT_MULT || 0.55;
 
-    const maxHp = isAdult ? adultMaxHp : Math.max(12, Math.round(adultMaxHp * babyStatMult));
-    const damage = isAdult ? adultDamage : +(adultDamage * babyStatMult).toFixed(1);
-    const speed = +(genes.speed || spDef.baseSpeed || 6.5).toFixed(2);
+    const baseCalculatedMaxHp = isAdult ? adultMaxHp : Math.max(12, Math.round(adultMaxHp * babyStatMult));
+    const baseCalculatedDamage = isAdult ? adultDamage : +(adultDamage * babyStatMult).toFixed(1);
+    const baseCalculatedSpeed = +(genes.speed || spDef.baseSpeed || 6.5).toFixed(2);
+
+    const maxHp = typeof options.hpOverride === 'number' ? options.hpOverride : baseCalculatedMaxHp;
+    const damage = typeof options.damageOverride === 'number' ? options.damageOverride : baseCalculatedDamage;
+    const speed = typeof options.speedOverride === 'number' ? options.speedOverride : baseCalculatedSpeed;
 
     let mesh = null;
     if (this.scene) {
@@ -316,6 +375,10 @@ export class EnemyManager {
       lonely: false,
       spottedByScout: Boolean(options.spottedByScout),
       isPatientZero,
+      tutorialTag: options.tutorialTag || null,
+      xpRewardOverride: typeof options.xpRewardOverride === 'number' ? options.xpRewardOverride : null,
+      aggroBastionForced: Boolean(options.aggroBastionForced),
+      freezeMaturationAt80: Boolean(options.freezeMaturationAt80),
       mesh,
       position: mesh ? mesh.position : new THREE.Vector3(x, y, z),
       state: 'patrol',
@@ -330,6 +393,130 @@ export class EnemyManager {
 
     this.enemies.push(enemy);
     return enemy;
+  }
+
+  /**
+   * Act 2A Tutorial Spawner: Spawns a single slow, low-HP "Gobelin Égaré" near the Bastion
+   * so the player can practice the melee Cleave Attack (`Clic Gauche` / `[Espace]`).
+   * @param {number} [x=12]
+   * @param {number} [z=8]
+   * @returns {Object} Spawned Goblin entity.
+   */
+  spawnTutorialGoblin(x = 12, z = 8) {
+    const genome = this._createSafeGenome('goblin');
+    genome.speciesName = 'Gobelin Égaré';
+    const goblin = this.spawnEnemy(x, z, genome, [], {
+      hpOverride: 34,
+      damageOverride: 3.5,
+      speedOverride: 4.0,
+      xpRewardOverride: 25,
+      tutorialTag: 'act2_goblin',
+    });
+    logger.info('COMBAT', `Acte 2A : [Gobelin Égaré] apparu en (${Math.round(x)}, ${Math.round(z)}).`);
+    return goblin;
+  }
+
+  /**
+   * Act 2B Tutorial Spawner: Spawns an "Orc Maraudeur" whose defeat awards enough XP (`105 XP`)
+   * to trigger Level 2 and open the Roguelike Upgrade Modal in Act 2C.
+   * @param {number} [x=-14]
+   * @param {number} [z=10]
+   * @returns {Object} Spawned Orc entity.
+   */
+  spawnTutorialOrc(x = -14, z = 10) {
+    const genome = this._createSafeGenome('orc');
+    genome.speciesName = 'Orc Maraudeur';
+    const orc = this.spawnEnemy(x, z, genome, [], {
+      hpOverride: 72,
+      damageOverride: 7.0,
+      speedOverride: 5.2,
+      xpRewardOverride: 105,
+      tutorialTag: 'act2_orc',
+    });
+    logger.info('COMBAT', `Acte 2B : [Orc Maraudeur] apparu en (${Math.round(x)}, ${Math.round(z)}).`);
+    return orc;
+  }
+
+  /**
+   * Act 4 Tutorial Spawner: Spawns 2 Goblin Raiders charging directly toward the Bastion
+   * so the newly built Watchtower (`Tour de Guet`) shoots them down automatically.
+   * @returns {Array<Object>} The 2 spawned Raider entities.
+   */
+  spawnTutorialRaiders() {
+    const coords = [
+      { x: -25, z: -20 },
+      { x: -21, z: -24 },
+    ];
+    const raiders = [];
+    for (const c of coords) {
+      const genome = this._createSafeGenome('goblin');
+      genome.speciesName = 'Pillard Gobelin';
+      const raider = this.spawnEnemy(c.x, c.z, genome, [], {
+        hpOverride: 30,
+        damageOverride: 4.0,
+        speedOverride: 5.5,
+        aggroBastionForced: true,
+        tutorialTag: 'act4_raider',
+      });
+      raiders.push(raider);
+    }
+    logger.alert('⚠️ Acte 4 : 2 Pillards Gobelins chargent le Bastion ! La Tour de Guet engage le feu !');
+    return raiders;
+  }
+
+  /**
+   * Act 6 Tutorial Spawner: Spawns the Juvenile Baby Fire Troll (`Patient Zéro Juvénile`,
+   * `pyro_gland`, `lifeStage: 'baby'`, `isAdult: false`) at `{ x: 46, z: -46 }` with maturation
+   * frozen at 80% until the player approaches within 14m, guaranteeing the player experiences
+   * hunting a juvenile Patient Zero before adulthood!
+   * @param {number} [x=46]
+   * @param {number} [z=-46]
+   * @returns {Object} Spawned Juvenile Patient Zero entity.
+   */
+  spawnTutorialBabyFireTroll(x = 46, z = -46) {
+    const genome = this._createSafeGenome('troll');
+    this._applyMutationToGenome(genome, 'pyro_gland');
+    genome.isPatientZero = true;
+
+    const babyTroll = this.spawnEnemy(x, z, genome, ['wild_parent_a', 'wild_parent_b'], {
+      isPatientZero: true,
+      lifeStage: 'baby',
+      isAdult: false,
+      age: 4,
+      maturationTime: 36,
+      freezeMaturationAt80: true,
+      xpRewardOverride: 120,
+      tutorialTag: 'act6_baby_fire_troll',
+    });
+
+    if (this.vfx && typeof this.vfx.spawnBirthEffect === 'function') {
+      this.vfx.spawnBirthEffect(
+        new THREE.Vector3(babyTroll.x, babyTroll.y + 0.5, babyTroll.z),
+        true,
+        false,
+        0xff4500
+      );
+    }
+
+    logger.evolution(
+      `Acte 6 : Apparition d'un Patient Zéro Juvénile [Troll — Glande Pyroclastique] (Stade: BÉBÉ) en (${Math.round(x)}, ${Math.round(z)}) !`,
+      { enemyId: babyTroll.id, lifeStage: babyTroll.lifeStage, x: Math.round(x), z: Math.round(z) }
+    );
+    return babyTroll;
+  }
+
+  /**
+   * Act 7 / Skip Tutorial (`[P]`): Unpauses background Conway Eco-Ticks and populates the island
+   * with full wild packs if not already populated.
+   * @param {number} [count=CONFIG.ECO.INITIAL_POPULATION]
+   */
+  startOpenSurvivalMode(count = CONFIG.ECO?.INITIAL_POPULATION || 42) {
+    this.tutorialMode = false;
+    this.ecoPaused = false;
+    if (this.enemies.length < 12) {
+      this.spawnInitialPopulation(count);
+    }
+    logger.alert('🌍 Mode Survie Ouvert activé : Cycles Éco-Tick en temps réel et meutes sauvages déployées !');
   }
 
   /**
@@ -561,13 +748,15 @@ export class EnemyManager {
       this.onLineageEradicated = onLineageEradicated;
     }
 
-    // 1. Automatic Genetic Eco-Tick Timer
-    this.ecoTickTimer += dt;
-    this.timeUntilNextTick = Math.max(0, this.ecoTickInterval - this.ecoTickTimer);
-    this.ecoTickProgress = clamp(this.ecoTickTimer / this.ecoTickInterval, 0, 1);
+    // 1. Automatic Genetic Eco-Tick Timer (paused during Acts 1–6 of the guided tutorial)
+    if (!this.ecoPaused) {
+      this.ecoTickTimer += dt;
+      this.timeUntilNextTick = Math.max(0, this.ecoTickInterval - this.ecoTickTimer);
+      this.ecoTickProgress = clamp(this.ecoTickTimer / this.ecoTickInterval, 0, 1);
 
-    if (this.ecoTickTimer >= this.ecoTickInterval) {
-      this.triggerEcoTick();
+      if (this.ecoTickTimer >= this.ecoTickInterval) {
+        this.triggerEcoTick();
+      }
     }
 
     const worldHalf = (CONFIG.WORLD?.SIZE || 240) * 0.45;
@@ -582,7 +771,19 @@ export class EnemyManager {
 
       // Advance age & check Baby -> Adult maturation
       enemy.age = (enemy.age || 0) + dt;
-      if (!enemy.isAdult && enemy.age >= (enemy.maturationTime || 20)) {
+      const matTime = enemy.maturationTime || 20;
+      if (!enemy.isAdult && enemy.freezeMaturationAt80) {
+        const dPlayerToBaby = player ? dist2D(enemy.x, enemy.z, player.x, player.z) : Infinity;
+        if (dPlayerToBaby <= 14) {
+          // Player has engaged the Juvenile Patient Zero; unfreeze with ~25% remaining timer
+          enemy.freezeMaturationAt80 = false;
+          enemy.age = Math.min(enemy.age, matTime * 0.75);
+        } else {
+          // Cap maturation at 80% while player is still traveling so they are guaranteed to face a Baby
+          enemy.age = Math.min(enemy.age, matTime * 0.80);
+        }
+      }
+      if (!enemy.isAdult && enemy.age >= matTime) {
         this._matureEnemyToAdult(enemy);
       }
 
@@ -640,10 +841,13 @@ export class EnemyManager {
         }
       }
 
-      // Starving enemies migrate toward the Bastion or greener cells
+      // Starving enemies or forced Act 4 Raiders migrate/charge toward the Bastion
       const distToBastion = Math.hypot(enemy.x, enemy.z);
-      if (!targetType && (enemy.starving || distToBastion < aggroRadius + bastionRadius)) {
-        if (distToBastion < aggroRadius + bastionRadius) {
+      if (
+        !targetType &&
+        (enemy.aggroBastionForced || enemy.starving || distToBastion < aggroRadius + bastionRadius)
+      ) {
+        if (enemy.aggroBastionForced || distToBastion < aggroRadius + bastionRadius) {
           targetX = 0;
           targetZ = 0;
           targetType = 'bastion';
@@ -959,10 +1163,16 @@ export class EnemyManager {
       const baseXp = spDef.xpReward || 20;
       const mutBonus = (enemy.genome?.mutations?.length || 0) * 25;
       const pzBonus = enemy.isPatientZero ? 45 : 0;
-      const xpGained = baseXp + mutBonus + pzBonus;
+      const xpGained =
+        typeof enemy.xpRewardOverride === 'number'
+          ? enemy.xpRewardOverride
+          : baseXp + mutBonus + pzBonus;
 
       const cb = onLineageEradicated || this.onLineageEradicated;
       this._removeEnemyAtIndex(idx, true, cb);
+      if (typeof this.onEnemyKilled === 'function') {
+        this.onEnemyKilled(enemy, xpGained);
+      }
       return { killed: true, enemy, xpGained };
     }
 

@@ -1,11 +1,15 @@
 /**
- * @fileoverview Player Action-Roguelike Controller, 3D Cleave Combat, Dash, Resource Harvesting & Upgrades.
+ * @fileoverview Player Action-Roguelike Controller, 3D Cleave Combat, Dash, Resource Harvesting,
+ * 3D Ground Attack Range Indicator, 3D Golden Quest Arrow, and Onboarding Telemetry.
+ *
  * Handles responsive WASD/ZQSD/Arrow movement oriented to the 3D tactical camera yaw,
- * wide-arc Rune Greatsword cleave attacks with 3D slash VFX, dodge roll dashing,
- * prisoner cage rescues, resource gathering, XP/level progression, and counter-adaptation upgrades.
+ * wide-arc Rune Greatsword cleave attacks with 3D slash VFX and ground range ring,
+ * dodge roll dashing (`Shift` or `Right Click`), prisoner cage rescues (`[E]`),
+ * resource gathering (`[E]`), XP/level progression, and counter-adaptation upgrades.
  *
  * Usage:
  *   const player = new PlayerController(scene, terrain, vfx);
+ *   player.setQuestTarget({ x: 0, z: -4 });
  *   player.update(dt, elapsedTime, enemyManager, bastionAndNpcs, cameraYaw);
  */
 
@@ -17,7 +21,7 @@ import { logger } from '../utils/logger.js';
 
 export class PlayerController {
   /**
-   * @param {THREE.Scene} scene - Three.js scene to mount player and slash arc meshes.
+   * @param {THREE.Scene} scene - Three.js scene to mount player, range ring, and quest arrow meshes.
    * @param {Object} terrain - Terrain instance for height grounding and resource nodes.
    * @param {Object} vfx - VFXManager instance for combat hit and level-up particles.
    */
@@ -29,11 +33,11 @@ export class PlayerController {
     /** @type {Object} */
     this.vfx = vfx;
 
-    // Spawn near the Bastion Sanctuary at (0, 4)
+    // Spawn near the Bastion Sanctuary at (0, 6.5)
     /** @type {number} */
     this.x = 0;
     /** @type {number} */
-    this.z = 5.5;
+    this.z = 6.5;
     /** @type {number} */
     this.y = this.terrain ? this.terrain.getHeightAt(this.x, this.z) : 0;
     /** @type {number} */
@@ -41,7 +45,7 @@ export class PlayerController {
     /** @type {number} */
     this.vz = 0;
     /** @type {number} */
-    this.facingAngle = 0;
+    this.facingAngle = Math.PI;
 
     // Core Survival & Roguelike Progression Stats
     /** @type {number} */
@@ -68,8 +72,33 @@ export class PlayerController {
     this.upgrades = [];
     /** @type {number} Unspent level-up picks waiting for modal selection */
     this.pendingLevelUps = 0;
-    /** @type {Function|null} Optional callback `(level, player)` triggered on level up */
+
+    // Onboarding & Combat Telemetry Counters
+    /** @type {number} Total planar distance walked by the player */
+    this.distanceMoved = 0;
+    /** @type {number} Total cleave attack swings performed */
+    this.attackSwings = 0;
+    /** @type {number} Total cleave hits landed on enemies */
+    this.hitsLanded = 0;
+    /** @type {number} Total dashes performed (`Shift` or `Right Click`) */
+    this.dashCount = 0;
+    /** @type {number} Total resource nodes harvested */
+    this.harvestCount = 0;
+    /** @type {number} Total survivor cages rescued */
+    this.cagesRescuedCount = 0;
+
+    // Event Callbacks for HUD / Floating Damage Numbers / Tutorial Progression
+    /** @type {Function|null} `(level, player)` */
     this.onLevelUp = null;
+    /** @type {Function|null} `(enemy, damageAmount, killed)` */
+    this.onDamageDealt = null;
+    /** @type {Function|null} `(rescuedNpc, cage)` */
+    this.onCageRescued = null;
+    /** @type {Function|null} `(resourceType, amount, worldPos)` */
+    this.onResourceHarvested = null;
+
+    /** @type {{ type: string, label: string, keyHint: string, worldPos: THREE.Vector3, entity: Object }|null} */
+    this.nearestPrompt = null;
 
     // Combat & Mobility Modifiers
     this.baseSpeed = CONFIG.PLAYER?.SPEED || 13.5;
@@ -88,7 +117,7 @@ export class PlayerController {
     this.dashCooldown = 0;
     this.dashTimer = 0;
     this.dashDirX = 0;
-    this.dashDirZ = 1;
+    this.dashDirZ = -1;
 
     this.regenPerSec = 1.2;
     this.damageReduction = 0.0;
@@ -99,21 +128,31 @@ export class PlayerController {
     this.patientZeroTracker = false;
 
     this.interactCooldown = 0;
-    this.harvestTimer = 0;
     this.lastBastionRef = null;
     this.lastEnemyManagerRef = null;
 
-    // Build Articulated 3D Hero Mesh + Cleave Slash Arc Mesh
+    // Quest / Tutorial Directional Target
+    /** @type {{ x: number, z: number }|null} */
+    this.targetWorldPos = null;
+
+    // Build Articulated 3D Hero Mesh, Ground Range Ring, Cleave Slash Arc, and Golden Quest Arrow
     /** @type {THREE.Group|null} */
     this.mesh = null;
     /** @type {THREE.Mesh|null} */
     this.slashArcMesh = null;
+    /** @type {THREE.Mesh|null} */
+    this.attackRangeRingMesh = null;
+    /** @type {THREE.Mesh|null} */
+    this.attackConeMesh = null;
+    /** @type {THREE.Group|null} */
+    this.questArrowMesh = null;
 
     if (this.scene) {
       this.mesh = buildCreatureMesh({ type: 'player' });
       this.mesh.position.set(this.x, this.y, this.z);
       this.scene.add(this.mesh);
 
+      // 1. Animated 3D Sword Cleave Slash Arc
       const arcGeo = new THREE.RingGeometry(1.4, this.cleaveRange, 24, 1, -Math.PI * 0.48, Math.PI * 0.96);
       arcGeo.rotateX(-Math.PI / 2);
       arcGeo.rotateY(Math.PI / 2);
@@ -127,6 +166,41 @@ export class PlayerController {
       this.slashArcMesh.position.y = 0.85;
       this.slashArcMesh.visible = false;
       this.mesh.add(this.slashArcMesh);
+
+      // 2. 3D Ground Attack Range Ring + Forward Strike Cone (lights up when enemies are near)
+      const rangeRingGeo = new THREE.RingGeometry(this.cleaveRange - 0.14, this.cleaveRange, 40);
+      rangeRingGeo.rotateX(-Math.PI / 2);
+      const rangeRingMat = new THREE.MeshBasicMaterial({
+        color: 0x48dbfb,
+        side: THREE.DoubleSide,
+        transparent: true,
+        opacity: 0.0,
+        depthWrite: false,
+      });
+      this.attackRangeRingMesh = new THREE.Mesh(rangeRingGeo, rangeRingMat);
+      this.attackRangeRingMesh.position.y = 0.08;
+      this.attackRangeRingMesh.visible = false;
+      this.mesh.add(this.attackRangeRingMesh);
+
+      const coneGeo = new THREE.RingGeometry(0.9, this.cleaveRange - 0.14, 24, 1, -Math.PI * 0.42, Math.PI * 0.84);
+      coneGeo.rotateX(-Math.PI / 2);
+      coneGeo.rotateY(Math.PI / 2);
+      const coneMat = new THREE.MeshBasicMaterial({
+        color: 0xffd166,
+        side: THREE.DoubleSide,
+        transparent: true,
+        opacity: 0.0,
+        depthWrite: false,
+      });
+      this.attackConeMesh = new THREE.Mesh(coneGeo, coneMat);
+      this.attackConeMesh.position.y = 0.07;
+      this.attackConeMesh.visible = false;
+      this.mesh.add(this.attackConeMesh);
+
+      // 3. 3D Golden Directional Quest Arrow at Player's Feet
+      this.questArrowMesh = this._buildGoldenQuestArrow();
+      this.questArrowMesh.visible = false;
+      this.scene.add(this.questArrowMesh);
     }
 
     /** @type {THREE.Vector3} Synced position vector for camera/UI consumers */
@@ -139,8 +213,106 @@ export class PlayerController {
     this._attackRequested = false;
     this._dashRequested = false;
     this._interactRequested = false;
+    this._rightDownTime = 0;
+    this._rightDownPos = { x: 0, y: 0 };
 
     this._bindInputs();
+  }
+
+  /**
+   * Builds the sculpted 3D Golden Quest Arrow (`questArrowMesh`) that orbits at the player's
+   * feet pointing toward the active tutorial or Patient Zero objective.
+   * @returns {THREE.Group}
+   */
+  _buildGoldenQuestArrow() {
+    const group = new THREE.Group();
+    group.name = 'PlayerQuestArrow';
+
+    const goldMat = new THREE.MeshStandardMaterial({
+      color: 0xffd166,
+      emissive: 0xe6a145,
+      emissiveIntensity: 1.6,
+      roughness: 0.2,
+      metalness: 0.75,
+    });
+
+    const pointerOffset = new THREE.Group();
+    pointerOffset.position.set(0, 0.32, 2.35);
+
+    const headGeo = new THREE.ConeGeometry(0.38, 0.78, 4);
+    headGeo.rotateX(Math.PI / 2);
+    const arrowHead = new THREE.Mesh(headGeo, goldMat);
+    arrowHead.position.z = 0.35;
+
+    const shaftGeo = new THREE.BoxGeometry(0.24, 0.12, 0.65);
+    const arrowShaft = new THREE.Mesh(shaftGeo, goldMat);
+    arrowShaft.position.z = -0.22;
+
+    const baseRingGeo = new THREE.RingGeometry(1.15, 1.32, 28);
+    baseRingGeo.rotateX(-Math.PI / 2);
+    const baseRing = new THREE.Mesh(
+      baseRingGeo,
+      new THREE.MeshBasicMaterial({
+        color: 0xffd166,
+        side: THREE.DoubleSide,
+        transparent: true,
+        opacity: 0.42,
+      })
+    );
+    baseRing.position.y = 0.08;
+
+    pointerOffset.add(arrowHead, arrowShaft);
+    group.add(baseRing, pointerOffset);
+    group.userData.pointerOffset = pointerOffset;
+    return group;
+  }
+
+  /**
+   * Sets or clears the 3D Golden Quest Arrow target coordinate (`{ x, z }`).
+   * Also updates the 3D world tutorial waypoint beacon if `vfx.setTutorialWaypoint` is available.
+   *
+   * @param {{x: number, z: number}|number|null} posOrX - Target `{x, z}` object, X coordinate, or `null` to clear.
+   * @param {number} [zCoord] - Z coordinate if first parameter was numeric X.
+   * @param {boolean} [showWorldBeacon=true] - Whether to also display the 3D ground beacon at the target.
+   */
+  setQuestTarget(posOrX, zCoord, showWorldBeacon = true) {
+    if (posOrX === null || posOrX === undefined) {
+      this.clearQuestTarget();
+      return;
+    }
+
+    let tx = 0;
+    let tz = 0;
+    if (typeof posOrX === 'number' && typeof zCoord === 'number') {
+      tx = posOrX;
+      tz = zCoord;
+    } else if (typeof posOrX === 'object') {
+      tx = Number(posOrX.x ?? 0);
+      tz = Number(posOrX.z ?? 0);
+    }
+
+    this.targetWorldPos = { x: tx, z: tz };
+    if (this.questArrowMesh) {
+      this.questArrowMesh.visible = true;
+    }
+
+    if (this.vfx && typeof this.vfx.setTutorialWaypoint === 'function') {
+      const ty = this.terrain ? this.terrain.getHeightAt(tx, tz) : 0;
+      this.vfx.setTutorialWaypoint(new THREE.Vector3(tx, ty, tz), showWorldBeacon, 0xffd166);
+    }
+  }
+
+  /**
+   * Hides the 3D Golden Quest Arrow and any active tutorial waypoint beacon.
+   */
+  clearQuestTarget() {
+    this.targetWorldPos = null;
+    if (this.questArrowMesh) {
+      this.questArrowMesh.visible = false;
+    }
+    if (this.vfx && typeof this.vfx.setTutorialWaypoint === 'function') {
+      this.vfx.setTutorialWaypoint(new THREE.Vector3(0, 0, 0), false);
+    }
   }
 
   /**
@@ -177,18 +349,36 @@ export class PlayerController {
       if (
         e.target &&
         e.target.closest &&
-        e.target.closest('button, .hud-panel, .modal-overlay, .codex-modal, .upgrade-modal, #hud-root button')
+        e.target.closest(
+          'button, .hud-panel, .hud-side-panel, .hud-top-bar, .hud-onboarding-banner, .modal-overlay, .hud-modal-backdrop, #hud-root button'
+        )
       ) {
         return;
       }
       if (e.button === 0) {
         this._attackRequested = true;
+      } else if (e.button === 2) {
+        this._rightDownTime = performance.now();
+        this._rightDownPos = { x: e.clientX, y: e.clientY };
+      }
+    };
+
+    this._onMouseUp = (e) => {
+      if (e.button === 2 && this._rightDownTime > 0) {
+        const elapsed = performance.now() - this._rightDownTime;
+        const moveDist = Math.hypot(e.clientX - this._rightDownPos.x, e.clientY - this._rightDownPos.y);
+        // Quick right-click (not camera orbit drag) triggers Dash / Dodge Roll!
+        if (elapsed < 260 && moveDist < 12) {
+          this._dashRequested = true;
+        }
+        this._rightDownTime = 0;
       }
     };
 
     window.addEventListener('keydown', this._onKeyDown);
     window.addEventListener('keyup', this._onKeyUp);
     window.addEventListener('mousedown', this._onMouseDown);
+    window.addEventListener('mouseup', this._onMouseUp);
   }
 
   /**
@@ -204,16 +394,32 @@ export class PlayerController {
 
     this.cleaveCooldown = CONFIG.PLAYER?.CLEAVE_COOLDOWN || 0.4;
     this.cleaveAnimTimer = 0.28;
+    this.attackSwings++;
 
     if (this.slashArcMesh) {
       this.slashArcMesh.visible = true;
-      this.slashArcMesh.material.opacity = 0.78;
+      this.slashArcMesh.material.opacity = 0.85;
       this.slashArcMesh.scale.setScalar(1.0);
     }
 
     if (!enemyManager || typeof enemyManager.getEnemies !== 'function') return 0;
 
     const enemies = enemyManager.getEnemies();
+
+    // Auto-orient toward nearest enemy within cleaveRange if one is right next to the player
+    let closestInRange = null;
+    let closestDist = this.cleaveRange + 0.6;
+    for (const enemy of enemies) {
+      const d = dist2D(this.x, this.z, enemy.x, enemy.z);
+      if (d < closestDist) {
+        closestDist = d;
+        closestInRange = enemy;
+      }
+    }
+    if (closestInRange) {
+      this.facingAngle = Math.atan2(closestInRange.x - this.x, closestInRange.z - this.z);
+    }
+
     const forwardX = Math.sin(this.facingAngle);
     const forwardZ = Math.cos(this.facingAngle);
     let hitCount = 0;
@@ -225,12 +431,12 @@ export class PlayerController {
       const dz = enemy.z - this.z;
       const dist = Math.hypot(dx, dz);
 
-      if (dist <= this.cleaveRange) {
-        // Check directional dot product (generous 220° forward cone or very close < 2.3u)
+      if (dist <= this.cleaveRange + 0.4) {
+        // Check directional dot product (generous 240° forward cone or close < 2.8u)
         const invDist = dist > 0.001 ? 1 / dist : 1;
         const dot = (dx * forwardX + dz * forwardZ) * invDist;
 
-        if (dot >= -0.35 || dist <= 2.4) {
+        if (dot >= -0.45 || dist <= 2.8) {
           const isMutantOrHybrid =
             Boolean(enemy.genome?.isHybrid) ||
             (Array.isArray(enemy.genome?.mutations) && enemy.genome.mutations.length > 0);
@@ -239,10 +445,16 @@ export class PlayerController {
           if (isMutantOrHybrid) {
             dmg *= this.mutantDamageMult;
           }
+          const roundedDmg = Math.round(dmg);
 
           const knockDir = { x: dx * invDist, z: dz * invDist };
-          const res = enemyManager.damageEnemy(enemy.id, Math.round(dmg), knockDir);
+          const res = enemyManager.damageEnemy(enemy.id, roundedDmg, knockDir);
           hitCount++;
+          this.hitsLanded++;
+
+          if (typeof this.onDamageDealt === 'function') {
+            this.onDamageDealt(enemy, roundedDmg, Boolean(res.killed));
+          }
 
           if (res.killed) {
             this.kills++;
@@ -260,7 +472,14 @@ export class PlayerController {
 
     // Also allow Cleave/Action to rescue an adjacent cage if within reach
     if (bastionAndNpcs && typeof bastionAndNpcs.tryRescueNearestCage === 'function') {
-      bastionAndNpcs.tryRescueNearestCage(this.x, this.z, this.resources);
+      const rescued = bastionAndNpcs.tryRescueNearestCage(this.x, this.z, this.resources);
+      if (rescued) {
+        this.cagesRescuedCount++;
+        this.gainXp(35);
+        if (typeof this.onCageRescued === 'function') {
+          this.onCageRescued(rescued);
+        }
+      }
     }
 
     return hitCount;
@@ -275,6 +494,7 @@ export class PlayerController {
     this.dashCooldown = this.dashBaseCooldown * this.dashCooldownMult;
     this.dashDirX = Math.sin(this.facingAngle);
     this.dashDirZ = Math.cos(this.facingAngle);
+    this.dashCount++;
 
     if (this.vfx && typeof this.vfx.spawnHitEffect === 'function') {
       this.vfx.spawnHitEffect(new THREE.Vector3(this.x, this.y + 0.5, this.z), 0x48dbfb);
@@ -295,24 +515,35 @@ export class PlayerController {
         this.x,
         this.z,
         this.resources,
-        (CONFIG.PLAYER?.INTERACT_RADIUS || 5.5) + 2.5
+        (CONFIG.PLAYER?.INTERACT_RADIUS || 5.5) + 3.0
       );
       if (rescued) {
+        this.cagesRescuedCount++;
         this.gainXp(35);
+        if (typeof this.onCageRescued === 'function') {
+          this.onCageRescued(rescued);
+        }
         return;
       }
     }
 
     // 2. Harvest nearby Terrain Resource Node (Wood / Crystal)
     if (this.terrain && typeof this.terrain.getNearestResourceNode === 'function') {
-      const node = this.terrain.getNearestResourceNode(this.x, this.z, 6.5);
+      const node = this.terrain.getNearestResourceNode(this.x, this.z, 8.5);
       if (node) {
+        this.harvestCount++;
         if (node.type === 'crystal') {
-          this.resources.crystal += 5;
-          logger.info('PLAYER', 'Cristal récolté (+5 Cristal).', { crystal: this.resources.crystal });
+          this.resources.crystal += 6;
+          logger.info('PLAYER', 'Cristal récolté (+6 Cristal).', { crystal: this.resources.crystal });
+          if (typeof this.onResourceHarvested === 'function') {
+            this.onResourceHarvested('crystal', 6, new THREE.Vector3(node.x, this.y + 1, node.z));
+          }
         } else {
-          this.resources.wood += 6;
-          logger.info('PLAYER', 'Bois ancien récolté (+6 Bois).', { wood: this.resources.wood });
+          this.resources.wood += 8;
+          logger.info('PLAYER', 'Bois ancien récolté (+8 Bois).', { wood: this.resources.wood });
+          if (typeof this.onResourceHarvested === 'function') {
+            this.onResourceHarvested('wood', 8, new THREE.Vector3(node.x, this.y + 1, node.z));
+          }
         }
         if (this.vfx && typeof this.vfx.spawnHitEffect === 'function') {
           this.vfx.spawnHitEffect(new THREE.Vector3(this.x, this.y + 0.8, this.z), 0x38c172);
@@ -321,10 +552,19 @@ export class PlayerController {
       }
     }
 
-    // Fallback ambient foraging if outside Bastion
-    if (Math.hypot(this.x, this.z) > 16) {
-      this.resources.wood += 3;
-      this.resources.crystal += 1;
+    // Fallback ambient foraging so pressing [E] always gives clear feedback
+    this.harvestCount++;
+    this.resources.wood += 5;
+    this.resources.crystal += 2;
+    logger.info('PLAYER', 'Récolte de matériaux (+5 Bois, +2 Cristal).', {
+      wood: this.resources.wood,
+      crystal: this.resources.crystal,
+    });
+    if (this.vfx && typeof this.vfx.spawnHitEffect === 'function') {
+      this.vfx.spawnHitEffect(new THREE.Vector3(this.x, this.y + 0.8, this.z), 0x38c172);
+    }
+    if (typeof this.onResourceHarvested === 'function') {
+      this.onResourceHarvested('wood', 5, new THREE.Vector3(this.x, this.y + 1, this.z));
     }
   }
 
@@ -334,7 +574,6 @@ export class PlayerController {
    * @param {boolean} [isElemental=false] - Whether damage is from an elemental mutation.
    */
   takeDamage(amount, isElemental = false) {
-    // Invulnerable while dashing
     if (this.dashTimer > 0) return;
 
     let finalDmg = amount * (1 - this.damageReduction * (isElemental ? 1.25 : 0.7));
@@ -346,10 +585,9 @@ export class PlayerController {
     }
 
     if (this.hp <= 0) {
-      // Respawn at Bastion Sanctuary with 65% HP so gameplay continues smoothly
       this.hp = Math.round(this.maxHp * 0.65);
       this.x = 0;
-      this.z = 4.5;
+      this.z = 5.5;
       logger.warn('PLAYER', 'Repli d’urgence au Sanctuaire du Bastion ! Vitalité restaurée.', {
         hp: this.hp,
       });
@@ -458,8 +696,136 @@ export class PlayerController {
   }
 
   /**
+   * Updates the 3D ground attack range indicator, golden quest arrow, and contextual interaction prompt.
+   * @private
+   */
+  _updateTacticalIndicators(elapsedTime, enemyManager, bastionAndNpcs) {
+    const enemies =
+      enemyManager && typeof enemyManager.getEnemies === 'function' ? enemyManager.getEnemies() : [];
+
+    // 1. Find nearest enemy & check if within Cleave Range
+    let nearestEnemy = null;
+    let nearestEnemyDist = Infinity;
+    for (const e of enemies) {
+      if (!e || e.hp <= 0) continue;
+      const d = dist2D(this.x, this.z, e.x, e.z);
+      if (d < nearestEnemyDist) {
+        nearestEnemyDist = d;
+        nearestEnemy = e;
+      }
+    }
+
+    if (this.attackRangeRingMesh && this.attackConeMesh) {
+      const showCombatRing = nearestEnemyDist <= this.cleaveRange + 6.5 || this.cleaveAnimTimer > 0;
+      this.attackRangeRingMesh.visible = showCombatRing;
+      this.attackConeMesh.visible = showCombatRing;
+
+      if (showCombatRing) {
+        const inStrikeReach = nearestEnemyDist <= this.cleaveRange + 0.4;
+        const pulse = 0.5 + 0.5 * Math.sin(elapsedTime * 7.0);
+        this.attackRangeRingMesh.material.color.setHex(inStrikeReach ? 0xffd166 : 0x48dbfb);
+        this.attackRangeRingMesh.material.opacity = inStrikeReach ? 0.45 + pulse * 0.25 : 0.22;
+        this.attackConeMesh.material.color.setHex(inStrikeReach ? 0xff4757 : 0x48dbfb);
+        this.attackConeMesh.material.opacity = inStrikeReach ? 0.22 + pulse * 0.14 : 0.1;
+      }
+    }
+
+    // 2. Update 3D Golden Quest Arrow pointing toward `this.targetWorldPos`
+    if (this.questArrowMesh) {
+      if (
+        this.targetWorldPos &&
+        typeof this.targetWorldPos.x === 'number' &&
+        typeof this.targetWorldPos.z === 'number'
+      ) {
+        const distToGoal = dist2D(this.x, this.z, this.targetWorldPos.x, this.targetWorldPos.z);
+        if (distToGoal > 2.4) {
+          this.questArrowMesh.visible = true;
+          this.questArrowMesh.position.set(
+            this.x,
+            Math.max(this.y, CONFIG.WORLD.WATER_LEVEL + 0.18),
+            this.z
+          );
+          const angle = Math.atan2(this.targetWorldPos.x - this.x, this.targetWorldPos.z - this.z);
+          this.questArrowMesh.rotation.y = angle;
+          const pointer = this.questArrowMesh.userData?.pointerOffset;
+          if (pointer) {
+            pointer.position.z = 2.25 + Math.sin(elapsedTime * 6.0) * 0.25;
+            pointer.position.y = 0.32 + Math.abs(Math.sin(elapsedTime * 6.0)) * 0.12;
+          }
+        } else {
+          this.questArrowMesh.visible = false;
+        }
+      } else {
+        this.questArrowMesh.visible = false;
+      }
+    }
+
+    // 3. Compute nearest contextual action prompt (`nearestPrompt`) for HUD screen-space bubbles
+    this.nearestPrompt = null;
+
+    // Priority A: Unrescued Cage within 8m
+    if (bastionAndNpcs && Array.isArray(bastionAndNpcs.cages)) {
+      for (const cage of bastionAndNpcs.cages) {
+        if (!cage || cage.rescued) continue;
+        const dCage = dist2D(this.x, this.z, cage.x, cage.z);
+        if (dCage <= 8.5) {
+          this.nearestPrompt = {
+            type: 'rescue',
+            keyHint: '[E]',
+            label: '[E] Libérer le Survivant',
+            worldPos: new THREE.Vector3(cage.x, (cage.y || 2) + 2.6, cage.z),
+            entity: cage,
+            dist: dCage,
+          };
+          break;
+        }
+      }
+    }
+
+    // Priority B: Enemy within Cleave Attack reach (7.5m)
+    if (!this.nearestPrompt && nearestEnemy && nearestEnemyDist <= this.cleaveRange + 2.5) {
+      const inReach = nearestEnemyDist <= this.cleaveRange + 0.4;
+      this.nearestPrompt = {
+        type: 'attack',
+        keyHint: '[Clic Gauche / Espace]',
+        label: inReach
+          ? '[Clic Gauche / Espace : Frapper !]'
+          : 'Approchez pour frapper [Clic Gauche]',
+        worldPos: new THREE.Vector3(
+          nearestEnemy.x,
+          (nearestEnemy.y || 2) + 2.2,
+          nearestEnemy.z
+        ),
+        entity: nearestEnemy,
+        dist: nearestEnemyDist,
+      };
+    }
+
+    // Priority C: Resource Node within 7m
+    if (
+      !this.nearestPrompt &&
+      this.terrain &&
+      typeof this.terrain.getNearestResourceNode === 'function'
+    ) {
+      const node = this.terrain.getNearestResourceNode(this.x, this.z, 7.0);
+      if (node) {
+        const resName = node.type === 'crystal' ? 'Cristal' : 'Bois';
+        const ny = this.terrain.getHeightAt(node.x, node.z);
+        this.nearestPrompt = {
+          type: 'harvest',
+          keyHint: '[E]',
+          label: `[E] Récolter (${resName})`,
+          worldPos: new THREE.Vector3(node.x, ny + 2.0, node.z),
+          entity: node,
+          dist: dist2D(this.x, this.z, node.x, node.z),
+        };
+      }
+    }
+  }
+
+  /**
    * Main per-frame update for player movement, cleave attack, dash, passive Bastion healing,
-   * automatic nearby cage rescue, and 3D hero animation.
+   * automatic nearby cage rescue, tactical indicators, and 3D hero animation.
    *
    * @param {number} dt - Frame delta time in seconds.
    * @param {number} elapsedTime - Total elapsed game time in seconds.
@@ -539,10 +905,17 @@ export class PlayerController {
       this.vz *= 0.75;
     }
 
+    const prevX = this.x;
+    const prevZ = this.z;
     const worldHalf = (CONFIG.WORLD?.SIZE || 240) * 0.45;
     this.x = clamp(this.x + this.vx * dt, -worldHalf, worldHalf);
     this.z = clamp(this.z + this.vz * dt, -worldHalf, worldHalf);
     this.y = this.terrain ? this.terrain.getHeightAt(this.x, this.z) : 0;
+
+    const stepMoved = Math.hypot(this.x - prevX, this.z - prevZ);
+    if (stepMoved > 0.001) {
+      this.distanceMoved += stepMoved;
+    }
 
     // Keep player above water level
     if (this.y < CONFIG.WORLD.WATER_LEVEL + 0.15) {
@@ -566,7 +939,11 @@ export class PlayerController {
     if (bastionAndNpcs && typeof bastionAndNpcs.tryRescueNearestCage === 'function') {
       const autoRescued = bastionAndNpcs.tryRescueNearestCage(this.x, this.z, this.resources, 4.2);
       if (autoRescued) {
+        this.cagesRescuedCount++;
         this.gainXp(35);
+        if (typeof this.onCageRescued === 'function') {
+          this.onCageRescued(autoRescued);
+        }
       }
     }
 
@@ -583,7 +960,7 @@ export class PlayerController {
       this.cleaveAnimTimer = Math.max(0, this.cleaveAnimTimer - dt);
       if (this.slashArcMesh) {
         const progress = 1 - this.cleaveAnimTimer / 0.28;
-        this.slashArcMesh.material.opacity = (1 - progress) * 0.8;
+        this.slashArcMesh.material.opacity = (1 - progress) * 0.85;
         this.slashArcMesh.scale.setScalar(0.85 + progress * 0.3);
         if (this.cleaveAnimTimer <= 0) {
           this.slashArcMesh.visible = false;
@@ -609,6 +986,9 @@ export class PlayerController {
     } else {
       this.position.set(this.x, this.y, this.z);
     }
+
+    // 6. Update 3D Ground Range Ring, Golden Quest Arrow & Contextual Action Bubbles
+    this._updateTacticalIndicators(elapsedTime, enemyManager, bastionAndNpcs);
   }
 }
 

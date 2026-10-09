@@ -1475,4 +1475,11 @@ export function animateCreatureMesh(group, animState = {}, elapsedTime = 0, dt =
     limbs.mutantDiamond.rotation.y = elapsedTime * 2.8;
     limbs.mutantDiamond.position.y = 0.34 + Math.sin(elapsedTime * 4.0) * 0.06;
   }
+
+  // 6. Hit Flash Recoil / Pulse
+  if (limbs.body && typeof animState.hitFlash === 'number' && animState.hitFlash > 0) {
+    limbs.body.rotation.z = Math.sin(animState.hitFlash * Math.PI * 4) * 0.16 * animState.hitFlash;
+  } else if (limbs.body) {
+    limbs.body.rotation.z *= 0.8;
+  }
 }
