@@ -1313,15 +1313,16 @@ export class GenesisBastionGame {
 
     // Callbacks Phase 7 : Débarquement Amphibie des Requins, Éruption des Taupes Géantes & Écologie du Gibier
     this.handleSharkBeachLanding = (eventData = {}) => {
-      const shark = eventData.enemy || eventData.sharks?.[0] || null;
-      const ex = eventData.x ?? shark?.x ?? 68;
-      const ey = eventData.y ?? shark?.y ?? 0;
-      const ez = eventData.z ?? shark?.z ?? 32;
+      const isArr = Array.isArray(eventData);
+      const shark = (isArr ? eventData[0] : eventData?.enemy || eventData?.sharks?.[0]) || null;
+      const ex = (!isArr && eventData?.x) ?? shark?.x ?? 68;
+      const ey = (!isArr && eventData?.y) ?? shark?.y ?? 0;
+      const ez = (!isArr && eventData?.z) ?? shark?.z ?? 32;
 
-      if (this.ecoSim && typeof this.ecoSim.recordSharkLanding === 'function') {
+      if (!isArr && this.ecoSim && typeof this.ecoSim.recordSharkLanding === 'function') {
         this.ecoSim.recordSharkLanding(eventData.count || eventData.sharks?.length || 1);
       }
-      if (this.vfx && typeof this.vfx.spawnBeachLandingSplash === 'function') {
+      if (!isArr && this.vfx && typeof this.vfx.spawnBeachLandingSplash === 'function') {
         this.vfx.spawnBeachLandingSplash(new THREE.Vector3(ex, ey, ez));
       }
       if (this.sound && typeof this.sound.playSharkLanding === 'function') {
@@ -1337,15 +1338,16 @@ export class GenesisBastionGame {
     };
 
     this.handleMoleSubterraneanEruption = (eventData = {}) => {
-      const mole = eventData.enemy || eventData.moles?.[0] || null;
-      const ex = eventData.x ?? mole?.x ?? -48;
-      const ey = eventData.y ?? mole?.y ?? 0;
-      const ez = eventData.z ?? mole?.z ?? 44;
+      const isArr = Array.isArray(eventData);
+      const mole = (isArr ? eventData[0] : eventData?.enemy || eventData?.moles?.[0]) || null;
+      const ex = (!isArr && eventData?.x) ?? mole?.x ?? -48;
+      const ey = (!isArr && eventData?.y) ?? mole?.y ?? 0;
+      const ez = (!isArr && eventData?.z) ?? mole?.z ?? 44;
 
-      if (this.ecoSim && typeof this.ecoSim.recordMoleEruption === 'function') {
+      if (!isArr && this.ecoSim && typeof this.ecoSim.recordMoleEruption === 'function') {
         this.ecoSim.recordMoleEruption(eventData.count || eventData.moles?.length || 1);
       }
-      if (this.vfx && typeof this.vfx.spawnBurrowEruption === 'function') {
+      if (!isArr && this.vfx && typeof this.vfx.spawnBurrowEruption === 'function') {
         this.vfx.spawnBurrowEruption(new THREE.Vector3(ex, ey, ez));
       }
       if (this.sound && typeof this.sound.playMoleEruption === 'function') {
@@ -1360,23 +1362,29 @@ export class GenesisBastionGame {
       this.hud?.refreshLogFeed?.();
     };
 
-    this.handlePreyEcologicalCrisis = (crisisData = {}) => {
+    this.handlePreyEcologicalCrisis = (crisisData = {}, enemy = null, isSpellDamage = false) => {
       if (this.sound && typeof this.sound.playPreyWarning === 'function') {
         this.sound.playPreyWarning(!this.tutorialActive);
       }
       if (this.hud && typeof this.hud.showPreyEcologicalCrisisAlert === 'function') {
-        this.hud.showPreyEcologicalCrisisAlert(crisisData);
+        this.hud.showPreyEcologicalCrisisAlert(crisisData, enemy, isSpellDamage);
       }
       this.hud?.refreshLogFeed?.();
     };
 
-    this.handlePreyKilled = (enemy, remainingPreyCount = 0, wasKilledBySpell = false) => {
+    this.handlePreyKilled = (enemy, summaryOrRemaining = 0, wasKilledBySpell = false) => {
       const spId = enemy?.genome?.speciesId || 'deer';
       const foodGain =
         CONFIG.SPECIES?.[spId]?.foodYield ?? (spId === 'deer' ? 35 : 18);
       const ex = enemy?.x ?? this.player?.x ?? 0;
       const ey = enemy?.y ?? this.player?.y ?? 0;
       const ez = enemy?.z ?? this.player?.z ?? 0;
+      const remainingPreyCount =
+        typeof summaryOrRemaining === 'object' && summaryOrRemaining !== null
+          ? (spId === 'rabbit' ? summaryOrRemaining.rabbit : summaryOrRemaining.deer) ??
+            summaryOrRemaining.total ??
+            0
+          : summaryOrRemaining;
 
       if (this.sceneManager && typeof this.sceneManager.worldToScreen === 'function') {
         const screenPos = this.sceneManager.worldToScreen(new THREE.Vector3(ex, ey + 0.8, ez), 2.3);
@@ -1405,7 +1413,13 @@ export class GenesisBastionGame {
 
     // Interception non-intrusive de `enemyManager.damageEnemy` pour faire jaillir les dégâts flottants 3D->2D + SFX d'impact
     const origDamageEnemy = this.enemyManager.damageEnemy.bind(this.enemyManager);
-    this.enemyManager.damageEnemy = (enemyIdOrObj, amount, knockbackDir, onEradicated) => {
+    this.enemyManager.damageEnemy = (
+      enemyIdOrObj,
+      amount,
+      knockbackDir = null,
+      onEradicated = null,
+      options = {}
+    ) => {
       const targetId = typeof enemyIdOrObj === 'object' ? enemyIdOrObj?.id : enemyIdOrObj;
       const targetRef = this.enemyManager.enemies.find((e) => e.id === targetId);
       const tx = targetRef ? targetRef.x : 0;
@@ -1420,7 +1434,7 @@ export class GenesisBastionGame {
         targetRef.state !== 'wrath_raid' &&
         !this._wrathBannerShownForSpecies.has('dragon');
 
-      const res = origDamageEnemy(enemyIdOrObj, amount, knockbackDir, onEradicated);
+      const res = origDamageEnemy(enemyIdOrObj, amount, knockbackDir, onEradicated, options);
 
       if (wasPeacefulDragon && !this._wrathBannerShownForSpecies.has('dragon')) {
         if (typeof this.enemyManager.provokeSpecies === 'function') {
@@ -1436,7 +1450,7 @@ export class GenesisBastionGame {
           this.questSystem.recordEnemyKilled(targetRef);
         }
 
-        // Si la créature tuée est du Gibier Herbivore (Biche / Lapin) et que EnemyManager n'a pas encore crédité les Rations
+        // Si la créature tuée est du Gibier Herbivore (Biche / Lapin) et que EnemyManager/PlayerController n'a pas encore crédité les Rations
         const spId = targetRef.genome?.speciesId || '';
         const isPrey =
           spId === 'deer' ||
@@ -1449,17 +1463,6 @@ export class GenesisBastionGame {
           const maxFood = this.player.resources.maxFood || 150;
           this.player.resources.food = Math.min(maxFood, (this.player.resources.food || 0) + foodYield);
           this.player.hp = Math.min(this.player.maxHp || 160, (this.player.hp || 100) + healYield);
-
-          const remainingSpeciesPrey = this.enemyManager
-            .getEnemies()
-            .filter((e) => e && !e.dead && e.hp > 0 && e.genome?.speciesId === spId).length;
-          this.handlePreyKilled(targetRef, remainingSpeciesPrey, false);
-          if (remainingSpeciesPrey < 2) {
-            this.handlePreyEcologicalCrisis({
-              speciesId: spId,
-              remainingPrey: remainingSpeciesPrey,
-            });
-          }
         }
       }
 
@@ -1863,8 +1866,8 @@ export class GenesisBastionGame {
     }
 
     if (this.enemyManager && typeof this.enemyManager.reintroducePreyHerds === 'function') {
-      const ok = this.enemyManager.reintroducePreyHerds(this.player?.resources);
-      if (ok) {
+      const res = this.enemyManager.reintroducePreyHerds(this.player?.resources);
+      if (res && res.success !== false) {
         if (this.sound && typeof this.sound.playBuildOrUpgrade === 'function') {
           this.sound.playBuildOrUpgrade(2);
         }
@@ -1872,6 +1875,7 @@ export class GenesisBastionGame {
         this.hud?.refreshLogFeed?.();
         return true;
       }
+      return false;
     }
 
     // Déduction directe et repeuplement si reintroducePreyHerds n'a pas encore consommé la Biomasse

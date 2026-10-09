@@ -1528,16 +1528,17 @@ export class HUDManager {
   /**
    * Affiche la bannière d'émergence abyssale lorsque les Requins de l'océan développent des pattes
    * (`amphibious_lungs`) et débarquent en marchant sur la plage !
-   * @param {Object} [eventData={}]
+   * @param {Object|Array} [eventData={}]
    */
   showSharkLandingAlert(eventData = {}) {
     if (!this.alertBanner) return;
-    const shark = eventData.enemy || eventData.sharks?.[0] || {};
-    const ex = eventData.x ?? shark.x ?? 68;
-    const ez = eventData.z ?? shark.z ?? 32;
+    const isArr = Array.isArray(eventData);
+    const shark = (isArr ? eventData[0] : eventData?.enemy || eventData?.sharks?.[0]) || {};
+    const ex = (!isArr && eventData?.x) ?? shark.x ?? 68;
+    const ez = (!isArr && eventData?.z) ?? shark.z ?? 32;
     const sector = getCardinalLabelFR(ex, ez);
     const dist = Math.round(Math.hypot(ex, ez));
-    const count = eventData.count || eventData.sharks?.length || 1;
+    const count = isArr ? eventData.length || 1 : eventData?.count || eventData?.sharks?.length || 1;
 
     this.currentAlertTarget = {
       x: ex,
@@ -1566,16 +1567,17 @@ export class HUDManager {
 
   /**
    * Affiche la bannière d'éruption souterraine lorsque des Taupes Géantes Fouisseuses surgissent des profondeurs.
-   * @param {Object} [eventData={}]
+   * @param {Object|Array} [eventData={}]
    */
   showMoleEruptionAlert(eventData = {}) {
     if (!this.alertBanner) return;
-    const mole = eventData.enemy || eventData.moles?.[0] || {};
-    const ex = eventData.x ?? mole.x ?? -48;
-    const ez = eventData.z ?? mole.z ?? 44;
+    const isArr = Array.isArray(eventData);
+    const mole = (isArr ? eventData[0] : eventData?.enemy || eventData?.moles?.[0]) || {};
+    const ex = (!isArr && eventData?.x) ?? mole.x ?? -48;
+    const ez = (!isArr && eventData?.z) ?? mole.z ?? 44;
     const sector = getCardinalLabelFR(ex, ez);
     const dist = Math.round(Math.hypot(ex, ez));
-    const count = eventData.count || eventData.moles?.length || 1;
+    const count = isArr ? eventData.length || 1 : eventData?.count || eventData?.moles?.length || 1;
 
     this.currentAlertTarget = {
       x: ex,
@@ -1606,17 +1608,27 @@ export class HUDManager {
    * Affiche la bannière d'alerte écologique lorsque les sorts de zone du joueur déciment le gibier
    * (`deer` Biche Sylvestre / `rabbit` Lapin des Plaines) ou provoquent une crise de famine.
    * @param {Object} [crisisData={}]
+   * @param {Object|null} [enemy=null]
+   * @param {boolean} [isSpellDamage=false]
    */
-  showPreyEcologicalCrisisAlert(crisisData = {}) {
+  showPreyEcologicalCrisisAlert(crisisData = {}, enemy = null, isSpellDamage = false) {
     if (!this.alertBanner) return;
-    const speciesId = crisisData.speciesId || 'deer';
+    const speciesId =
+      crisisData.speciesId ||
+      enemy?.genome?.speciesId ||
+      (typeof crisisData.deer === 'number' && crisisData.deer < 2 ? 'deer' : 'rabbit');
     const spName =
       speciesId === 'rabbit'
         ? 'Lapins des Plaines'
         : speciesId === 'deer'
           ? 'Biches Sylvestres'
           : 'Troupeaux de Gibier';
-    const remaining = crisisData.remainingPrey ?? crisisData.remainingCount ?? 0;
+    const remaining =
+      crisisData.remainingPrey ??
+      crisisData.remainingCount ??
+      (speciesId === 'rabbit' ? crisisData.rabbit : crisisData.deer) ??
+      crisisData.total ??
+      0;
 
     this.currentAlertTarget = {
       x: 0,
@@ -1632,7 +1644,9 @@ export class HUDManager {
     this.trackPatientZeroBtn.textContent = '🌿 RÉINTRODUIRE GIBIER (25 BIO)';
     this.trackPatientZeroBtn.style.display = 'inline-flex';
 
-    this.alertTitleEl.textContent = `⚠️ ALERTE ÉCOLOGIQUE : ${spName.toUpperCase()} DÉCIMÉS PAR VOS SORTS (${remaining} RESTANT) !`;
+    const causeText =
+      isSpellDamage || crisisData.isSpellDamage ? 'DÉCIMÉS PAR VOS SORTS' : 'EN VOIE D’EXTINCTION';
+    this.alertTitleEl.textContent = `⚠️ ALERTE ÉCOLOGIQUE : ${spName.toUpperCase()} ${causeText} (${remaining} RESTANT) !`;
     this.alertDescEl.textContent = `Contrairement aux monstres, les Biches et Lapins ne réapparaissent PAS tout seuls (<2 = Extinction) ! Sans gibier, vos Rations (🍖) tombent à zéro et tous les prédateurs affamés fondent sur le Bastion !`;
 
     if (this.alertTimeoutId) {
