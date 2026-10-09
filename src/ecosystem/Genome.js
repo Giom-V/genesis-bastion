@@ -696,10 +696,12 @@ export class Genome {
    * @param {string[]} [initialMutations=[]] - Optional innate mutations (e.g. for seeding a Patient Zero).
    * @returns {Genome} Newly created Generation-1 `Genome`.
    */
-  static createInitial(speciesId = 'goblin', rng = Math.random, initialMutations = []) {
+  static createInitial(speciesId = 'goblin', rng = Math.random, initialMutations = [], options = {}) {
     const baseline = resolveSpeciesBaseline(speciesId);
     const isHerbivore =
       baseline.clade === 'herbivore' || baseline.aggroStance === 'prey_pacifist';
+    const statMult = isHerbivore ? 1.0 : Math.max(0.5, Number(options?.statMultiplier ?? 1.0));
+    const initialGen = Math.max(1, Math.floor(options?.generation ?? 1));
 
     const vary = (baseVal, amplitude = 0.1) => {
       const delta = (sampleUniform(rng) * 2 - 1) * amplitude;
@@ -711,8 +713,8 @@ export class Genome {
       speed: Number(vary(baseline.baseSpeed ?? 7.5, 0.1).toFixed(2)),
       strength: isHerbivore
         ? 0
-        : Number(vary(baseline.baseDamage ?? 12, 0.1).toFixed(2)),
-      maxHp: Math.max(12, Math.round(vary(baseline.baseHp ?? 80, 0.1))),
+        : Number((vary(baseline.baseDamage ?? 12, 0.1) * statMult).toFixed(2)),
+      maxHp: Math.max(12, Math.round(vary(baseline.baseHp ?? 80, 0.1) * statMult)),
       gestationTime: Number(clamp(vary(baseline.baseGestationTime ?? 18, 0.1), 3.5, 160.0).toFixed(2)),
       aggressiveness: isHerbivore
         ? 0.0
@@ -744,7 +746,7 @@ export class Genome {
             : 'hostile'),
       foodYield: baseline.foodYield ?? 0,
       autoRepopulate: baseline.autoRepopulate !== false,
-      generation: 1,
+      generation: initialGen,
       baseGenes,
       mutations: initialMutations,
     });
@@ -779,7 +781,7 @@ export class Genome {
    * @param {Function|object} [rng=Math.random] - Random number generator function or `SeededRNG` instance.
    * @returns {{ genome: Genome, newMutationId: string | null, becameHybrid: boolean }} Crossover offspring result.
    */
-  static crossover(parentAGenome, parentBGenome, rng = Math.random) {
+  static crossover(parentAGenome, parentBGenome, rng = Math.random, options = {}) {
     const parentA = parentAGenome instanceof Genome ? parentAGenome : new Genome(parentAGenome);
     const parentB = parentBGenome instanceof Genome ? parentBGenome : new Genome(parentBGenome);
 
@@ -943,8 +945,11 @@ export class Genome {
       }
     }
 
-    // 4. De Novo Spontaneous Mutation Roll (CONFIG.ECO.MUTATION_RATE = 8% for combat/predator clades)
-    const deNovoRate = isHerbivore ? 0.0 : (CONFIG?.ECO?.MUTATION_RATE ?? 0.08);
+    // 4. De Novo Spontaneous Mutation Roll (CONFIG.ECO.MUTATION_RATE = 8% + optional island bonus for combat clades)
+    const rateBonus = Math.max(0, Number(options?.mutationRateBonus ?? 0));
+    const deNovoRate = isHerbivore
+      ? 0.0
+      : clamp((CONFIG?.ECO?.MUTATION_RATE ?? 0.08) + rateBonus, 0.0, 0.65);
     let newMutationId = null;
 
     if (deNovoRate > 0 && sampleUniform(rng) < deNovoRate) {

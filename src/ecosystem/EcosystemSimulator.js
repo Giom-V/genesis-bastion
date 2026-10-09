@@ -135,11 +135,18 @@ export class EcosystemSimulator {
     /** @type {boolean} */
     this._hadHerbivores = false;
 
+    /** @type {number} */
+    this.islandNumber = Math.max(1, Math.floor(options.islandNumber ?? 1));
+
+    /** @type {number} */
+    this.mutationRateBonus = Number(options.mutationRateBonus ?? Math.max(0, (this.islandNumber - 1) * 0.04));
+
     /**
      * Last computed ecosystem summary statistics.
      * @type {object}
      */
     this.lastStats = {
+      islandNumber: this.islandNumber,
       totalPopulation: 0,
       adultCount: 0,
       babyCount: 0,
@@ -160,6 +167,58 @@ export class EcosystemSimulator {
     };
 
     this._initGrid();
+  }
+
+  /**
+   * Resets spatial grid cells, lineage registries, and emergence counters for a new island tier,
+   * while scaling spontaneous mutation rate (`+4%` per island tier).
+   *
+   * @param {number} [islandNumber=1] - Next island tier number (`1, 2, 3...`).
+   * @param {object} [tierSpec={}] - Optional island tier config override.
+   * @returns {object} Updated `lastStats`.
+   */
+  resetForNextIsland(islandNumber = 1, tierSpec = {}) {
+    this.islandNumber = Math.max(1, Math.floor(islandNumber || 1));
+    this.mutationRateBonus =
+      typeof tierSpec?.mutationRateBonus === 'number'
+        ? tierSpec.mutationRateBonus
+        : Math.max(0, (this.islandNumber - 1) * 0.04);
+    this.tickNumber = 0;
+    this.sharksLandedCount = 0;
+    this.molesEruptedCount = 0;
+    this._hadHerbivores = false;
+    this.patientZeroMap.clear();
+    this.discoveredMutations.clear();
+    this._initGrid();
+    this.lastStats = {
+      ...this.lastStats,
+      islandNumber: this.islandNumber,
+      tickNumber: 0,
+      totalPopulation: 0,
+      adultCount: 0,
+      babyCount: 0,
+      birthsCount: 0,
+      hybridsBorn: 0,
+      newMutationsCount: 0,
+      starvingCount: 0,
+      lonelyCount: 0,
+      optimalCount: 0,
+      activeMutants: 0,
+      activeHybrids: 0,
+      herbivoreCount: 0,
+      preyExtinctionRisk: false,
+      sharksLanded: 0,
+      molesErupted: 0,
+    };
+    return this.lastStats;
+  }
+
+  /**
+   * Alias for `resetForNextIsland`.
+   * @param {number} [islandNumber=1]
+   */
+  reset(islandNumber = 1) {
+    return this.resetForNextIsland(islandNumber);
   }
 
   /**
@@ -785,7 +844,8 @@ export class EcosystemSimulator {
       const { genome: childGenome, newMutationId, becameHybrid } = Genome.crossover(
         parentA.genome,
         chosenPartner.genome,
-        () => this._rand()
+        () => this._rand(),
+        { mutationRateBonus: this.mutationRateBonus || 0 }
       );
 
       // Compute birth coordinates near parents
