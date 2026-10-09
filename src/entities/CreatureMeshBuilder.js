@@ -275,11 +275,31 @@ function buildPlayerHeroMesh() {
   const hilt = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.35, 6), trimMat);
   const crossguard = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.08, 0.12), trimMat);
   crossguard.position.y = 0.16;
-  const blade = new THREE.Mesh(new THREE.BoxGeometry(0.1, 1.35, 0.04), bladeMat);
-  blade.position.y = 0.86;
-  swordGroup.add(hilt, crossguard, blade);
+  const blade = new THREE.Mesh(new THREE.BoxGeometry(0.11, 1.4, 0.045), bladeMat);
+  blade.position.y = 0.88;
+
+  const weaponAuraMat = new THREE.MeshBasicMaterial({
+    color: 0x48dbfb,
+    transparent: true,
+    opacity: 0.45,
+    side: THREE.DoubleSide,
+  });
+  const weaponAura = new THREE.Mesh(new THREE.RingGeometry(0.12, 0.24, 16), weaponAuraMat);
+  weaponAura.position.y = 0.32;
+  weaponAura.rotation.x = Math.PI * 0.5;
+  weaponAura.visible = false;
+
+  swordGroup.add(hilt, crossguard, blade, weaponAura);
   rightArm.add(swordGroup);
   body.add(rightArm);
+
+  group.userData.heroBlade = blade;
+  group.userData.heroBladeMat = bladeMat;
+  group.userData.heroVisorMat = visorGlow.material;
+  group.userData.heroTrimMat = trimMat;
+  group.userData.heroSwordGroup = swordGroup;
+  group.userData.heroWeaponAura = weaponAura;
+  group.userData.heroWeaponAuraMat = weaponAuraMat;
 
   // Legs
   const leftLeg = new THREE.Group();
@@ -1955,4 +1975,47 @@ export function animateCreatureMesh(group, animState = {}, elapsedTime = 0, dt =
   } else if (limbs.body) {
     limbs.body.rotation.z *= 0.8;
   }
+
+  // 7. Hero Elemental Weapon Aura Pulse
+  if (group.userData?.heroWeaponAura && group.userData.heroWeaponAura.visible) {
+    group.userData.heroWeaponAura.rotation.z = elapsedTime * 3.2;
+    const auraScale = 1 + Math.sin(elapsedTime * 5.5) * 0.18;
+    group.userData.heroWeaponAura.scale.setScalar(auraScale);
+  }
 }
+
+/**
+ * Dynamically recolors and scales the Hero's 3D Greatsword blade, visor glow, and elemental
+ * aura ring when equipping one of the Legendary Elemental Weapons (`fire_greatsword`,
+ * `ice_greatsword`, `lightning_greatsword`, `venom_greatsword`, or `runic_steel`).
+ *
+ * @param {THREE.Group} group - Player hero 3D group returned by `buildCreatureMesh({ type: 'player' })`.
+ * @param {Object} [weaponSpec={}] - `{ id, bladeColorHex, emissiveColorHex, emissiveIntensity, bladeScale }`.
+ */
+export function setPlayerWeaponAppearance(group, weaponSpec = {}) {
+  if (!group || !group.userData) return;
+  const bladeColor = weaponSpec.bladeColorHex ?? weaponSpec.colorHex ?? 0x88eeff;
+  const emissiveColor = weaponSpec.emissiveColorHex ?? weaponSpec.colorHex ?? 0x1e90ff;
+  const emissiveIntensity = weaponSpec.emissiveIntensity ?? 1.65;
+  const isElemental = Boolean(weaponSpec.id && weaponSpec.id !== 'runic_steel');
+
+  if (group.userData.heroBladeMat) {
+    group.userData.heroBladeMat.color.setHex(bladeColor);
+    group.userData.heroBladeMat.emissive.setHex(emissiveColor);
+    group.userData.heroBladeMat.emissiveIntensity = emissiveIntensity;
+  }
+  if (group.userData.heroBlade) {
+    const scaleW = isElemental ? 1.25 : 1.0;
+    const scaleL = weaponSpec.id === 'ice_greatsword' ? 1.22 : isElemental ? 1.12 : 1.0;
+    group.userData.heroBlade.scale.set(scaleW, scaleL, scaleW);
+  }
+  if (group.userData.heroVisorMat) {
+    group.userData.heroVisorMat.color.setHex(bladeColor);
+    group.userData.heroVisorMat.emissive.setHex(emissiveColor);
+  }
+  if (group.userData.heroWeaponAura && group.userData.heroWeaponAuraMat) {
+    group.userData.heroWeaponAura.visible = isElemental;
+    group.userData.heroWeaponAuraMat.color.setHex(bladeColor);
+  }
+}
+

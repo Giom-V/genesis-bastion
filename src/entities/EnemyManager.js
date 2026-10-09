@@ -14,6 +14,7 @@ import * as THREE from 'three';
 import { CONFIG } from '../config.js';
 import { Genome } from '../ecosystem/Genome.js';
 import { createHybridSpec } from '../ecosystem/Phylogeny.js';
+import { getIslandTierSpec } from '../ecosystem/BaseAndQuestsDesign.js';
 import {
   buildCreatureMesh,
   animateCreatureMesh,
@@ -74,6 +75,15 @@ export class EnemyManager {
     this.onPreyKilled = null;
     /** @type {Function|null} Optional callback `(summary, lastKilledPrey, isSpellDamage)` when prey herds become endangered or extinct */
     this.onPreyEcologicalCrisis = null;
+    /** @type {Function|null} Optional callback `(tierSpec, enemyManager)` when transitioning to a new Island Tier */
+    this.onIslandTransitioned = null;
+
+    /** @type {number} Current campaign island number (`1, 2, 3...`) */
+    this.islandNumber = 1;
+    /** @type {number} Enemy HP/damage difficulty multiplier for the current island (`1.0`, `1.35`, `1.75`, ...) */
+    this.islandDifficultyMult = 1.0;
+    /** @type {boolean} Whether the Planetary Island Shield Dome is currently active */
+    this.islandShieldActive = false;
 
     /** @type {number} Seconds elapsed in open survival mode for progressive species emergence */
     this.survivalElapsedTime = 0;
@@ -688,27 +698,33 @@ export class EnemyManager {
    * @returns {Object} Genome instance.
    */
   _createSafeGenome(speciesId = 'goblin') {
-    if (Genome && typeof Genome.createInitial === 'function') {
-      return Genome.createInitial(speciesId);
-    }
     const sp = CONFIG.SPECIES[speciesId] || CONFIG.SPECIES.goblin;
     const isPrey = sp.id === 'deer' || sp.id === 'rabbit' || sp.clade === 'herbivore';
+    const statMult = isPrey ? 1.0 : this.islandDifficultyMult || 1.0;
+    const gen = Math.max(1, this.islandNumber || 1);
+
+    if (Genome && typeof Genome.createInitial === 'function') {
+      return Genome.createInitial(speciesId, Math.random, [], {
+        generation: gen,
+        statMultiplier: statMult,
+      });
+    }
     return {
       speciesId: sp.id,
       speciesName: sp.name,
       clade: sp.clade || (isPrey ? 'herbivore' : 'beast'),
       isHybrid: false,
       hybridParents: [sp.id, sp.id],
-      generation: 1,
-      lineageId: `${sp.id}_gen1`,
+      generation: gen,
+      lineageId: `${sp.id}_gen${gen}`,
       aggroStance:
         sp.aggroStance ||
         (isPrey ? 'prey_pacifist' : sp.id === 'dragon' ? 'pacifist_apex' : 'hostile'),
       genes: {
         size: sp.baseSize,
         speed: sp.baseSpeed,
-        strength: isPrey ? 0 : sp.baseDamage,
-        maxHp: sp.baseHp,
+        strength: isPrey ? 0 : +(sp.baseDamage * statMult).toFixed(1),
+        maxHp: Math.round(sp.baseHp * statMult),
         gestationTime: sp.baseGestationTime || 18,
         aggressiveness: isPrey ? 0 : (sp.baseAggressiveness ?? 0.7),
         fertility: sp.fertility || 1.0,
@@ -716,7 +732,7 @@ export class EnemyManager {
         aggroRadius: sp.aggroRadius || 18,
       },
       mutations: [],
-      fitnessScore: 1.0,
+      fitnessScore: +(1.0 * statMult).toFixed(2),
     };
   }
 
@@ -958,6 +974,10 @@ export class EnemyManager {
     const safeGenome = genome || this._createSafeGenome('goblin');
     const spDef = CONFIG.SPECIES[safeGenome.speciesId] || CONFIG.SPECIES.goblin;
     const genes = safeGenome.genes || {};
+
+    if (!safeGenome.generation || safeGenome.generation < (this.islandNumber || 1)) {
+      safeGenome.generation = Math.max(safeGenome.generation || 1, this.islandNumber || 1);
+    }
 
     // Ensure hybrid metadata is populated if hybrid
     if (safeGenome.isHybrid && Array.isArray(safeGenome.hybridParents) && safeGenome.hybridParents.length >= 2) {
@@ -1317,6 +1337,129 @@ export class EnemyManager {
       this.spawnInitialPopulation(count);
     }
     logger.alert('🌍 Mode Survie Ouvert activé : Cycles Éco-Tick en temps réel et meutes sauvages déployées !');
+  }
+
+  /**
+   * Pacifies or purges hostile creatures when the Planetary Island Shield Dome is activated (`activateIslandShield`),
+   * leaving peaceful Herbivore Prey (`deer`/`rabbit`) and calmed Dragons in the sanctuary.
+   *
+   * @returns {{ purgedHostiles: number, survivingPeaceful: number }}
+   */
+  pacifyAllEnemiesWithIslandShield() {
+    this.islandShieldActive = true;
+    this.ecoPaused = true;
+    this.speciesWrath.clear();
+
+    let purgedHostiles = 0;
+    let survivingPeaceful = 0;
+
+    for (let i = this.enemies.length - 1; i >= 0; i--) {
+      const e = this.enemies[i];
+      if (!e) continue;
+      if (e.isPrey || e.genome?.speciesId === 'dragon') {
+        e.enraged = false;
+        e.aggroBastionForced = false;
+        e.aggroStance = e.isPrey ? 'prey_pacifist' : 'pacifist_apex';
+        e.aggressiveness = 0;
+        e.state = e.isPrey ? 'graze' : 'patrol';
+        survivingPeaceful++;
+      } else {
+        if (this.vfx && typeof this.vfx.setPatientZeroBeacon === 'function' && e.mesh) {
+          this.vfx.setPatientZeroBeacon(e.id, e.mesh.position, 0x000000, false);
+        }
+        if (this.vfx && typeof this.vfx.spawnDeathExplosion === 'function') {
+          this.vfx.spawnDeathExplosion(new THREE.Vector3(e.x, e.y + 0.6, e.z), 0x38bdf8, 8);
+        }
+        if (e.mesh && this.scene) {
+          this.scene.remove(e.mesh);
+        }
+        this.enemies.splice(i, 1);
+        purgedHostiles++;
+      }
+    }
+
+    logger.alert(
+      `🛡️ Dôme Planétaire : ${purgedHostiles} prédateurs/mutants hostiles purgés par l'onde de choc sacrée (${survivingPeaceful} créatures pacifiques préservées).`,
+      { purgedHostiles, survivingPeaceful }
+    );
+
+    return { purgedHostiles, survivingPeaceful };
+  }
+
+  /**
+   * Resets and repopulates the island ecosystem for the Next Island (`islandNumber >= 2`),
+   * scaling enemy difficulty, mutation rate, and initial Patient Zero carriers according to `getIslandTierSpec(islandNumber)`.
+   *
+   * @param {number} [islandNumber=2]
+   * @param {number} [count=CONFIG.ECO.INITIAL_POPULATION]
+   * @returns {{ islandNumber: number, tierSpec: Object, enemiesSpawned: number, patientZerosSpawned: number }}
+   */
+  startNextIslandEcosystem(islandNumber = 2, count = CONFIG.ECO?.INITIAL_POPULATION || 42) {
+    this.islandNumber = Math.max(1, Math.floor(islandNumber));
+    const tierSpec = getIslandTierSpec(this.islandNumber);
+    this.islandDifficultyMult = tierSpec.enemyStatMultiplier || 1 + (this.islandNumber - 1) * 0.35;
+    this.islandShieldActive = false;
+    this.tutorialMode = false;
+    this.ecoPaused = false;
+
+    this.clearAllEnemies();
+    this.seenMutations.clear();
+    this.survivalElapsedTime = 0;
+    this.sharksLanded = false;
+    this.molesErupted = false;
+    this.sharkReinforceTimer = 0;
+    this.moleReinforceTimer = 0;
+    if (this.repopulationTimers && typeof this.repopulationTimers === 'object') {
+      for (const k of Object.keys(this.repopulationTimers)) {
+        this.repopulationTimers[k] = 0;
+      }
+    }
+
+    if (this.ecoSim && typeof this.ecoSim.resetForNextIsland === 'function') {
+      this.ecoSim.resetForNextIsland(this.islandNumber, tierSpec);
+    }
+
+    const scaledCount = Math.min(
+      CONFIG.ECO?.MAX_WORLD_POPULATION || 130,
+      Math.round(count * (1 + Math.min(0.45, (this.islandNumber - 1) * 0.12)))
+    );
+    this.spawnInitialPopulation(scaledCount);
+
+    // Spawn additional innate Patient Zeros for higher island tiers (Island 2 => 3 Patient Zeros, Island 3+ => 4 Patient Zeros)
+    const targetPZ = Math.max(1, tierSpec.initialMutantCount || tierSpec.initialPatientZeroCount || 2);
+    const extraPZCount = Math.max(0, targetPZ - 1);
+    const mutPool = ['venom_sacs', 'osteo_plating', 'cryo_blood', 'vampiric_maw', 'titan_growth', 'winged_leap'];
+    const spPool = ['orc', 'lion', 'wolf', 'troll', 'vulture'];
+    let extraSpawned = 0;
+
+    for (let i = 0; i < extraPZCount; i++) {
+      const mutId = mutPool[(this.islandNumber + i) % mutPool.length];
+      const spId = spPool[(this.islandNumber + i) % spPool.length];
+      this.forceSpawnMutant(mutId, spId);
+      extraSpawned++;
+    }
+
+    logger.alert(
+      `⛵ Expédition vers l'Île #${this.islandNumber} (${tierSpec.name}) : Écosystème de génération ${this.islandNumber} déployé (Difficulté x${this.islandDifficultyMult.toFixed(2)}, ${1 + extraSpawned} Patients Zéro initiaux) !`,
+      {
+        islandNumber: this.islandNumber,
+        tierName: tierSpec.name,
+        difficultyMult: this.islandDifficultyMult,
+        enemiesSpawned: this.enemies.length,
+        patientZerosSpawned: 1 + extraSpawned,
+      }
+    );
+
+    if (typeof this.onIslandTransitioned === 'function') {
+      this.onIslandTransitioned(tierSpec, this);
+    }
+
+    return {
+      islandNumber: this.islandNumber,
+      tierSpec,
+      enemiesSpawned: this.enemies.length,
+      patientZerosSpawned: 1 + extraSpawned,
+    };
   }
 
   /**
@@ -1801,9 +1944,10 @@ export class EnemyManager {
 
       if (!this.tutorialMode) {
         this.survivalElapsedTime += dt;
+        const tierSpec = getIslandTierSpec(this.islandNumber || 1);
 
-        // Progressive Emergence Event 1: Amphibious Land-Sharks at 40s (and reinforcements every 35s)
-        const sharkTime = CONFIG.ECO?.SHARK_EMERGENCE_TIME || 40;
+        // Progressive Emergence Event 1: Amphibious Land-Sharks at tier sharkLandingTimeSec (40s on Island 1)
+        const sharkTime = tierSpec?.sharkLandingTimeSec || CONFIG.ECO?.SHARK_EMERGENCE_TIME || 40;
         if (!this.sharksLanded && this.survivalElapsedTime >= sharkTime) {
           this.triggerSharkBeachLanding();
         } else if (this.sharksLanded) {
@@ -1817,8 +1961,8 @@ export class EnemyManager {
           }
         }
 
-        // Progressive Emergence Event 2: Subterranean Giant Moles at 65s (and reinforcements every 42s)
-        const moleTime = CONFIG.ECO?.MOLE_EMERGENCE_TIME || 65;
+        // Progressive Emergence Event 2: Subterranean Giant Moles at tier moleEruptionTimeSec (65s on Island 1)
+        const moleTime = tierSpec?.moleEruptionTimeSec || CONFIG.ECO?.MOLE_EMERGENCE_TIME || 65;
         if (!this.molesErupted && this.survivalElapsedTime >= moleTime) {
           this.triggerMoleSubterraneanEruption(3);
         } else if (this.molesErupted) {
@@ -1938,6 +2082,9 @@ export class EnemyManager {
       if (hadBurn || hadPoison) {
         enemy.burnTimer = Math.max(0, (enemy.burnTimer || 0) - dt);
         enemy.poisonTimer = Math.max(0, (enemy.poisonTimer || 0) - dt);
+        if (enemy.poisonTimer <= 0) {
+          enemy.venomWeakened = false;
+        }
         enemy.dotTickTimer = (enemy.dotTickTimer || 0) + dt;
         if (enemy.dotTickTimer >= 0.5) {
           const tickSpan = enemy.dotTickTimer;
@@ -1958,6 +2105,7 @@ export class EnemyManager {
         }
       } else {
         enemy.dotTickTimer = 0;
+        enemy.venomWeakened = false;
       }
 
       // Tick Slow & Stun timers
@@ -2336,22 +2484,23 @@ export class EnemyManager {
   _performEnemyAttack(enemy, targetType, targetEntity, bastionAndNpcs) {
     const damageType = this._getEnemyDamageType(enemy);
     const isElemental = damageType !== 'physical';
+    const effDamage = Math.max(1, +(enemy.damage * (enemy.venomWeakened ? 0.7 : 1.0)).toFixed(1));
 
     if (targetType === 'player' && targetEntity) {
       if (typeof targetEntity.takeDamage === 'function') {
-        targetEntity.takeDamage(enemy.damage, isElemental, enemy, damageType);
+        targetEntity.takeDamage(effDamage, isElemental, enemy, damageType);
       } else {
-        targetEntity.hp = Math.max(0, targetEntity.hp - enemy.damage);
+        targetEntity.hp = Math.max(0, targetEntity.hp - effDamage);
       }
     } else if (targetType === 'npc' && targetEntity && bastionAndNpcs) {
       if (typeof bastionAndNpcs.damageNpc === 'function') {
-        bastionAndNpcs.damageNpc(targetEntity.id, enemy.damage);
+        bastionAndNpcs.damageNpc(targetEntity.id, effDamage);
       } else {
-        targetEntity.hp = Math.max(0, targetEntity.hp - enemy.damage);
+        targetEntity.hp = Math.max(0, targetEntity.hp - effDamage);
       }
     } else if (targetType === 'bastion' && bastionAndNpcs) {
       if (typeof bastionAndNpcs.damageBastion === 'function') {
-        const thorns = bastionAndNpcs.damageBastion(enemy.damage);
+        const thorns = bastionAndNpcs.damageBastion(effDamage);
         if (thorns > 0) {
           this.damageEnemy(enemy.id, thorns);
         }
@@ -2365,6 +2514,7 @@ export class EnemyManager {
   _spawnFireball(enemy, targetX, targetZ) {
     const angle = Math.atan2(targetZ - enemy.z, targetX - enemy.x);
     const speed = 18;
+    const effDamage = Math.max(1, +(enemy.damage * 0.85 * (enemy.venomWeakened ? 0.7 : 1.0)).toFixed(1));
     let mesh = null;
     if (this.scene) {
       mesh = new THREE.Mesh(
@@ -2385,7 +2535,7 @@ export class EnemyManager {
       z: enemy.z,
       vx: Math.cos(angle) * speed,
       vz: Math.sin(angle) * speed,
-      damage: enemy.damage * 0.85,
+      damage: effDamage,
       ttl: 1.6,
       mesh,
       ownerId: enemy.id,

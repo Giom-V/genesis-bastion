@@ -38,6 +38,10 @@ import {
   canAffordBuildingUpgrade,
   SCOUT_MISSIONS_CATALOG,
   getScoutMissionSpec,
+  ELEMENTAL_WEAPONS_CATALOG,
+  getElementalWeaponSpec,
+  RELIC_FRAGMENTS_SPEC,
+  getIslandTierSpec,
 } from '../ecosystem/BaseAndQuestsDesign.js';
 import { dist2D, clamp, getCardinalLabelFR } from '../utils/math.js';
 import { logger } from '../utils/logger.js';
@@ -163,6 +167,27 @@ export class BastionAndNPCs {
     this.rescuedCount = 0;
 
     /**
+     * Phase 8 — 4 Elemental Weapon Shrines (`fire_greatsword`, `ice_greatsword`, `lightning_greatsword`, `venom_greatsword`).
+     * @type {Array<Object>}
+     */
+    this.weaponShrines = [];
+
+    /**
+     * Phase 8 — 3 Ancient Relic Monoliths (`relic_dawn_north`, `relic_breakers_southeast`, `relic_caldera_southwest`)
+     * that power the Planetary Island Shield Dome (`0 / 3` -> `3 / 3`).
+     * @type {Array<Object>}
+     */
+    this.relicShrines = [];
+    /** @type {number} Number of Ancient Relic Fragments collected on the current island (`0..3`) */
+    this.collectedRelicFragments = 0;
+    /** @type {number} Required Relic Fragments to deploy the Planetary Island Shield (`3`) */
+    this.maxRelicFragments = RELIC_FRAGMENTS_SPEC?.requiredCount || 3;
+    /** @type {boolean} Whether the Planetary Island Shield Dome is currently deployed */
+    this.islandShieldActive = false;
+    /** @type {number} Current campaign island number (`1, 2, 3...`) */
+    this.islandNumber = 1;
+
+    /**
      * Current assignable Scout Mission order (`'track_lineage' | 'find_cages' | 'scout_volcano' | 'perimeter_alert'`).
      * Defaults to tracking `'pyro_gland'` (Fire Trolls / Glande Pyroclastique).
      * @type {Object}
@@ -179,6 +204,14 @@ export class BastionAndNPCs {
     this.onCageRescued = null;
     /** @type {Function|null} Optional callback `(missionSpec)` when Scout Mission order changes */
     this.onScoutMissionChanged = null;
+    /** @type {Function|null} Optional callback `(relic, collectedCount, maxCount)` when a Relic Fragment is collected */
+    this.onRelicCollected = null;
+    /** @type {Function|null} Optional callback `(shrine, weaponSpec)` when an Elemental Weapon Shrine is interacted with */
+    this.onWeaponShrineInteracted = null;
+    /** @type {Function|null} Optional callback `(islandNumber)` when the Planetary Island Shield is activated */
+    this.onIslandShieldActivated = null;
+    /** @type {Function|null} Optional callback `(relic, scout)` when a Scout spots a Relic Monolith */
+    this.onRelicSpottedByScout = null;
 
     /** @type {THREE.Group|null} Root 3D group for the Bastion Sanctuary */
     this.bastionGroup = null;
@@ -187,11 +220,13 @@ export class BastionAndNPCs {
 
     this._buildBastionSanctuary();
     this._recomputeBuildingStats();
+    this._spawnWeaponShrines();
 
     if (this.tutorialMode) {
       this.setTutorialMode(true);
     } else {
       this._spawnPrisonerCages();
+      this._spawnRelicMonoliths(this.islandNumber);
       // Start the player with 2 initial NPCs at the Bastion (1 harvester, 1 scout)
       // so the Scout deep-wilderness exploration mechanic is immediately active in standard mode!
       this.spawnNpc('harvester', -3.5, -2.5);
@@ -1161,7 +1196,8 @@ export class BastionAndNPCs {
 
   /**
    * Act 7 / Skip Tutorial (`[P]`): Transitions the Bastion into full Open Survival Mode,
-   * ensuring at least 1 Harvester, 1 Scout, 1 Watchtower, and remaining Prisoner Cages exist.
+   * ensuring at least 1 Harvester, 1 Scout, 1 Watchtower, remaining Prisoner Cages,
+   * 4 Elemental Weapon Shrines, and 3 Ancient Relic Monoliths exist.
    */
   startOpenSurvivalMode() {
     this.tutorialMode = false;
@@ -1181,6 +1217,506 @@ export class BastionAndNPCs {
     if (activeUnrescued < 4) {
       this._spawnPrisonerCages();
     }
+    if (this.weaponShrines.length === 0) {
+      this._spawnWeaponShrines();
+    }
+    if (this.relicShrines.length === 0) {
+      this._spawnRelicMonoliths(this.islandNumber);
+    }
+  }
+
+  /**
+   * Phase 8 — Spawns the 4 Legendary Elemental Weapon Shrines (`fire_greatsword`, `ice_greatsword`,
+   * `lightning_greatsword`, `venom_greatsword`) across the island biomes so the Hero can discover
+   * and forge/equip elemental weapons with `[E]`.
+   */
+  _spawnWeaponShrines() {
+    for (const shrine of this.weaponShrines) {
+      if (shrine.mesh && this.scene) {
+        this.scene.remove(shrine.mesh);
+      }
+    }
+    this.weaponShrines = [];
+
+    const elementalList = ELEMENTAL_WEAPONS_CATALOG.filter((w) => w.id !== 'runic_steel');
+    for (const wSpec of elementalList) {
+      const x = wSpec.shrinePos?.x ?? 30;
+      const z = wSpec.shrinePos?.z ?? -26;
+      const rawY = this.terrain ? this.terrain.getHeightAt(x, z) : 2.0;
+      const y = Math.max(rawY, (CONFIG.WORLD?.WATER_LEVEL || 0) + 0.35);
+
+      let mesh = null;
+      if (this.scene) {
+        mesh = new THREE.Group();
+        mesh.position.set(x, y, z);
+
+        // Obsidian runic pedestal
+        const pedestal = new THREE.Mesh(
+          new THREE.CylinderGeometry(1.15, 1.45, 0.9, 8),
+          new THREE.MeshStandardMaterial({
+            color: 0x2b2d38,
+            roughness: 0.65,
+            metalness: 0.35,
+          })
+        );
+        pedestal.position.y = 0.45;
+        pedestal.castShadow = true;
+        pedestal.receiveShadow = true;
+        mesh.add(pedestal);
+
+        // Glowing ground ring
+        const ring = new THREE.Mesh(
+          new THREE.RingGeometry(1.5, 2.1, 24),
+          new THREE.MeshBasicMaterial({
+            color: wSpec.colorHex || 0xff5252,
+            transparent: true,
+            opacity: 0.6,
+            side: THREE.DoubleSide,
+          })
+        );
+        ring.rotation.x = -Math.PI / 2;
+        ring.position.y = 0.08;
+        mesh.add(ring);
+
+        // Levitating elemental greatsword artifact above pedestal
+        const bladeGroup = new THREE.Group();
+        bladeGroup.position.y = 2.15;
+
+        const blade = new THREE.Mesh(
+          new THREE.BoxGeometry(0.18, 1.55, 0.32),
+          new THREE.MeshStandardMaterial({
+            color: wSpec.colorHex || 0xff5252,
+            emissive: wSpec.emissiveHex || wSpec.colorHex || 0xff3838,
+            emissiveIntensity: 1.35,
+            metalness: 0.78,
+            roughness: 0.18,
+          })
+        );
+        bladeGroup.add(blade);
+
+        const crossguard = new THREE.Mesh(
+          new THREE.BoxGeometry(0.58, 0.12, 0.18),
+          new THREE.MeshStandardMaterial({
+            color: 0xffd166,
+            emissive: wSpec.emissiveHex || 0xb8860b,
+            emissiveIntensity: 0.6,
+            metalness: 0.75,
+          })
+        );
+        crossguard.position.y = -0.68;
+        bladeGroup.add(crossguard);
+
+        mesh.add(bladeGroup);
+        mesh.userData = { floatingBlade: bladeGroup, ring };
+        this.scene.add(mesh);
+      }
+
+      this.weaponShrines.push({
+        id: `shrine_${wSpec.id}`,
+        weaponId: wSpec.id,
+        name: `Autel : ${wSpec.name}`,
+        icon: wSpec.icon,
+        element: wSpec.element,
+        colorHex: wSpec.colorHex,
+        colorCss: wSpec.colorCss,
+        x,
+        y,
+        z,
+        discovered: true,
+        unlocked: false,
+        mesh,
+      });
+    }
+  }
+
+  /**
+   * Removes all 3D Relic Monoliths and their sky beacons from the scene.
+   */
+  clearAllRelicShrines() {
+    for (const relic of this.relicShrines) {
+      if (this.vfx && typeof this.vfx.setRelicBeacon === 'function') {
+        this.vfx.setRelicBeacon(relic.id, null, relic.colorHex, false);
+      }
+      if (relic.mesh && this.scene) {
+        this.scene.remove(relic.mesh);
+      }
+    }
+    this.relicShrines = [];
+  }
+
+  /**
+   * Phase 8 — Spawns the 3 Ancient Relic Monoliths (`relic_dawn_north`, `relic_breakers_southeast`,
+   * `relic_caldera_southwest`) across the island. Collecting all 3 (`[E]`) powers the Planetary
+   * Island Shield Dome (`[B]`).
+   *
+   * @param {number} [islandNumber=1] - Current island tier (`1, 2, 3...`), slightly rotating monolith positions on new islands.
+   */
+  _spawnRelicMonoliths(islandNumber = 1) {
+    this.clearAllRelicShrines();
+    this.collectedRelicFragments = 0;
+
+    const baseShrines = RELIC_FRAGMENTS_SPEC?.shrines || [];
+    const rotOffset = ((Math.max(1, islandNumber) - 1) * 0.65) % (Math.PI * 2);
+
+    for (let i = 0; i < baseShrines.length; i++) {
+      const def = baseShrines[i];
+      const bx = def.pos?.x ?? 0;
+      const bz = def.pos?.z ?? -64;
+      const cosR = Math.cos(rotOffset);
+      const sinR = Math.sin(rotOffset);
+      const x = Math.round((bx * cosR - bz * sinR) * 10) / 10;
+      const z = Math.round((bx * sinR + bz * cosR) * 10) / 10;
+      const rawY = this.terrain ? this.terrain.getHeightAt(x, z) : 2.5;
+      const y = Math.max(rawY, (CONFIG.WORLD?.WATER_LEVEL || 0) + 0.45);
+      const colorHex = def.colorHex || 0x00e5ff;
+
+      let mesh = null;
+      if (this.scene) {
+        mesh = new THREE.Group();
+        mesh.position.set(x, y, z);
+
+        // Ancient stepped stone plinth
+        const plinth = new THREE.Mesh(
+          new THREE.CylinderGeometry(1.55, 2.05, 1.1, 6),
+          new THREE.MeshStandardMaterial({
+            color: 0x1e272e,
+            roughness: 0.55,
+            metalness: 0.4,
+          })
+        );
+        plinth.position.y = 0.55;
+        plinth.castShadow = true;
+        plinth.receiveShadow = true;
+        mesh.add(plinth);
+
+        // Levitating octahedral Relic Core crystal
+        const crystal = new THREE.Mesh(
+          new THREE.OctahedronGeometry(0.95, 0),
+          new THREE.MeshStandardMaterial({
+            color: colorHex,
+            emissive: colorHex,
+            emissiveIntensity: 1.65,
+            roughness: 0.12,
+            metalness: 0.85,
+          })
+        );
+        crystal.position.y = 2.85;
+        mesh.add(crystal);
+
+        // Orbiting golden-cyan runic ring
+        const orbitRing = new THREE.Mesh(
+          new THREE.TorusGeometry(1.45, 0.07, 10, 28),
+          new THREE.MeshBasicMaterial({
+            color: 0xffd32a,
+            transparent: true,
+            opacity: 0.85,
+          })
+        );
+        orbitRing.position.y = 2.85;
+        orbitRing.rotation.x = Math.PI / 3;
+        mesh.add(orbitRing);
+
+        // Base beacon circle
+        const baseRing = new THREE.Mesh(
+          new THREE.RingGeometry(2.1, 2.75, 28),
+          new THREE.MeshBasicMaterial({
+            color: colorHex,
+            transparent: true,
+            opacity: 0.65,
+            side: THREE.DoubleSide,
+          })
+        );
+        baseRing.rotation.x = -Math.PI / 2;
+        baseRing.position.y = 0.08;
+        mesh.add(baseRing);
+
+        mesh.userData = { crystal, orbitRing, baseRing };
+        this.scene.add(mesh);
+      }
+
+      const relicObj = {
+        id: def.id || `relic_${i + 1}`,
+        index: def.index || i + 1,
+        name: def.name || `Fragment de Relique #${i + 1}`,
+        sectorLabel: def.sectorLabel || getCardinalLabelFR(x, z),
+        x,
+        y,
+        z,
+        colorHex,
+        colorCss: def.colorCss || '#00e5ff',
+        collected: false,
+        spottedByScout: false,
+        mesh,
+      };
+
+      this.relicShrines.push(relicObj);
+
+      if (this.vfx && typeof this.vfx.setRelicBeacon === 'function') {
+        this.vfx.setRelicBeacon(
+          relicObj.id,
+          new THREE.Vector3(x, y + 1.5, z),
+          colorHex,
+          true
+        );
+      }
+    }
+  }
+
+  /**
+   * Returns the nearest Elemental Weapon Shrine within `maxDist` of `(px, pz)`.
+   *
+   * @param {number} px - Player X coordinate.
+   * @param {number} pz - Player Z coordinate.
+   * @param {number} [maxDist=7.0] - Interaction radius.
+   * @returns {Object|null}
+   */
+  getNearestWeaponShrine(px, pz, maxDist = 7.0) {
+    let best = null;
+    let bestDist = maxDist;
+    for (const shrine of this.weaponShrines) {
+      const d = dist2D(px, pz, shrine.x, shrine.z);
+      if (d <= bestDist) {
+        bestDist = d;
+        best = shrine;
+      }
+    }
+    return best;
+  }
+
+  /**
+   * Interacts with the nearest Elemental Weapon Shrine within `maxDist` of `(px, pz)`,
+   * unlocking the weapon artifact and returning `{ shrine, weaponSpec }`.
+   *
+   * @param {number} px - Player X coordinate.
+   * @param {number} pz - Player Z coordinate.
+   * @param {number} [maxDist=7.0] - Interaction radius.
+   * @returns {{ shrine: Object, weaponSpec: Object }|null}
+   */
+  interactNearestWeaponShrine(px, pz, maxDist = 7.0) {
+    const shrine = this.getNearestWeaponShrine(px, pz, maxDist);
+    if (!shrine) return null;
+    shrine.unlocked = true;
+    shrine.discovered = true;
+    const weaponSpec = getElementalWeaponSpec(shrine.weaponId);
+
+    if (this.vfx && typeof this.vfx.spawnWeaponShrineBurst === 'function') {
+      this.vfx.spawnWeaponShrineBurst(
+        new THREE.Vector3(shrine.x, shrine.y + 1.6, shrine.z),
+        shrine.colorHex || 0xff5252
+      );
+    }
+
+    if (typeof this.onWeaponShrineInteracted === 'function') {
+      this.onWeaponShrineInteracted(shrine, weaponSpec);
+    }
+    return { shrine, weaponSpec };
+  }
+
+  /**
+   * Returns the nearest uncollected Ancient Relic Monolith within `maxDist` of `(px, pz)`.
+   *
+   * @param {number} px - Player X coordinate.
+   * @param {number} pz - Player Z coordinate.
+   * @param {number} [maxDist=7.5] - Interaction radius.
+   * @returns {Object|null}
+   */
+  getNearestRelicShrine(px, pz, maxDist = 7.5) {
+    let best = null;
+    let bestDist = maxDist;
+    for (const relic of this.relicShrines) {
+      if (relic.collected) continue;
+      const d = dist2D(px, pz, relic.x, relic.z);
+      if (d <= bestDist) {
+        bestDist = d;
+        best = relic;
+      }
+    }
+    return best;
+  }
+
+  /**
+   * Collects a specific Ancient Relic Fragment (`shrineOrId`), increments `this.collectedRelicFragments`
+   * (`0 -> 1 -> 2 -> 3`), grants `+15 Cristal` to `playerResources`, removes the 3D monolith crystal & beacon,
+   * and fires `this.onRelicCollected`.
+   *
+   * @param {Object|string} shrineOrId - Relic shrine object or ID (`'relic_dawn_north'`, etc.).
+   * @param {Object|null} [playerResources=null] - Player resource dictionary to credit crystal reward.
+   * @returns {Object|null} Collected relic object or null if already collected.
+   */
+  collectRelicFragment(shrineOrId, playerResources = null) {
+    const relic =
+      typeof shrineOrId === 'string'
+        ? this.relicShrines.find((r) => r.id === shrineOrId)
+        : shrineOrId || this.relicShrines.find((r) => !r.collected);
+
+    if (!relic || relic.collected) return null;
+
+    relic.collected = true;
+    relic.spottedByScout = true;
+    this.collectedRelicFragments = this.relicShrines.filter((r) => r.collected).length;
+
+    if (this.vfx && typeof this.vfx.setRelicBeacon === 'function') {
+      this.vfx.setRelicBeacon(relic.id, null, relic.colorHex, false);
+    }
+    if (this.vfx && typeof this.vfx.spawnBirthEffect === 'function') {
+      this.vfx.spawnBirthEffect(
+        new THREE.Vector3(relic.x, relic.y + 1.8, relic.z),
+        true,
+        false,
+        relic.colorHex || 0xffd32a
+      );
+    }
+    if (relic.mesh?.userData?.crystal) {
+      relic.mesh.userData.crystal.visible = false;
+    }
+    if (relic.mesh?.userData?.orbitRing) {
+      relic.mesh.userData.orbitRing.visible = false;
+    }
+
+    const crystalReward = RELIC_FRAGMENTS_SPEC?.fragmentRewardCrystal || 15;
+    if (playerResources) {
+      playerResources.crystal = (playerResources.crystal || 0) + crystalReward;
+    }
+
+    logger.evolution(
+      `🏛️ RELIQUE D'ÉDEN COLLECTÉE (${this.collectedRelicFragments}/${this.maxRelicFragments}) : ${relic.name} ! (+${crystalReward} 💎 Cristal)`,
+      {
+        relicId: relic.id,
+        collectedRelicFragments: this.collectedRelicFragments,
+        maxRelicFragments: this.maxRelicFragments,
+      }
+    );
+
+    if (typeof this.onRelicCollected === 'function') {
+      this.onRelicCollected(relic, this.collectedRelicFragments, this.maxRelicFragments);
+    }
+
+    return relic;
+  }
+
+  /**
+   * Attempts to collect the nearest uncollected Ancient Relic Monolith within `maxDist` of `(px, pz)`.
+   *
+   * @param {number} px - Player X coordinate.
+   * @param {number} pz - Player Z coordinate.
+   * @param {Object|null} [playerResources=null] - Player resource dictionary.
+   * @param {number} [maxDist=7.5] - Interaction radius.
+   * @returns {Object|null} Collected relic object or null.
+   */
+  tryCollectNearestRelic(px, pz, playerResources = null, maxDist = 7.5) {
+    const relic = this.getNearestRelicShrine(px, pz, maxDist);
+    if (!relic) return null;
+    return this.collectRelicFragment(relic, playerResources);
+  }
+
+  /**
+   * Phase 8 — Activates the Planetary Island Shield Dome over the entire island once all 3 Relic
+   * Fragments are collected (`this.collectedRelicFragments >= this.maxRelicFragments`), locking
+   * Bastion HP at `100%` invulnerability and triggering `vfx.spawnIslandShieldDome`.
+   *
+   * @param {boolean} [forceEvenIfIncomplete=false] - Allow forced activation for testing/verification.
+   * @returns {boolean} True if the Planetary Island Shield was activated.
+   */
+  activateIslandShield(forceEvenIfIncomplete = false) {
+    if (this.islandShieldActive) return true;
+    if (!forceEvenIfIncomplete && this.collectedRelicFragments < this.maxRelicFragments) {
+      return false;
+    }
+
+    this.islandShieldActive = true;
+    this.hp = this.maxHp;
+
+    const domeRadius = RELIC_FRAGMENTS_SPEC?.shieldDomeRadius || 115;
+    if (this.vfx && typeof this.vfx.spawnIslandShieldDome === 'function') {
+      this.vfx.spawnIslandShieldDome(new THREE.Vector3(this.pos.x, 0, this.pos.z), domeRadius);
+    }
+
+    logger.evolution(
+      `🛡️ BOUCLIER PLANÉTAIRE D'ÉDEN ACTIVÉ (Île #${this.islandNumber}) ! Le Dôme Runique protège l'île entière — Prêt pour l'Expédition vers l'Île #${this.islandNumber + 1} !`,
+      {
+        islandNumber: this.islandNumber,
+        collectedRelicFragments: this.collectedRelicFragments,
+        domeRadius,
+      }
+    );
+
+    if (typeof this.onIslandShieldActivated === 'function') {
+      this.onIslandShieldActivated(this.islandNumber);
+    }
+
+    return {
+      activated: true,
+      success: true,
+      islandShieldActive: true,
+      islandNumber: this.islandNumber,
+      collectedRelicFragments: this.collectedRelicFragments,
+    };
+  }
+
+  /**
+   * Phase 8 — Resets the Bastion's island-specific objectives (Relic Monoliths `0 / 3`, Prisoner Cages,
+   * and Planetary Shield Dome) to transition the Hero to the next Island Tier (`islandNumber = 2, 3, ...`)
+   * while preserving Bastion upgrades and allied NPCs.
+   *
+   * @param {number} [islandNumber=2] - Next campaign island number (`2+`).
+   * @returns {Object} Resolved island tier specification (`getIslandTierSpec(islandNumber)`).
+   */
+  resetForNextIsland(islandNumber = 2) {
+    this.islandNumber = Math.max(1, Math.floor(Number(islandNumber) || 2));
+    this.islandShieldActive = false;
+    this.collectedRelicFragments = 0;
+    this.hp = this.maxHp;
+
+    if (this.vfx && typeof this.vfx.clearIslandShieldDome === 'function') {
+      this.vfx.clearIslandShieldDome();
+    }
+
+    this.clearAllCages();
+    this.rescuedCount = 0;
+    this._spawnPrisonerCages();
+    this._spawnRelicMonoliths(this.islandNumber);
+    this._spawnWeaponShrines();
+
+    // Reposition existing allied NPCs around the Sanctuary Hearth on the new island
+    for (let i = 0; i < this.npcs.length; i++) {
+      const npc = this.npcs[i];
+      const angle = (i / Math.max(1, this.npcs.length)) * Math.PI * 2;
+      npc.x = Math.cos(angle) * 4.5;
+      npc.z = Math.sin(angle) * 4.5;
+      npc.hp = npc.maxHp;
+      if (npc.role === 'scout') {
+        this._assignNewWildernessWaypoint(npc, []);
+      }
+    }
+
+    const tierSpec = getIslandTierSpec(this.islandNumber);
+    logger.evolution(
+      `⛵ EXPÉDITION VERS ${tierSpec.name.toUpperCase()} : 3 Nouveaux Monolithes de Relique d'Éden détectés !`,
+      tierSpec
+    );
+    return tierSpec;
+  }
+
+  /**
+   * Returns current Relic Fragment progress and Planetary Island Shield state for the HUD.
+   * @returns {Object}
+   */
+  getRelicStatus() {
+    const ready =
+      this.collectedRelicFragments >= this.maxRelicFragments && !this.islandShieldActive;
+    return {
+      collected: this.collectedRelicFragments,
+      collectedRelicFragments: this.collectedRelicFragments,
+      required: this.maxRelicFragments,
+      maxRelicFragments: this.maxRelicFragments,
+      shieldReady: ready,
+      canActivateShield: ready,
+      shieldActive: this.islandShieldActive,
+      islandShieldActive: this.islandShieldActive,
+      islandNumber: this.islandNumber,
+      shrines: this.relicShrines,
+      relicShrines: this.relicShrines,
+    };
   }
 
   /**
@@ -1446,10 +1982,15 @@ export class BastionAndNPCs {
 
   /**
    * Applies damage to the Bastion Sanctuary and returns thorns damage reflected to the attacker.
+   * When the Planetary Island Shield Dome (`this.islandShieldActive`) is active, Bastion HP is locked at `100%`.
    * @param {number} amount
    * @returns {number} Reflected thorns damage.
    */
   damageBastion(amount) {
+    if (this.islandShieldActive) {
+      this.hp = this.maxHp;
+      return this.thornsDamage;
+    }
     this.hp = Math.max(0, this.hp - amount);
     if (this.hp <= 0) {
       this.hp = Math.round(this.maxHp * 0.4);
@@ -1487,7 +2028,7 @@ export class BastionAndNPCs {
   /**
    * Updates the Bastion campfire animation, 3D building pad crystals, passive Lumber Forge
    * resource production, Sanctuary Hearth Lv3 solar aura, Watchtower auto-turrets, Prisoner Cages,
-   * and all Allied NPCs (Harvesters, Guards, and Mission-Driven Deep-Wilderness Scouts).
+   * Elemental Weapon Shrines, Ancient Relic Monoliths, and all Allied NPCs.
    *
    * @param {number} dt - Frame delta time in seconds.
    * @param {number} elapsedTime - Total elapsed game time in seconds.
@@ -1500,7 +2041,11 @@ export class BastionAndNPCs {
       this.onScoutDiscovery = onScoutDiscovery;
     }
 
-    // 1. Animate Bastion Roaring Campfire, Building Pad Crystals & Cage Crystals
+    if (this.islandShieldActive) {
+      this.hp = this.maxHp;
+    }
+
+    // 1. Animate Bastion Roaring Campfire, Building Pad Crystals, Cage Crystals, Weapon Shrines & Relic Monoliths
     if (this.campfireFlame) {
       const hearthScale = 1 + ((this.structures.sanctuary_hearth || 1) - 1) * 0.25;
       const flicker =
@@ -1524,6 +2069,28 @@ export class BastionAndNPCs {
       if (!cage.rescued && cage.mesh?.userData?.crystal) {
         cage.mesh.userData.crystal.rotation.y = elapsedTime * 2.5;
         cage.mesh.userData.crystal.position.y = 3.1 + Math.sin(elapsedTime * 3.5) * 0.18;
+      }
+    }
+
+    for (const shrine of this.weaponShrines) {
+      const bladeGroup = shrine.mesh?.userData?.floatingBlade;
+      if (bladeGroup) {
+        bladeGroup.rotation.y = elapsedTime * 1.85;
+        bladeGroup.position.y = 2.15 + Math.sin(elapsedTime * 2.8) * 0.22;
+      }
+    }
+
+    for (const relic of this.relicShrines) {
+      if (!relic.collected && relic.mesh?.userData) {
+        const { crystal, orbitRing } = relic.mesh.userData;
+        if (crystal) {
+          crystal.rotation.y = elapsedTime * 2.2;
+          crystal.position.y = 2.85 + Math.sin(elapsedTime * 3.2) * 0.24;
+        }
+        if (orbitRing) {
+          orbitRing.rotation.z = elapsedTime * 1.6;
+          orbitRing.position.y = 2.85 + Math.sin(elapsedTime * 3.2) * 0.24;
+        }
       }
     }
 
@@ -1778,12 +2345,12 @@ export class BastionAndNPCs {
    * 1. Scans all enemies within `effectiveVision` and triggers a Priority Alert + 3D Sky Beacon
    *    whenever an unspotted Mutant (`mutations.length > 0`) or Hybrid (`isHybrid`) is discovered!
    *    Also deploys a **Slowing Beacon** (`slowBeaconOnPatientZero`) when Scout Guild is Level 2+.
-   * 2. Scans unrescued Prisoner Cages within `effectiveVision`, marking `cage.spottedByScout = true`
-   *    and lighting a golden 3D sky beacon via `vfx.setCageBeacon`.
+   * 2. Scans unrescued Prisoner Cages and Ancient Relic Monoliths (`relicShrines`) within `effectiveVision`,
+   *    lighting 3D sky beacons on them.
    * 3. Executes the player's active Scout Mission order:
    *    - `'track_lineage'`: Hunts down every unspotted carrier of `activeScoutMission.targetMutationId`
    *      at `1.45x` speed until 100% of carriers are revealed!
-   *    - `'find_cages'`: Heads directly toward unspotted/unrescued Prisoner Cages.
+   *    - `'find_cages'`: Heads directly toward unspotted/unrescued Prisoner Cages or Relic Monoliths.
    *    - `'scout_volcano'`: Deep-wilderness caldera exploration.
    *    - `'perimeter_alert'`: Frontier vigilance patrol.
    */
@@ -1819,6 +2386,37 @@ export class BastionAndNPCs {
           `⛓️ ÉCLAIREUR (${scout.name}) : Cage de Survivant [${this._roleLabelFR(cage.role)}] localisée au ${cageDir} !`,
           { scoutId: scout.id, cageId: cage.id, role: cage.role, direction: cageDir }
         );
+      }
+    }
+
+    // 1b. Scan for Ancient Relic Monoliths (`relicShrines`) & Elemental Weapon Shrines within Vision Radius
+    for (const relic of this.relicShrines) {
+      if (relic.collected || relic.spottedByScout) continue;
+      const dRelic = dist2D(scout.x, scout.z, relic.x, relic.z);
+      if (dRelic <= effectiveVision) {
+        relic.spottedByScout = true;
+        if (this.vfx && typeof this.vfx.setRelicBeacon === 'function') {
+          this.vfx.setRelicBeacon(
+            relic.id,
+            relic.mesh ? relic.mesh.position : new THREE.Vector3(relic.x, relic.y + 1.5, relic.z),
+            relic.colorHex || 0x00e5ff,
+            true
+          );
+        }
+        const relicDir = getCardinalLabelFR(relic.x, relic.z);
+        logger.alert(
+          `🏛️ ÉCLAIREUR (${scout.name}) : Monolithe de Relique [${relic.name}] localisé au ${relicDir} !`,
+          { scoutId: scout.id, relicId: relic.id, direction: relicDir }
+        );
+        if (typeof this.onRelicSpottedByScout === 'function') {
+          this.onRelicSpottedByScout(relic, scout);
+        }
+      }
+    }
+
+    for (const shrine of this.weaponShrines) {
+      if (!shrine.discovered && dist2D(scout.x, scout.z, shrine.x, shrine.z) <= effectiveVision) {
+        shrine.discovered = true;
       }
     }
 
@@ -2009,10 +2607,11 @@ export class BastionAndNPCs {
       }
     }
 
-    // Mission Mode B: 'find_cages' -> Seek out unrescued Prisoner Cages
+    // Mission Mode B: 'find_cages' -> Seek out unrescued Prisoner Cages or uncollected Relic Monoliths
     if (this.activeScoutMission?.type === 'find_cages') {
       const unspottedCage =
         this.cages.find((c) => !c.rescued && !c.spottedByScout) ||
+        this.relicShrines.find((r) => !r.collected && !r.spottedByScout) ||
         this.cages.find((c) => !c.rescued);
       if (unspottedCage) {
         scout.targetX = unspottedCage.x;

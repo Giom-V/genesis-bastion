@@ -30,15 +30,27 @@
 
 import * as THREE from 'three';
 import { CONFIG } from '../config.js';
-import { buildCreatureMesh, animateCreatureMesh } from './CreatureMeshBuilder.js';
+import {
+  buildCreatureMesh,
+  animateCreatureMesh,
+  setPlayerWeaponAppearance,
+} from './CreatureMeshBuilder.js';
 import {
   COMBAT_MODES,
   ROGUELIKE_ABILITIES_BY_ID,
   getAbilityStatsAtLevel,
   AdaptiveMasterySystem,
 } from '../ecosystem/RoguelikeAbilitiesAndMastery.js';
+import {
+  ELEMENTAL_WEAPONS_CATALOG,
+  ELEMENTAL_WEAPONS_BY_ID,
+  getElementalWeaponSpec,
+  RELIC_FRAGMENTS_SPEC,
+} from '../ecosystem/BaseAndQuestsDesign.js';
 import { dist2D, clamp } from '../utils/math.js';
 import { logger } from '../utils/logger.js';
+
+export { ELEMENTAL_WEAPONS_CATALOG as ELEMENTAL_WEAPONS, ELEMENTAL_WEAPONS_BY_ID, getElementalWeaponSpec };
 
 export class PlayerController {
   /**
@@ -106,6 +118,16 @@ export class PlayerController {
     /** @type {number} Unspent level-up picks waiting for modal selection */
     this.pendingLevelUps = 0;
 
+    // Phase 8 — Legendary Elemental Weapon Artifact & Ancient Relic Fragments state
+    /** @type {string} Currently equipped weapon ID (`'runic_steel' | 'fire_greatsword' | 'ice_greatsword' | 'lightning_greatsword' | 'venom_greatsword'`) */
+    this.equippedWeaponId = 'runic_steel';
+    /** @type {Object} Full specification of the currently equipped weapon */
+    this.equippedWeapon = getElementalWeaponSpec('runic_steel');
+    /** @type {Set<string>} Set of unlocked elemental weapon IDs */
+    this.unlockedWeapons = new Set(['runic_steel']);
+    /** @type {number} Number of Ancient Relic Fragments collected on the current island (`0..3`) */
+    this.relicFragmentsCollected = 0;
+
     // Combat Mode ('vampire_survivors' | 'diablo_action') & Active 3D Spell Arsenal
     /** @type {'vampire_survivors'|'diablo_action'} */
     this.combatMode = options.combatMode || 'diablo_action';
@@ -155,6 +177,10 @@ export class PlayerController {
     this.onMasteryRankUp = options.onMasteryRankUp || null;
     /** @type {Function|null} `(abilityId, stats)` invoked when a 3D spell is cast */
     this.onAbilityCast = options.onAbilityCast || null;
+    /** @type {Function|null} `(weaponSpec, player)` invoked when an Elemental Weapon is equipped */
+    this.onWeaponEquipped = options.onWeaponEquipped || null;
+    /** @type {Function|null} `(relic, collectedCount, maxCount)` invoked when a Relic Fragment is collected */
+    this.onRelicCollected = options.onRelicCollected || null;
 
     /** @type {{ type: string, label: string, keyHint: string, worldPos: THREE.Vector3, entity: Object }|null} */
     this.nearestPrompt = null;
@@ -165,7 +191,8 @@ export class PlayerController {
     this.cleaveDamage = CONFIG.PLAYER?.CLEAVE_DAMAGE || 32;
     this.cleaveDamageMult = 1.0;
     this.mutantDamageMult = 1.0;
-    this.cleaveRange = CONFIG.PLAYER?.CLEAVE_RANGE || 5.2;
+    this.baseCleaveRange = CONFIG.PLAYER?.CLEAVE_RANGE || 5.2;
+    this.cleaveRange = this.baseCleaveRange;
     this.cleaveCooldown = 0;
     this.cleaveAnimTimer = 0;
 
@@ -294,6 +321,84 @@ export class PlayerController {
     if (masterySystem) {
       this.mastery = masterySystem;
     }
+  }
+
+  /**
+   * Phase 8 — Returns the full specification of the currently equipped Elemental Weapon.
+   * @returns {Object}
+   */
+  getEquippedWeapon() {
+    return this.equippedWeapon || getElementalWeaponSpec(this.equippedWeaponId);
+  }
+
+  /**
+   * Phase 8 — Returns all 5 weapons from `ELEMENTAL_WEAPONS_CATALOG` with `unlocked` and `equipped` flags
+   * for the HUD Weapon Slot & `[K]` Elemental Armory Modal.
+   * @returns {Array<Object>}
+   */
+  getAllElementalWeapons() {
+    return ELEMENTAL_WEAPONS_CATALOG.map((w) => ({
+      ...w,
+      unlocked: this.unlockedWeapons.has(w.id),
+      equipped: this.equippedWeaponId === w.id,
+    }));
+  }
+
+  /**
+   * Phase 8 — Unlocks an Elemental Weapon (`'fire_greatsword'`, `'ice_greatsword'`, `'lightning_greatsword'`,
+   * `'venom_greatsword'`) without necessarily equipping it immediately.
+   * @param {string} weaponId
+   * @returns {Object} Weapon specification.
+   */
+  unlockElementalWeapon(weaponId) {
+    const spec = getElementalWeaponSpec(weaponId);
+    if (spec?.id) {
+      this.unlockedWeapons.add(spec.id);
+    }
+    return spec;
+  }
+
+  /**
+   * Phase 8 —Unlocks and equips a Legendary Elemental Weapon (`'runic_steel' | 'fire_greatsword' |
+   * 'ice_greatsword' | 'lightning_greatsword' | 'venom_greatsword'`), dynamically recoloring the Hero's
+   * 3D Greatsword blade, visor glow, slash arc VFX, and cleave reach.
+   *
+   * @param {string} weaponId - Weapon identifier.
+   * @returns {Object} Equipped weapon specification.
+   */
+  equipElementalWeapon(weaponId) {
+    const spec = getElementalWeaponSpec(weaponId);
+    if (!spec) return this.equippedWeapon;
+
+    this.unlockedWeapons.add(spec.id);
+    this.equippedWeaponId = spec.id;
+    this.equippedWeapon = spec;
+
+    const fireResistBonus = this.upgrades.includes('fire_resist') ? 1.2 : 0;
+    this.cleaveRange =
+      Number((this.baseCleaveRange * (spec.cleaveRangeMult || 1.0) + fireResistBonus).toFixed(2));
+
+    if (this.mesh) {
+      setPlayerWeaponAppearance(this.mesh, spec);
+    }
+    if (this.slashArcMesh && this.slashArcMesh.material) {
+      this.slashArcMesh.material.color.setHex(spec.slashColorHex || spec.colorHex || 0x48dbfb);
+    }
+
+    logger.evolution(
+      `${spec.icon} ARME ÉLÉMENTAIRE ÉQUIPÉE : [${spec.name}] — ${spec.passiveSummaryFR}`,
+      {
+        weaponId: spec.id,
+        element: spec.element,
+        cleaveRange: this.cleaveRange,
+        sparesHerbivores: Boolean(spec.sparesHerbivores),
+      }
+    );
+
+    if (typeof this.onWeaponEquipped === 'function') {
+      this.onWeaponEquipped(spec, this);
+    }
+    return { ...spec, success: true, weapon: spec };
   }
 
   /**
@@ -553,18 +658,55 @@ export class PlayerController {
 
   /**
    * Computes total final damage dealt by the Hero against a specific enemy, combining
-   * base weapon/spell multipliers, anti-mutant bonuses (including Bastion Bio-Lab), and
-   * `AdaptiveMasterySystem` species/mutation ranks.
+   * base weapon/spell multipliers, Elemental Weapon counter-affinities, anti-mutant bonuses
+   * (including Bastion Bio-Lab), and `AdaptiveMasterySystem` species/mutation ranks.
    *
    * @param {number} rawDamage
    * @param {Object} enemy
+   * @param {boolean} [isSpellDamage=false]
    * @returns {number} Rounded final damage.
    */
-  _computeFinalDamageAgainst(rawDamage, enemy) {
-    let dmg = rawDamage * this.cleaveDamageMult;
-    const isMutantOrHybrid =
-      Boolean(enemy?.genome?.isHybrid) ||
-      (Array.isArray(enemy?.genome?.mutations) && enemy.genome.mutations.length > 0);
+  _computeFinalDamageAgainst(rawDamage, enemy, isSpellDamage = false) {
+    const wSpec = this.getEquippedWeapon();
+    const weaponBaseMult = !isSpellDamage ? wSpec?.cleaveDamageMult || 1.0 : 1.0;
+    let dmg = rawDamage * this.cleaveDamageMult * weaponBaseMult;
+
+    const spId = enemy?.genome?.speciesId || '';
+    const clade = enemy?.genome?.clade || '';
+    const muts = Array.isArray(enemy?.genome?.mutations) ? enemy.genome.mutations : [];
+
+    // Phase 8 Elemental Weapon Species & Mutation Counter-Affinities
+    if (wSpec?.id === 'fire_greatsword') {
+      if (
+        spId === 'wolf' ||
+        spId === 'lion' ||
+        spId === 'vulture' ||
+        spId === 'giant_mole' ||
+        clade === 'beast' ||
+        clade === 'subterranean'
+      ) {
+        dmg *= wSpec.vsBeastAndMoleMult || 1.45;
+      }
+    } else if (wSpec?.id === 'ice_greatsword') {
+      if (muts.includes('pyro_gland') || spId === 'shark') {
+        dmg *= wSpec.vsPyroAndSharkMult || 1.5;
+      }
+      if (muts.includes('osteo_plating') && wSpec.shattersOsteoArmor) {
+        dmg *= 1.35;
+      }
+    } else if (wSpec?.id === 'lightning_greatsword') {
+      if (
+        spId === 'goblin' ||
+        spId === 'orc' ||
+        clade === 'greenskin' ||
+        spId === 'shark' ||
+        muts.includes('amphibious_lungs')
+      ) {
+        dmg *= wSpec.vsGreenskinAndAquaticMult || 1.4;
+      }
+    }
+
+    const isMutantOrHybrid = Boolean(enemy?.genome?.isHybrid) || muts.length > 0;
     if (isMutantOrHybrid) {
       dmg *= this.mutantDamageMult;
       if (this.lastBastionRef?.heroMutantDamageBonus > 0) {
@@ -582,23 +724,76 @@ export class PlayerController {
 
   /**
    * Deals Hero damage to an enemy via `enemyManager.damageEnemy` and invokes `onDamageDealt`.
-   * Note: Kill mastery/XP recording happens automatically via `recordEnemyKill` hooked in `EnemyManager.damageEnemy`.
+   * Applies Phase 8 Elemental Weapon passives (Herbivore Prey Immunity with `venom_greatsword`,
+   * Ignite Burn + Solar Death Detonation with `fire_greatsword`, Deep Cryo Slow `-55%` with
+   * `ice_greatsword`, and Venom DoT + `18%` Lifesteal with `venom_greatsword`).
    *
    * @param {Object} enemyManager
    * @param {Object} enemy
    * @param {number} rawDamage
    * @param {{x: number, z: number, strength?: number}|null} [knockDir=null]
    * @param {boolean} [isSpellDamage=false] - True when damage originates from a 3D spell or orbital blade.
-   * @returns {{ killed: boolean, finalDmg: number, xpGained: number }}
+   * @returns {{ killed: boolean, finalDmg: number, xpGained: number, sparedHerbivore?: boolean }}
    * @private
    */
   _dealDamageToEnemy(enemyManager, enemy, rawDamage, knockDir = null, isSpellDamage = false) {
     if (!enemyManager || !enemy || enemy.hp <= 0) {
       return { killed: false, finalDmg: 0, xpGained: 0 };
     }
-    const finalDmg = this._computeFinalDamageAgainst(rawDamage, enemy);
+
+    const wSpec = this.getEquippedWeapon();
+    const spId = enemy.genome?.speciesId || '';
+    const isPrey =
+      enemy.aggroStance === 'prey_pacifist' ||
+      enemy.genome?.clade === 'herbivore' ||
+      spId === 'deer' ||
+      spId === 'rabbit';
+
+    // Phase 8 Symbiotic Emerald Scythe (`venom_greatsword`) — Automatic Herbivore Prey Immunity!
+    // Neither sword swings nor 3D AoE spells deal any collateral damage to grazing deer/rabbits.
+    if (isPrey && wSpec?.sparesHerbivores) {
+      return { killed: false, finalDmg: 0, xpGained: 0, sparedHerbivore: true, spared: true };
+    }
+
+    const finalDmg = this._computeFinalDamageAgainst(rawDamage, enemy, isSpellDamage);
     const res = enemyManager.damageEnemy(enemy.id, finalDmg, knockDir, null, { isSpellDamage });
     this.hitsLanded++;
+
+    // Apply Elemental Weapon on-hit effects on melee/weapon hits
+    if (!isSpellDamage && wSpec) {
+      if (wSpec.id === 'fire_greatsword') {
+        if (typeof enemy.applyBurn === 'function') {
+          enemy.applyBurn(wSpec.burnDps || 14, wSpec.burnDuration || 4.0);
+        }
+        if (this.vfx && typeof this.vfx.spawnHitEffect === 'function') {
+          this.vfx.spawnHitEffect(new THREE.Vector3(enemy.x, (enemy.y || 1) + 1.0, enemy.z), 0xff5252);
+        }
+      } else if (wSpec.id === 'ice_greatsword') {
+        if (typeof enemy.applySlow === 'function') {
+          enemy.applySlow(wSpec.slowFactor || 0.45, wSpec.slowDuration || 4.0);
+        }
+        if (wSpec.shattersOsteoArmor) {
+          enemy.armorShattered = true;
+        }
+        if (this.vfx && typeof this.vfx.spawnHitEffect === 'function') {
+          this.vfx.spawnHitEffect(new THREE.Vector3(enemy.x, (enemy.y || 1) + 1.0, enemy.z), 0x00d2d3);
+        }
+      } else if (wSpec.id === 'lightning_greatsword') {
+        if (this.vfx && typeof this.vfx.spawnHitEffect === 'function') {
+          this.vfx.spawnHitEffect(new THREE.Vector3(enemy.x, (enemy.y || 1) + 1.0, enemy.z), 0xa29bfe);
+        }
+      } else if (wSpec.id === 'venom_greatsword') {
+        if (typeof enemy.applyPoison === 'function') {
+          enemy.applyPoison(wSpec.venomDps || 12, wSpec.venomDuration || 4.5);
+        }
+        enemy.venomWeakened = true;
+        const healAmt = Math.max(1, Math.round(finalDmg * (wSpec.lifestealRatio || 0.18)));
+        this.hp = Math.min(this.maxHp, this.hp + healAmt);
+        if (this.vfx && typeof this.vfx.spawnHitEffect === 'function') {
+          this.vfx.spawnHitEffect(new THREE.Vector3(enemy.x, (enemy.y || 1) + 1.0, enemy.z), 0x2ed573);
+        }
+      }
+    }
 
     if (typeof this.onDamageDealt === 'function') {
       this.onDamageDealt(enemy, finalDmg, Boolean(res?.killed), isSpellDamage);
@@ -608,6 +803,34 @@ export class PlayerController {
     if (res?.killed && !enemy._killRecorded) {
       enemy._killRecorded = true;
       this.recordEnemyKill(enemy, res.xpGained || 20, isSpellDamage);
+    }
+
+    // Fire Greatsword ('fire_greatsword') — Solar Death AoE Detonation on kill!
+    if (res?.killed && wSpec?.id === 'fire_greatsword' && !enemy._fireDeathExploded) {
+      enemy._fireDeathExploded = true;
+      const blastRadius = wSpec.deathExplosionRadius || 6.5;
+      const blastDmg = wSpec.deathExplosionDamage || 36;
+      const liveEnemies =
+        typeof enemyManager.getEnemies === 'function' ? [...enemyManager.getEnemies()] : [];
+      for (const other of liveEnemies) {
+        if (!other || other.hp <= 0 || other.id === enemy.id) continue;
+        if (other.aggroStance === 'pacifist_apex' && !other.enraged) continue;
+        const dBlast = dist2D(enemy.x, enemy.z, other.x, other.z);
+        if (dBlast <= blastRadius) {
+          enemyManager.damageEnemy(other.id, blastDmg, null, null, { isSpellDamage: true });
+          if (typeof other.applyBurn === 'function') {
+            other.applyBurn(10, 3.0);
+          }
+        }
+      }
+      if (this.vfx && typeof this.vfx.spawnAbilityVFX === 'function') {
+        this.vfx.spawnAbilityVFX(
+          'pyro_nova',
+          new THREE.Vector3(enemy.x, enemy.y || 1, enemy.z),
+          [],
+          { radius: blastRadius, colorHex: 0xff5252 }
+        );
+      }
     }
 
     return {
@@ -1349,12 +1572,15 @@ export class PlayerController {
         ? this.lastBastionRef.bonusMutantXpMult
         : 1.0;
 
+    const wSpec = this.getEquippedWeapon();
+    const weaponBonusBiomass = !isPrey && wSpec?.biomassOnKill ? Number(wSpec.biomassOnKill) : 0;
+
     this.kills++;
     if (isMutantOrHybrid) {
       this.mutantsSlain++;
-      this.resources.biomass += Math.round(6 * bonusMult);
+      this.resources.biomass += Math.round(6 * bonusMult) + weaponBonusBiomass;
     } else {
-      this.resources.biomass += isPrey ? 1 : 2;
+      this.resources.biomass += (isPrey ? 1 : 2) + weaponBonusBiomass;
     }
 
     if (this.questSystem && typeof this.questSystem.recordEnemyKilled === 'function') {
@@ -1396,20 +1622,25 @@ export class PlayerController {
   performCleaveAttack(enemyManager, bastionAndNpcs, isAutoMelee = false) {
     if (this.cleaveCooldown > 0) return 0;
 
-    this.cleaveCooldown = CONFIG.PLAYER?.CLEAVE_COOLDOWN || 0.4;
-    this.cleaveAnimTimer = 0.28;
+    const wSpec = this.getEquippedWeapon();
+    const atkSpeedMult = Math.max(0.5, wSpec?.attackSpeedMult || 1.0);
+    this.cleaveCooldown = (CONFIG.PLAYER?.CLEAVE_COOLDOWN || 0.4) / atkSpeedMult;
+    this.cleaveAnimTimer = 0.28 / atkSpeedMult;
     this.attackSwings++;
 
     if (this.slashArcMesh) {
       this.slashArcMesh.visible = true;
       this.slashArcMesh.material.opacity = 0.85;
-      this.slashArcMesh.scale.setScalar(1.0);
+      this.slashArcMesh.material.color.setHex(
+        wSpec?.slashColorHex || wSpec?.colorHex || 0x48dbfb
+      );
+      this.slashArcMesh.scale.setScalar(wSpec?.cleaveRangeMult || 1.0);
     }
 
     if (!enemyManager || typeof enemyManager.getEnemies !== 'function') return 0;
 
     const rawEnemies = enemyManager.getEnemies();
-    const shouldHuntPreyAuto = (this.resources?.food ?? 60) < 45;
+    const shouldHuntPreyAuto = (this.resources?.food ?? 60) < 45 && !wSpec?.sparesHerbivores;
     const enemies = isAutoMelee
       ? rawEnemies.filter(
           (e) =>
@@ -1424,6 +1655,9 @@ export class PlayerController {
     let closestDist = this.cleaveRange + 0.6;
     for (const enemy of enemies) {
       if (!enemy || enemy.hp <= 0) continue;
+      if (wSpec?.sparesHerbivores && (enemy.aggroStance === 'prey_pacifist' || enemy.genome?.clade === 'herbivore')) {
+        continue;
+      }
       if (enemy.aggroStance === 'pacifist_apex' && !enemy.enraged && enemies.length > 1) continue;
       const d = dist2D(this.x, this.z, enemy.x, enemy.z);
       if (d < closestDist) {
@@ -1438,6 +1672,7 @@ export class PlayerController {
     const forwardX = Math.sin(this.facingAngle);
     const forwardZ = Math.cos(this.facingAngle);
     let hitCount = 0;
+    const directlyHitIds = new Set();
 
     // Copy list in case enemies are removed on death
     const candidates = [...enemies];
@@ -1454,9 +1689,58 @@ export class PlayerController {
 
         if (dot >= -0.45 || dist <= 2.8) {
           const knockDir = { x: dx * invDist, z: dz * invDist, strength: 1.45 };
-          this._dealDamageToEnemy(enemyManager, enemy, this.cleaveDamage, knockDir, false);
-          hitCount++;
+          const res = this._dealDamageToEnemy(enemyManager, enemy, this.cleaveDamage, knockDir, false);
+          if (!res?.sparedHerbivore) {
+            hitCount++;
+            directlyHitIds.add(enemy.id);
+          }
         }
+      }
+    }
+
+    // Phase 8 Lightning Greatsword (`lightning_greatsword`) — Chain Lightning Arcs on Every Swing!
+    if (wSpec?.id === 'lightning_greatsword' && hitCount > 0) {
+      const chainMaxTargets = wSpec.chainTargets || 3;
+      const chainRange = wSpec.chainRange || 13;
+      const chainDamage = wSpec.chainDamage || 22;
+      const chainTargetsPos = [];
+
+      const liveAfterSwing = enemyManager.getEnemies().filter(
+        (e) =>
+          e &&
+          e.hp > 0 &&
+          !e.isAquatic &&
+          e.aggroStance !== 'prey_pacifist' &&
+          e.genome?.clade !== 'herbivore' &&
+          !(e.aggroStance === 'pacifist_apex' && !e.enraged)
+      );
+
+      // Prioritize enemies near the player that weren't already hit, then any living hostile in chainRange
+      const sortedChainCandidates = liveAfterSwing
+        .map((e) => ({
+          enemy: e,
+          dist: dist2D(this.x, this.z, e.x, e.z),
+          alreadyHit: directlyHitIds.has(e.id),
+        }))
+        .filter((item) => item.dist <= chainRange)
+        .sort((a, b) => Number(a.alreadyHit) - Number(b.alreadyHit) || a.dist - b.dist);
+
+      for (let cIdx = 0; cIdx < Math.min(chainMaxTargets, sortedChainCandidates.length); cIdx++) {
+        const cTarget = sortedChainCandidates[cIdx].enemy;
+        this._dealDamageToEnemy(enemyManager, cTarget, chainDamage, null, true);
+        if (typeof cTarget.applyStun === 'function') {
+          cTarget.applyStun(0.25);
+        }
+        chainTargetsPos.push(new THREE.Vector3(cTarget.x, cTarget.y || 1, cTarget.z));
+      }
+
+      if (chainTargetsPos.length > 0 && this.vfx && typeof this.vfx.spawnAbilityVFX === 'function') {
+        this.vfx.spawnAbilityVFX(
+          'chain_lightning',
+          new THREE.Vector3(this.x, this.y, this.z),
+          chainTargetsPos,
+          { colorHex: wSpec.colorHex || 0xa29bfe }
+        );
       }
     }
 
@@ -1492,13 +1776,46 @@ export class PlayerController {
   }
 
   /**
-   * Interacts with nearby Prisoner Cages, 3D Bastion Building Pads (`watchtower`, `scout_guild`,
+   * Interacts with nearby Ancient Relic Monoliths (`relicShrines`), Elemental Weapon Shrines
+   * (`weaponShrines`), Prisoner Cages, 3D Bastion Building Pads (`watchtower`, `scout_guild`,
    * `lumber_forge`, `biolab`, `sanctuary_hearth`), or Resource Nodes (Wood/Crystal).
    * @param {Object} bastionAndNpcs
    */
   interact(bastionAndNpcs) {
     if (this.interactCooldown > 0) return;
     this.interactCooldown = 0.35;
+
+    // 0a. Collect nearby Ancient Relic Monolith (`relicShrines`) if within 8.0m
+    if (bastionAndNpcs && typeof bastionAndNpcs.tryCollectNearestRelic === 'function') {
+      const collectedRelic = bastionAndNpcs.tryCollectNearestRelic(
+        this.x,
+        this.z,
+        this.resources,
+        8.0
+      );
+      if (collectedRelic) {
+        this.relicFragmentsCollected = bastionAndNpcs.collectedRelicFragments || 0;
+        const xpReward = RELIC_FRAGMENTS_SPEC?.fragmentRewardXp || 50;
+        this.gainXp(xpReward);
+        if (typeof this.onRelicCollected === 'function') {
+          this.onRelicCollected(
+            collectedRelic,
+            this.relicFragmentsCollected,
+            bastionAndNpcs.maxRelicFragments || 3
+          );
+        }
+        return;
+      }
+    }
+
+    // 0b. Forge & Equip nearby Elemental Weapon Shrine (`weaponShrines`) if within 7.5m
+    if (bastionAndNpcs && typeof bastionAndNpcs.interactNearestWeaponShrine === 'function') {
+      const shrineRes = bastionAndNpcs.interactNearestWeaponShrine(this.x, this.z, 7.5);
+      if (shrineRes?.weaponSpec) {
+        this.equipElementalWeapon(shrineRes.weaponSpec.id);
+        return;
+      }
+    }
 
     // 1. Rescue Prisoner Cage if nearby
     if (bastionAndNpcs && typeof bastionAndNpcs.tryRescueNearestCage === 'function') {
@@ -1828,8 +2145,48 @@ export class PlayerController {
     // 3. Compute nearest contextual action prompt (`nearestPrompt`) for HUD screen-space bubbles
     this.nearestPrompt = null;
 
+    // Priority 0a: Uncollected Ancient Relic Monolith within 9.5m
+    if (bastionAndNpcs && typeof bastionAndNpcs.getNearestRelicShrine === 'function') {
+      const relic = bastionAndNpcs.getNearestRelicShrine(this.x, this.z, 9.5);
+      if (relic) {
+        const nextCount = (bastionAndNpcs.collectedRelicFragments || 0) + 1;
+        const maxCount = bastionAndNpcs.maxRelicFragments || 3;
+        this.nearestPrompt = {
+          type: 'relic',
+          keyHint: '[E]',
+          label: `🏛️ [E] Collecter ${relic.name} (${nextCount}/${maxCount} Reliques d'Éden)`,
+          worldPos: new THREE.Vector3(relic.x, (relic.y || 2) + 3.2, relic.z),
+          entity: relic,
+          dist: dist2D(this.x, this.z, relic.x, relic.z),
+        };
+      }
+    }
+
+    // Priority 0b: Elemental Weapon Shrine within 8.5m
+    if (
+      !this.nearestPrompt &&
+      bastionAndNpcs &&
+      typeof bastionAndNpcs.getNearestWeaponShrine === 'function'
+    ) {
+      const shrine = bastionAndNpcs.getNearestWeaponShrine(this.x, this.z, 8.5);
+      if (shrine) {
+        const wSpec = getElementalWeaponSpec(shrine.weaponId);
+        const isAlreadyEquipped = this.equippedWeaponId === shrine.weaponId;
+        this.nearestPrompt = {
+          type: 'weapon_shrine',
+          keyHint: isAlreadyEquipped ? '⚔️ ÉQUIPÉE' : '[E]',
+          label: isAlreadyEquipped
+            ? `${wSpec.icon} ${wSpec.name} (Déjà équipée • [K] Armurerie)`
+            : `[E] Forger & Équiper : ${wSpec.icon} ${wSpec.name} (${wSpec.passiveSummaryFR})`,
+          worldPos: new THREE.Vector3(shrine.x, (shrine.y || 2) + 2.8, shrine.z),
+          entity: shrine,
+          dist: dist2D(this.x, this.z, shrine.x, shrine.z),
+        };
+      }
+    }
+
     // Priority A: Unrescued Cage within 8m
-    if (bastionAndNpcs && Array.isArray(bastionAndNpcs.cages)) {
+    if (!this.nearestPrompt && bastionAndNpcs && Array.isArray(bastionAndNpcs.cages)) {
       for (const cage of bastionAndNpcs.cages) {
         if (!cage || cage.rescued) continue;
         const dCage = dist2D(this.x, this.z, cage.x, cage.z);
@@ -1913,10 +2270,13 @@ export class PlayerController {
       const spDef = CONFIG.SPECIES?.[spId];
       const foodGain = spDef?.foodYield || (spId === 'deer' ? 35 : 18);
       const healGain = spDef?.healYield || (spId === 'deer' ? 25 : 12);
+      const sparesPrey = Boolean(this.equippedWeapon?.sparesHerbivores);
       this.nearestPrompt = {
         type: 'hunt_prey',
-        keyHint: '🍖 CHASSE',
-        label: `[Clic Gauche] Chasser ${nearestPrey.genome?.speciesName || 'Proie'} (+${foodGain} Vivres 🍖, +${healGain} PV — Attention à l'extinction !)`,
+        keyHint: sparesPrey ? '🧪 ÉPARGNÉ' : '🍖 CHASSE',
+        label: sparesPrey
+          ? `🧪 [Faux d'Émeraude] ${nearestPrey.genome?.speciesName || 'Proie'} protégée des dégâts collatéraux !`
+          : `[Clic Gauche] Chasser ${nearestPrey.genome?.speciesName || 'Proie'} (+${foodGain} Vivres 🍖, +${healGain} PV — Attention à l'extinction !)`,
         worldPos: new THREE.Vector3(
           nearestPrey.x,
           (nearestPrey.y || 2) + 2.0,
@@ -1980,6 +2340,7 @@ export class PlayerController {
     this.isWellFed = (this.resources.food ?? 60) > 25;
     this.isStarvingFamine = (this.resources.food ?? 60) <= 0;
     const foodSpeedMult = this.isWellFed ? 1.1 : this.isStarvingFamine ? 0.9 : 1.0;
+    const weaponMoveSpeedMult = this.getEquippedWeapon()?.moveSpeedMult || 1.0;
 
     // 1. Read WASD / ZQSD / Arrow movement input
     let inputX = 0;
@@ -2045,7 +2406,8 @@ export class PlayerController {
       this.vx = this.dashDirX * currentSpeed;
       this.vz = this.dashDirZ * currentSpeed;
     } else if (isMoving) {
-      currentSpeed = this.baseSpeed * this.speedMult * hearthSpeedBoost * foodSpeedMult;
+      currentSpeed =
+        this.baseSpeed * this.speedMult * weaponMoveSpeedMult * hearthSpeedBoost * foodSpeedMult;
       this.vx = moveX * currentSpeed;
       this.vz = moveZ * currentSpeed;
     } else {
@@ -2079,7 +2441,8 @@ export class PlayerController {
       this.performCleaveAttack(enemyManager, bastionAndNpcs, false);
     } else if (this.combatMode === 'vampire_survivors' && this.cleaveCooldown <= 0 && enemyManager) {
       const enemies = typeof enemyManager.getEnemies === 'function' ? enemyManager.getEnemies() : [];
-      const shouldHuntPreyAuto = (this.resources?.food ?? 60) < 45;
+      const shouldHuntPreyAuto =
+        (this.resources?.food ?? 60) < 45 && !this.getEquippedWeapon()?.sparesHerbivores;
       const hasHostileEnemyInReach = enemies.some(
         (e) =>
           e &&
@@ -2102,7 +2465,7 @@ export class PlayerController {
     // 4. Update 3D Abilities (Orbital Blades, Auto-Cast in Vampire Survivors mode, or [1..4] in Diablo mode)
     this._updateAbilities(dt, enemyManager);
 
-    // Auto-rescue prisoner cages when the player walks directly next to them (< 4.2 units)
+    // Auto-rescue prisoner cages & auto-collect Ancient Relic Monoliths when walking right next to them
     if (bastionAndNpcs && typeof bastionAndNpcs.tryRescueNearestCage === 'function') {
       const autoRescued = bastionAndNpcs.tryRescueNearestCage(this.x, this.z, this.resources, 4.2);
       if (autoRescued) {
@@ -2110,6 +2473,20 @@ export class PlayerController {
         this.gainXp(35);
         if (typeof this.onCageRescued === 'function') {
           this.onCageRescued(autoRescued);
+        }
+      }
+    }
+    if (bastionAndNpcs && typeof bastionAndNpcs.tryCollectNearestRelic === 'function') {
+      const autoRelic = bastionAndNpcs.tryCollectNearestRelic(this.x, this.z, this.resources, 3.8);
+      if (autoRelic) {
+        this.relicFragmentsCollected = bastionAndNpcs.collectedRelicFragments || 0;
+        this.gainXp(RELIC_FRAGMENTS_SPEC?.fragmentRewardXp || 50);
+        if (typeof this.onRelicCollected === 'function') {
+          this.onRelicCollected(
+            autoRelic,
+            this.relicFragmentsCollected,
+            bastionAndNpcs.maxRelicFragments || 3
+          );
         }
       }
     }
