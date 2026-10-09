@@ -141,7 +141,23 @@ La branche `blender-3d-models` (`v0.10.0-blender-mcp-3d-models`) associe la gén
 
 ---
 
-## 7. Sécurité & Qualité Logicielle
+## 7. Équilibrage de la Maîtrise Adaptative (`<= 1%` / Monstre à Rendement Décroissant) & des Upgrades (`v0.11.0`)
+
+Afin d'éviter toute explosion exponentielle des multiplicateurs de dégâts en cours de partie :
+1. **Courbe de Maîtrise par Monstre / Mutant (`computeSpeciesSlayerBonusPct` & `computeMutationSlayerBonusPct`)** :
+   $$\text{Bonus}(k) = \begin{cases} 1.0\% \times k & \text{si } 1 \le k \le 5 \\ 5.0\% + 0.5\% \times (k - 5) & \text{si } 6 \le k \le 15 \\ \min\left(15.0\%,\; 10.0\% + 0.25\% \times (k - 15)\right) & \text{si } k \ge 16 \end{cases}$$
+   - Les paliers de rang (`[1, 3, 6, 10, 15]` kills) notifient ainsi des bonus progressifs de **`+1%`, `+3%`, `+5.5%`, `+7.5%`, `+10%`** (plafond absolu **`+15%`** à 35 kills, et plafond global cumulé espèce + mutations borné à **`1.30x` (`+30%`)**).
+2. **Résistance Adaptative (`computeResistanceBonusPct`)** :
+   - Élémentaire / Venin / Vide : `+0.5%` par impact (`1..6`), `+0.25%` (`7..22`), `+0.15%` au-delà, plafonné à **`10%` max**.
+   - Physique : `+0.4%` par impact (`1..5`), `+0.2%` au-delà, plafonné à **`6%` max**.
+3. **Progression des Sorts, Passifs & Armes Élémentaires** :
+   - **Sorts 3D (`getAbilityStatsAtLevel`)** : `+8%` dégâts/niveau, `+4%` rayon/niveau, `-4%` cooldown/niveau (plancher `65%`).
+   - **Cartes Passives (`DESIGNED_UPGRADES` / `CONFIG.UPGRADES`)** : `+10%` dégâts de mêlée, `+8%` vitesse de déplacement, `+10%` vitesse d'attaque, `+12%` maîtrise élémentaire, `+15` PV max.
+   - **Armes Élémentaires (`ELEMENTAL_WEAPONS_CATALOG`)** : `1.10x` à `1.12x` dégâts de base (`+10%`–`+12%`) et `1.15x` (`+15%`) contre le clade vulnérable.
+
+---
+
+## 8. Sécurité & Qualité Logicielle
 
 - **Politique de Sécurité du Contenu (CSP)** : Définie dans `index.html`, interdisant tout script externe non approuvé.
 - **Zéro Injection DOM** : Aucune utilisation de `innerHTML`, `outerHTML`, `insertAdjacentHTML` ou `document.write`. Toute l'interface est construite via `document.createElement` et `textContent`.

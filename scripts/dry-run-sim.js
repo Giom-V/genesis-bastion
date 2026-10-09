@@ -657,6 +657,43 @@ async function runDryRunSimulation() {
       toggleVerified ? 'PASS' : 'FAIL'
     } (Blender .glb <-> Classic Procedural)`
   );
+
+  // Phase 11 verification: Balanced <= 1% per monster mastery with rapid diminishing returns
+  console.log('----------------------------------------------------------------------------------------');
+  console.log('[6] PHASE 11 VERIFICATION: BALANCED <=1%/MONSTER MASTERY & DIMINISHING RETURNS');
+  let masteryVerified = true;
+  try {
+    const masteryMod = await import('../src/ecosystem/RoguelikeAbilitiesAndMastery.js');
+    if (masteryMod && typeof masteryMod.AdaptiveMasterySystem === 'function') {
+      const mSys = new masteryMod.AdaptiveMasterySystem();
+      const recordN = (totalTarget) => {
+        while ((mSys.speciesKills.troll || 0) < totalTarget) {
+          mSys.recordCreatureKill({ speciesId: 'troll', genome: { speciesId: 'troll', mutations: ['pyro_gland'] } });
+        }
+        return Number(((mSys.getSpeciesDamageMultiplier('troll') - 1) * 100).toFixed(1));
+      };
+      const pct1 = recordN(1);
+      const pct5 = recordN(5);
+      const pct10 = recordN(10);
+      const pct15 = recordN(15);
+      const pct50 = recordN(50);
+      masteryVerified =
+        pct1 === 1.0 &&
+        pct5 === 5.0 &&
+        pct10 === 7.5 &&
+        pct15 === 10.0 &&
+        pct50 <= 15.0;
+      console.log(
+        `  - Species/Mutation Curve   : 1k=+${pct1}% | 5k=+${pct5}% | 10k=+${pct10}% | 15k=+${pct15}% | 50k=+${pct50}% (cap 15%) -> ${
+          masteryVerified ? 'PASS' : 'FAIL'
+        }`
+      );
+    }
+  } catch (err) {
+    console.log(`  - AdaptiveMasterySystem    : WARN (${err.message})`);
+    masteryVerified = false;
+  }
+
   console.log('========================================================================================');
   if (!resetVerified) {
     throw new Error('Phase 9 EcosystemSimulator.resetForNewRoguelikeRun verification failed');
@@ -665,6 +702,9 @@ async function runDryRunSimulation() {
     throw new Error(
       `Phase 10 Blender 3D verification failed: missing=[${missingGlb.join(', ')}], toggle=${toggleVerified}`
     );
+  }
+  if (!masteryVerified) {
+    throw new Error('Phase 11 <=1%/monster mastery balancing verification failed');
   }
   console.log('DRY-RUN STATUS: PASS');
 }

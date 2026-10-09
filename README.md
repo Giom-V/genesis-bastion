@@ -136,3 +136,17 @@ La version **`v0.10.0-blender-mcp-3d-models`** (branche `blender-3d-models`) int
   - **Version Blender 3D (`.glb`)** : `http://giom-us.c.googlers.com:5173/` (branche `blender-3d-models`)
   - **Version Classique Procédurale (`v0.9.0`)** : `http://giom-us.c.googlers.com:5174/` (branche `v0.9-classic-procedural`, accessible en 1 clic via le bouton `⏪ Version Classique (5174)` de l'en-tête).
 
+---
+
+## Équilibrage Tactique de la Maîtrise Adaptative (`<= 1%` / Monstre à Rendement Décroissant) & des Upgrades (`v0.11.0`)
+
+Pour garantir une progression tactique mesurée sans inflation de statistiques :
+- **Maîtrise Tueur d'Espèce & Briseur de Mutation (`<= 1 %` par monstre avec décroissance rapide)** :
+  - **Kills `1..5`** : **`+1,0 %` par monstre** (`+1 %` à 1 kill, `+3 %` au Rang 2 à 3 kills, `+5 %` à 5 kills).
+  - **Kills `6..15`** : **`+0,5 %` par monstre** (`+5,5 %` au Rang 3 à 6 kills, `+7,5 %` au Rang 4 à 10 kills, `+10,0 %` au Rang 5 à 15 kills).
+  - **Kills `16+`** : **`+0,25 %` par monstre**, plafonné strictement à **`+15,0 %` maximum** par espèce/mutation (plafond cumulé total `1.30x` soit `+30 %` grand max).
+- **Résistance Adaptative aux Coups Subis** : **`+0,5 %` par coup** élémentaire/venin (`1..6`), puis **`+0,25 %`** (`7..22`), puis **`+0,15 %`** (plafond **`10 %` max** ; physique plafonné à **`6 %` max**).
+- **Échelle des Sorts 3D, Cartes Passives & Armes Élémentaires** :
+  - **Sorts 3D (Niv. 1 $\rightarrow$ 5)** : **`+8 %` dégâts** et **`+4 %` portée** par niveau (`-4 %` temps de recharge).
+  - **Cartes Passives de Level-Up** : Bonus réalistes de **`+8 %` à `+12 %`** (`+10 %` mêlée, `+8 %` vitesse, `+10 %` cadence, `+12 %` élémentaire, `+15 PV max`).
+  - **Armes Élémentaires Légendaires (`[K]`)** : **`+10 %` à `+12 %` de dégâts de base** et **`+15 %` contre leur clade cible**.
