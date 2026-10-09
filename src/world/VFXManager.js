@@ -564,6 +564,43 @@ export class VFXManager {
   }
 
   /**
+   * Creates, updates, or removes a golden 3D sky beacon on a Prisoner Cage discovered by a Scout
+   * during the `'find_cages'` mission.
+   *
+   * @param {string|number} cageId - Unique cage identifier.
+   * @param {THREE.Vector3|{x: number, y?: number, z: number}|null} pos - World position of the cage.
+   * @param {boolean} [active=true] - True while the cage is discovered and not yet rescued.
+   * @param {number|string} [colorHex=0xffd166] - Golden rescue beacon color.
+   */
+  setCageBeacon(cageId, pos, active = true, colorHex = 0xffd166) {
+    this.setPatientZeroBeacon(`cage_${cageId}`, pos, colorHex, active);
+  }
+
+  /**
+   * Spawns a golden construction shockwave & rising spark column when a Bastion building
+   * is constructed or upgraded (`Niv. 0 -> 1 -> 2 -> 3`).
+   *
+   * @param {THREE.Vector3|{x: number, y?: number, z: number}} pos - Building pad world position.
+   * @param {number|string} [colorHex=0xe6a145] - Construction highlight color.
+   */
+  spawnBuildEffect(pos, colorHex = 0xe6a145) {
+    const p = this._resolvePos(pos, 2.2);
+    this._spawnShockRing(p, colorHex, 0.8, 5.2, 0.55);
+    this._spawnShockRing({ x: p.x, y: p.y + 0.6, z: p.z }, 0xffd700, 0.5, 4.0, 0.65);
+    this.spawnBirthEffect(p, true, false, colorHex);
+  }
+
+  /**
+   * Alias for `spawnBuildEffect(pos, colorHex)` when upgrading a Bastion structure.
+   *
+   * @param {THREE.Vector3|{x: number, y?: number, z: number}} pos - Building pad world position.
+   * @param {number|string} [colorHex=0xffd700] - Upgrade highlight color.
+   */
+  spawnUpgradeEffect(pos, colorHex = 0xffd700) {
+    this.spawnBuildEffect(pos, colorHex);
+  }
+
+  /**
    * Normalizes `targetsOrTargetPos` into an array of `{x, y, z}` positions.
    *
    * @param {Array<Object>|Object|null} targetsOrTargetPos - Single target or array of targets/positions.
