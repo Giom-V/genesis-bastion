@@ -159,6 +159,26 @@ export const TTS_VOICE_CATALOG = {
     url: '/assets/audio/tts/alert_prey_crisis.wav',
     text: 'Alerte écologique ! Nos sorts ont décimé le gibier herbivore ! Sans biches ni lapins, la famine menace et les prédateurs deviennent fous !',
   },
+  alert_relic_found: {
+    key: 'alert_relic_found',
+    actNumber: null,
+    speaker: 'Aldric',
+    speakerTitle: 'Maître Biologiste & Forgeron du Bastion',
+    voiceModel: 'gemini-v4s-tts',
+    voiceName: 'Fenrir',
+    url: '/assets/audio/tts/alert_relic_found.wav',
+    text: "Fragment de Relique d'Éden récupéré ! Rassemble les trois fragments anciens pour ériger le Dôme-Bouclier Solaire sur toute l'île !",
+  },
+  alert_island_victory: {
+    key: 'alert_island_victory',
+    actNumber: null,
+    speaker: 'Aldric',
+    speakerTitle: 'Maître Biologiste & Forgeron du Bastion',
+    voiceModel: 'gemini-v4s-tts',
+    voiceName: 'Fenrir',
+    url: '/assets/audio/tts/alert_island_victory.wav',
+    text: "Victoire ! Le Bouclier d'Éden rayonne sur toute l'île et purifie l'écosystème ! Notre Bastion est inviolable : prépare-toi à voguer vers la prochaine île !",
+  },
 };
 
 /**
@@ -948,6 +968,13 @@ export class SoundManager {
       }
     }
 
+    // Prise en compte de l'Arme Élémentaire Légendaire équipée par le Gardien (Phase 8)
+    const eqWeapon = String(player?.equippedWeaponId || '').toLowerCase();
+    if (eqWeapon.includes('fire')) activeElementSet.add('fire');
+    else if (eqWeapon.includes('ice') || eqWeapon.includes('frost')) activeElementSet.add('ice');
+    else if (eqWeapon.includes('lightning') || eqWeapon.includes('storm')) activeElementSet.add('lightning');
+    else if (eqWeapon.includes('venom') || eqWeapon.includes('emerald')) activeElementSet.add('venom');
+
     for (let i = 0; i < enemies.length; i++) {
       const e = enemies[i];
       if (!e || e.isDead || e.hp <= 0) continue;
@@ -1714,6 +1741,84 @@ export class SoundManager {
 
     if (triggerVoice) {
       this.playTutorialVoice('alert_prey_crisis');
+    }
+  }
+
+  /**
+   * SFX : Collecte d'un Fragment de Relique d'Éden (`playRelicPickup`) —
+   * résonance cristalline ancienne + arpège céleste ascendant.
+   * @param {number|boolean} [fragmentCountOrVoice=1] - Numéro du fragment (`1..3`) ou booléen `triggerVoice`.
+   * @param {boolean} [triggerVoice=false] - Si true, lance également `alert_relic_found.wav`.
+   */
+  playRelicPickup(fragmentCountOrVoice = 1, triggerVoice = false) {
+    const shouldSpeak =
+      typeof fragmentCountOrVoice === 'boolean' ? fragmentCountOrVoice : Boolean(triggerVoice);
+    const count =
+      typeof fragmentCountOrVoice === 'number' ? Math.max(1, Math.min(3, fragmentCountOrVoice)) : 1;
+    const pitchBoost = 1 + (count - 1) * 0.12;
+
+    this.registerActiveElement('arcane', 8000);
+    const notes = [523.25, 659.25, 783.99, 1046.5, 1318.5, 1567.98];
+    notes.forEach((f, idx) => {
+      this._playTone('sine', f * pitchBoost, f * pitchBoost, 0.28, 0.20, idx * 0.055);
+      this._playTone('triangle', f * 0.5 * pitchBoost, f * 0.5 * pitchBoost, 0.26, 0.12, idx * 0.055);
+    });
+
+    if (shouldSpeak) {
+      this.playTutorialVoice('alert_relic_found');
+    }
+  }
+
+  /**
+   * SFX : Forge ou Équipement d'une Arme Élémentaire Légendaire (`playWeaponForge`) —
+   * choc d'enclume runique + décharge élémentaire propre à l'arme choisie (`fire`, `ice`, `lightning`, `venom`).
+   * @param {string} [elementOrWeaponId='fire'] - Identifiant de l'arme (`fire_greatsword`, `ice_greatsword`, `lightning_greatsword`, `venom_greatsword`) ou élément.
+   */
+  playWeaponForge(elementOrWeaponId = 'fire') {
+    const raw = String(elementOrWeaponId || 'fire').toLowerCase();
+    // Frappe d'enclume runique initiale
+    this._playTone('triangle', 240, 110, 0.16, 0.28, 0);
+    this._playNoiseBurst(0.14, 'highpass', 1800, 3800, 0.22);
+
+    if (raw.includes('ice') || raw.includes('frost')) {
+      this.registerActiveElement('ice', 10000);
+      this._playTone('sine', 1046.5, 2093.0, 0.28, 0.22, 0.08);
+      this._playTone('triangle', 1567.98, 3135.96, 0.30, 0.18, 0.15);
+    } else if (raw.includes('lightning') || raw.includes('storm')) {
+      this.registerActiveElement('lightning', 10000);
+      this._playTone('sawtooth', 880, 1760, 0.12, 0.24, 0.06);
+      this._playTone('sawtooth', 1320, 2640, 0.14, 0.22, 0.14);
+    } else if (raw.includes('venom') || raw.includes('emerald')) {
+      this.registerActiveElement('venom', 10000);
+      this._playTone('sawtooth', 330, 165, 0.28, 0.22, 0.06);
+      this._playTone('triangle', 495, 660, 0.26, 0.18, 0.14);
+    } else {
+      this.registerActiveElement('fire', 10000);
+      this._playNoiseBurst(0.32, 'lowpass', 1100, 220, 0.28);
+      this._playTone('sawtooth', 220, 440, 0.28, 0.24, 0.06);
+    }
+  }
+
+  /**
+   * SFX : Activation du Dôme-Bouclier Planétaire de l'Île (`playIslandShieldActivation`) —
+   * onde d'expansion sub-bass + accord solaire triomphal à 6 voix + carillon de purification.
+   * @param {boolean} [triggerVoice=false] - Si true, lance également `alert_island_victory.wav`.
+   */
+  playIslandShieldActivation(triggerVoice = false) {
+    this.registerActiveElement('arcane', 12000);
+    // Onde d'expansion énergétique du dôme (sweep ascendant)
+    this._playTone('sine', 65.41, 261.63, 0.65, 0.32, 0);
+    this._playNoiseBurst(0.55, 'bandpass', 400, 2400, 0.24);
+
+    // Grand accord solaire de victoire (Do Majeur 9e céleste)
+    const chord = [261.63, 329.63, 392.0, 523.25, 659.25, 783.99, 1046.5];
+    chord.forEach((freq, idx) => {
+      this._playTone('triangle', freq, freq, 0.55, 0.20, 0.08 + idx * 0.07);
+      this._playTone('sine', freq * 2, freq * 2, 0.45, 0.12, 0.12 + idx * 0.07);
+    });
+
+    if (triggerVoice) {
+      this.playTutorialVoice('alert_island_victory');
     }
   }
 }

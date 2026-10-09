@@ -40,7 +40,9 @@ npm run build
 | **`1` / `2` / `3` / `4`** | Lancer les **Sorts 3D Évolutifs** en mode Actif Diablo *(auto-cast en mode Vampire Survivors)* |
 | **`C` / `B`** | Basculer en direct entre le mode **Auto (Vampire Survivors)** et **Actif (Diablo)** / Ouvrir le sélecteur |
 | **`Shift` / `Clic Droit`** | Esquive rapide (**Dash / Roulade**) |
-| **`E`** | Interagir : libérer un PNJ en cage, récolter bois/cristal, **construire/améliorer un bâtiment sur son socle 3D** |
+| **`E`** | Interagir : libérer un PNJ en cage, récolter bois/cristal, **récupérer une Relique / Arme Élémentaire**, ou **construire sur un socle 3D** |
+| **`K`** | Ouvrir / Fermer l'**Armurerie des Artefacts Élémentaires (Feu, Glace, Foudre, Venin Symbiotique)** *(met le jeu en pause)* |
+| **`V`** | **Activer le Dôme-Bouclier Planétaire de l'Île** (`3/3` Reliques) & passer à l'**Île Suivante** *(met le jeu en pause)* |
 | **`H`** | Ouvrir / Fermer la modale **Architecte du Bastion (5 Bâtiments Niv. 0 $\rightarrow$ 3)** *(met le jeu en pause)* |
 | **`Q` / `E` ou Glisser Clic Droit** | Rotation orbitale de la caméra 3D tactique |
 | **`Molette Souris`** | Zoom / Dézoom tactique (vue rapprochée action $\leftrightarrow$ vue stratégique écosystème) |
