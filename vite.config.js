@@ -1,21 +1,26 @@
 /**
  * @file vite.config.js
  * @description Vite configuration for Genesis Bastion.
- * Strictly binds the development and preview servers to 127.0.0.1 (loopback)
- * in accordance with security requirements (never 0.0.0.0).
+ * Configured to bind on all Cloudtop interfaces (`host: true`, `allowedHosts: true`,
+ * `cors: true`) so `http://giom-us.c.googlers.com:5173/` is reachable remotely.
  */
 
 import { defineConfig } from 'vite';
 
 export default defineConfig({
+  base: './',
   server: {
-    host: '127.0.0.1',
+    host: true,
     port: 5173,
     strictPort: false,
+    allowedHosts: true,
+    cors: true,
   },
   preview: {
-    host: '127.0.0.1',
+    host: true,
     port: 4173,
+    allowedHosts: true,
+    cors: true,
   },
   build: {
     target: 'esnext',

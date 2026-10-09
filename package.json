@@ -4,9 +4,9 @@
   "description": "Genesis Bastion — 3D Three.js survival roguelike with Conway's Game of Life population dynamics, Mendelian genetics, phylogenetic hybridization, and Scout NPC mutation hunting.",
   "type": "module",
   "scripts": {
-    "dev": "vite --host 127.0.0.1 --port 5173",
+    "dev": "vite --host --port 5173",
     "build": "vite build",
-    "preview": "vite preview --host 127.0.0.1 --port 4173",
+    "preview": "vite preview --host --port 4173",
     "dry-run": "node scripts/dry-run-sim.js --dry-run"
   },
   "dependencies": {
