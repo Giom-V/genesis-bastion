@@ -60,6 +60,11 @@ var music_volume: float = 0.75
 var voice_volume: float = 1.0
 var sfx_volume: float = 0.75
 
+## Phase 15 Minimalist "Clean HUD" Mode (Default: ON -> telemetry sidebars hidden, 90%+ 3D viewport unobstructed)
+var clean_hud_mode: bool = true
+var show_advanced_telemetry: bool = false
+var onboarding_dismissed_by_user: bool = false
+
 ## Modal open states
 var is_settings_open: bool = false
 var is_bastion_open: bool = false
@@ -81,13 +86,32 @@ var _portrait_cache: Dictionary = {}
 ## Root Control & Main Containers
 var root_control: Control
 var top_bar_panel: PanelContainer
+var top_left_cluster: PanelContainer
+var top_right_cluster: PanelContainer
+var top_right_minimap_panel: PanelContainer
+var top_right_minimap_canvas: MinimapCanvas
 var onboarding_panel: PanelContainer
 var alert_banner_panel: PanelContainer
 var left_panel: PanelContainer
 var right_panel: PanelContainer
 var bottom_stack: VBoxContainer
 
-## Top Bar Widgets
+## Top-Left Floating Cluster Widgets (Clean HUD Default)
+var compact_hp_bar: ProgressBar
+var compact_hp_label: Label
+var compact_xp_label: Label
+var compact_bastion_label: Label
+var compact_wood_label: Label
+var compact_stone_label: Label
+var compact_crystal_label: Label
+var compact_relic_label: Label
+
+## Top-Right Floating Cluster Widgets (Clean HUD Default: 3 Minimal Icon Buttons)
+var top_right_bastion_btn: Button
+var top_right_codex_btn: Button
+var top_right_settings_btn: Button
+
+## Top Bar Widgets (Advanced Telemetry Mode)
 var brand_label: Label
 var island_badge_label: Label
 var clock_badge_label: Label
@@ -103,8 +127,9 @@ var combat_mode_btn: Button
 var blender_mode_btn: Button
 var settings_btn: Button
 
-## Onboarding Banner Widgets
+## Onboarding Banner Widgets (Sleek 1-Line Compact Toast by default)
 var onboarding_portrait_rect: TextureRect
+var onboarding_compact_label: Label
 var onboarding_speaker_label: Label
 var onboarding_act_badge: Label
 var onboarding_title_label: Label
@@ -114,6 +139,8 @@ var onboarding_obj_bar: ProgressBar
 var onboarding_obj_label: Label
 var onboarding_voice_btn: Button
 var onboarding_next_btn: Button
+var onboarding_dismiss_btn: Button
+var onboarding_telemetry_details_box: VBoxContainer
 
 ## Narrative Alert Banner Widgets
 var alert_portrait_rect: TextureRect
@@ -188,10 +215,12 @@ class MinimapCanvas extends Control:
 	var hud_ref: HUDController = null
 	var map_state: Dictionary = {}
 	var world_radius: float = 135.0
+	var is_compact_circle: bool = false
 
-	func _init(p_hud: HUDController = null) -> void:
+	func _init(p_hud: HUDController = null, p_size: Vector2 = Vector2(204, 204), p_compact: bool = false) -> void:
 		hud_ref = p_hud
-		custom_minimum_size = Vector2(204, 204)
+		custom_minimum_size = p_size
+		is_compact_circle = p_compact
 
 	func set_map_state(p_state: Dictionary) -> void:
 		map_state = p_state
@@ -326,8 +355,61 @@ func _process(delta: float) -> void:
 	_slow_ui_accum += delta
 	if _slow_ui_accum >= 0.14:
 		_slow_ui_accum = 0.0
-		if is_instance_valid(minimap_canvas):
+		if is_instance_valid(minimap_canvas) and minimap_canvas.is_visible_in_tree():
 			minimap_canvas.queue_redraw()
+		if is_instance_valid(top_right_minimap_canvas) and top_right_minimap_canvas.is_visible_in_tree():
+			top_right_minimap_canvas.queue_redraw()
+
+
+## ============================================================================
+## CLEAN HUD & ADVANCED TELEMETRY TOGGLE (PHASE 15)
+## ============================================================================
+func set_clean_hud_mode(is_clean: bool) -> bool:
+	clean_hud_mode = is_clean
+	show_advanced_telemetry = not is_clean
+	_apply_clean_hud_visibility()
+	return clean_hud_mode
+
+
+func toggle_advanced_telemetry(force_state: Variant = null) -> bool:
+	var next_telemetry: bool = bool(force_state) if typeof(force_state) == TYPE_BOOL else not show_advanced_telemetry
+	set_clean_hud_mode(not next_telemetry)
+	return show_advanced_telemetry
+
+
+func _apply_clean_hud_visibility() -> void:
+	if is_instance_valid(left_panel):
+		left_panel.visible = show_advanced_telemetry
+	if is_instance_valid(right_panel):
+		right_panel.visible = show_advanced_telemetry
+	if is_instance_valid(top_bar_panel):
+		top_bar_panel.visible = show_advanced_telemetry
+	if is_instance_valid(top_left_cluster):
+		top_left_cluster.visible = clean_hud_mode
+	if is_instance_valid(top_right_cluster):
+		top_right_cluster.visible = clean_hud_mode
+	if is_instance_valid(top_right_minimap_panel):
+		top_right_minimap_panel.visible = clean_hud_mode
+	if is_instance_valid(hotkey_bar_label):
+		hotkey_bar_label.visible = show_advanced_telemetry
+	if is_instance_valid(onboarding_telemetry_details_box):
+		onboarding_telemetry_details_box.visible = show_advanced_telemetry
+	if is_instance_valid(onboarding_panel):
+		onboarding_panel.visible = not onboarding_dismissed_by_user
+		if clean_hud_mode:
+			onboarding_panel.anchor_left = 0.5
+			onboarding_panel.anchor_right = 0.5
+			onboarding_panel.offset_left = -260
+			onboarding_panel.offset_right = 260
+			onboarding_panel.offset_top = 10
+			onboarding_panel.offset_bottom = 58
+		else:
+			onboarding_panel.anchor_left = 0.21
+			onboarding_panel.anchor_right = 0.79
+			onboarding_panel.offset_left = 0
+			onboarding_panel.offset_right = 0
+			onboarding_panel.offset_top = 58
+			onboarding_panel.offset_bottom = 172
 
 
 ## ============================================================================
@@ -419,17 +501,158 @@ func _build_entire_hud() -> void:
 	root_control.mouse_filter = Control.MOUSE_FILTER_PASS
 	add_child(root_control)
 
+	_build_floating_corner_clusters()
 	_build_top_bar()
 	_build_onboarding_and_alert_banners()
 	_build_left_panel()
 	_build_right_panel()
 	_build_bottom_stack()
 	_build_modals_layer()
+	_apply_clean_hud_visibility()
+
+
+func _build_floating_corner_clusters() -> void:
+	# 1. Top-Left Floating Cluster: Compact HP Bar, XP/Level Pill, Bastion HP & Icon Counters
+	top_left_cluster = PanelContainer.new()
+	top_left_cluster.name = "TopLeftCluster"
+	top_left_cluster.anchor_left = 0.0
+	top_left_cluster.anchor_right = 0.0
+	top_left_cluster.anchor_top = 0.0
+	top_left_cluster.anchor_bottom = 0.0
+	top_left_cluster.offset_left = 12
+	top_left_cluster.offset_top = 10
+	top_left_cluster.offset_right = 430
+	top_left_cluster.offset_bottom = 44
+	var tl_style := _make_panel_style(Color(0.05, 0.08, 0.12, 0.72), Color(0.90, 0.63, 0.27, 0.42), 18, 1)
+	tl_style.content_margin_left = 10
+	tl_style.content_margin_right = 10
+	tl_style.content_margin_top = 4
+	tl_style.content_margin_bottom = 4
+	top_left_cluster.add_theme_stylebox_override("panel", tl_style)
+	root_control.add_child(top_left_cluster)
+
+	var tl_hbox := HBoxContainer.new()
+	tl_hbox.add_theme_constant_override("separation", 8)
+	top_left_cluster.add_child(tl_hbox)
+
+	compact_hp_label = Label.new()
+	compact_hp_label.text = "❤️ 160/160"
+	compact_hp_label.add_theme_font_size_override("font_size", 12)
+	tl_hbox.add_child(compact_hp_label)
+
+	compact_hp_bar = ProgressBar.new()
+	compact_hp_bar.custom_minimum_size = Vector2(72, 10)
+	compact_hp_bar.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	compact_hp_bar.max_value = 160.0
+	compact_hp_bar.value = 160.0
+	compact_hp_bar.show_percentage = false
+	tl_hbox.add_child(compact_hp_bar)
+
+	compact_xp_label = Label.new()
+	compact_xp_label.text = "⭐ Lv.1"
+	compact_xp_label.add_theme_color_override("font_color", Color(0.98, 0.82, 0.35))
+	compact_xp_label.add_theme_font_size_override("font_size", 12)
+	tl_hbox.add_child(compact_xp_label)
+
+	compact_bastion_label = Label.new()
+	compact_bastion_label.text = "🏰 500"
+	compact_bastion_label.add_theme_color_override("font_color", Color(0.48, 0.92, 0.68))
+	compact_bastion_label.add_theme_font_size_override("font_size", 12)
+	tl_hbox.add_child(compact_bastion_label)
+
+	compact_wood_label = Label.new()
+	compact_wood_label.text = "🪵 40"
+	compact_wood_label.add_theme_font_size_override("font_size", 12)
+	tl_hbox.add_child(compact_wood_label)
+
+	compact_stone_label = Label.new()
+	compact_stone_label.text = "🪨 25"
+	compact_stone_label.add_theme_font_size_override("font_size", 12)
+	tl_hbox.add_child(compact_stone_label)
+
+	compact_crystal_label = Label.new()
+	compact_crystal_label.text = "💎 20"
+	compact_crystal_label.add_theme_font_size_override("font_size", 12)
+	tl_hbox.add_child(compact_crystal_label)
+
+	compact_relic_label = Label.new()
+	compact_relic_label.text = "🏺 0/3"
+	compact_relic_label.visible = false
+	compact_relic_label.add_theme_color_override("font_color", Color(0.38, 0.94, 0.98))
+	compact_relic_label.add_theme_font_size_override("font_size", 12)
+	tl_hbox.add_child(compact_relic_label)
+
+	# 2. Top-Right Floating Cluster: 3 minimal icon buttons (🏰 [H], 📖 [Tab], ⚙️ [O])
+	top_right_cluster = PanelContainer.new()
+	top_right_cluster.name = "TopRightCluster"
+	top_right_cluster.anchor_left = 1.0
+	top_right_cluster.anchor_right = 1.0
+	top_right_cluster.anchor_top = 0.0
+	top_right_cluster.anchor_bottom = 0.0
+	top_right_cluster.offset_left = -210
+	top_right_cluster.offset_right = -12
+	top_right_cluster.offset_top = 10
+	top_right_cluster.offset_bottom = 44
+	var tr_style := _make_panel_style(Color(0.05, 0.08, 0.12, 0.72), Color(0.90, 0.63, 0.27, 0.42), 18, 1)
+	tr_style.content_margin_left = 8
+	tr_style.content_margin_right = 8
+	tr_style.content_margin_top = 3
+	tr_style.content_margin_bottom = 3
+	top_right_cluster.add_theme_stylebox_override("panel", tr_style)
+	root_control.add_child(top_right_cluster)
+
+	var tr_hbox := HBoxContainer.new()
+	tr_hbox.alignment = BoxContainer.ALIGNMENT_END
+	tr_hbox.add_theme_constant_override("separation", 6)
+	top_right_cluster.add_child(tr_hbox)
+
+	top_right_bastion_btn = Button.new()
+	top_right_bastion_btn.text = "🏰 [H]"
+	top_right_bastion_btn.tooltip_text = "Bastion Architect [H]"
+	top_right_bastion_btn.pressed.connect(func() -> void: toggle_bastion_modal())
+	tr_hbox.add_child(top_right_bastion_btn)
+
+	top_right_codex_btn = Button.new()
+	top_right_codex_btn.text = "📖 [Tab]"
+	top_right_codex_btn.tooltip_text = "Phylogenetic Codex [Tab]"
+	top_right_codex_btn.pressed.connect(func() -> void: toggle_codex_modal())
+	tr_hbox.add_child(top_right_codex_btn)
+
+	top_right_settings_btn = Button.new()
+	top_right_settings_btn.text = "⚙️ [O]"
+	top_right_settings_btn.tooltip_text = "Settings & Advanced Telemetry [O]"
+	top_right_settings_btn.pressed.connect(func() -> void: toggle_settings_modal())
+	tr_hbox.add_child(top_right_settings_btn)
+
+	# 3. Top-Right Compact Circular Minimap (`130x130px` docked below the 3 icon buttons)
+	top_right_minimap_panel = PanelContainer.new()
+	top_right_minimap_panel.name = "TopRightMinimapPanel"
+	top_right_minimap_panel.anchor_left = 1.0
+	top_right_minimap_panel.anchor_right = 1.0
+	top_right_minimap_panel.anchor_top = 0.0
+	top_right_minimap_panel.anchor_bottom = 0.0
+	top_right_minimap_panel.offset_left = -146
+	top_right_minimap_panel.offset_right = -12
+	top_right_minimap_panel.offset_top = 50
+	top_right_minimap_panel.offset_bottom = 184
+	var mm_style := _make_panel_style(Color(0.03, 0.07, 0.11, 0.68), Color(0.90, 0.63, 0.27, 0.50), 67, 1)
+	mm_style.content_margin_left = 2
+	mm_style.content_margin_right = 2
+	mm_style.content_margin_top = 2
+	mm_style.content_margin_bottom = 2
+	top_right_minimap_panel.add_theme_stylebox_override("panel", mm_style)
+	root_control.add_child(top_right_minimap_panel)
+
+	top_right_minimap_canvas = MinimapCanvas.new(self, Vector2(130, 130), true)
+	top_right_minimap_canvas.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	top_right_minimap_canvas.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	top_right_minimap_panel.add_child(top_right_minimap_canvas)
 
 
 func _build_top_bar() -> void:
 	top_bar_panel = PanelContainer.new()
 	top_bar_panel.name = "TopBarPanel"
+	top_bar_panel.visible = show_advanced_telemetry
 	top_bar_panel.anchor_left = 0.0
 	top_bar_panel.anchor_right = 1.0
 	top_bar_panel.anchor_top = 0.0
@@ -561,27 +784,35 @@ func _build_top_bar() -> void:
 
 
 func _build_onboarding_and_alert_banners() -> void:
-	# 1. 7-Act Onboarding Banner with Nano Banana Character Portrait
+	# 1. Sleek 1-Line Compact Onboarding Toast (`max-width: 520px`, `padding: 8px 14px`) with [x] Dismiss
 	onboarding_panel = PanelContainer.new()
 	onboarding_panel.name = "OnboardingBanner"
-	onboarding_panel.anchor_left = 0.21
-	onboarding_panel.anchor_right = 0.79
+	onboarding_panel.anchor_left = 0.5
+	onboarding_panel.anchor_right = 0.5
 	onboarding_panel.anchor_top = 0.0
 	onboarding_panel.anchor_bottom = 0.0
-	onboarding_panel.offset_top = 58
-	onboarding_panel.offset_bottom = 172
-	onboarding_panel.add_theme_stylebox_override(
-		"panel",
-		_make_panel_style(Color(0.06, 0.10, 0.15, 0.93), Color(0.92, 0.70, 0.28, 0.82), 10, 2)
-	)
+	onboarding_panel.offset_left = -260
+	onboarding_panel.offset_right = 260
+	onboarding_panel.offset_top = 10
+	onboarding_panel.offset_bottom = 58
+	var ob_style := _make_panel_style(Color(0.05, 0.09, 0.14, 0.78), Color(0.92, 0.70, 0.28, 0.55), 22, 1)
+	ob_style.content_margin_left = 14
+	ob_style.content_margin_right = 14
+	ob_style.content_margin_top = 6
+	ob_style.content_margin_bottom = 6
+	onboarding_panel.add_theme_stylebox_override("panel", ob_style)
 	root_control.add_child(onboarding_panel)
 
+	var ob_outer_vbox := VBoxContainer.new()
+	ob_outer_vbox.add_theme_constant_override("separation", 4)
+	onboarding_panel.add_child(ob_outer_vbox)
+
 	var ob_hbox := HBoxContainer.new()
-	ob_hbox.add_theme_constant_override("separation", 12)
-	onboarding_panel.add_child(ob_hbox)
+	ob_hbox.add_theme_constant_override("separation", 8)
+	ob_outer_vbox.add_child(ob_hbox)
 
 	onboarding_portrait_rect = TextureRect.new()
-	onboarding_portrait_rect.custom_minimum_size = Vector2(78, 78)
+	onboarding_portrait_rect.custom_minimum_size = Vector2(36, 36)
 	onboarding_portrait_rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	onboarding_portrait_rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
 	var default_portrait := _load_portrait_texture("res://assets/portraits/aldric_neutral.png")
@@ -589,10 +820,49 @@ func _build_onboarding_and_alert_banners() -> void:
 		onboarding_portrait_rect.texture = default_portrait
 	ob_hbox.add_child(onboarding_portrait_rect)
 
-	var ob_vbox := VBoxContainer.new()
-	ob_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	ob_vbox.add_theme_constant_override("separation", 3)
-	ob_hbox.add_child(ob_vbox)
+	onboarding_compact_label = Label.new()
+	onboarding_compact_label.text = "Act 1/7: Reach the Golden Beacon near the Bastion (WASD)"
+	onboarding_compact_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	onboarding_compact_label.clip_text = true
+	onboarding_compact_label.add_theme_color_override("font_color", Color(0.98, 0.95, 0.86))
+	onboarding_compact_label.add_theme_font_size_override("font_size", 12)
+	ob_hbox.add_child(onboarding_compact_label)
+
+	onboarding_voice_btn = Button.new()
+	onboarding_voice_btn.text = "🔈"
+	onboarding_voice_btn.tooltip_text = "Replay Act Voiceover"
+	onboarding_voice_btn.pressed.connect(func() -> void:
+		if is_instance_valid(audio_director) and audio_director.has_method("play_voice"):
+			var act_d: Dictionary = GameDesignData.get_onboarding_act(current_onboarding_act, current_language)
+			audio_director.call("play_voice", String(act_d.get("voice_key", "act1_aldric")), true)
+		replay_act_voice_requested.emit(current_onboarding_act)
+	)
+	ob_hbox.add_child(onboarding_voice_btn)
+
+	onboarding_next_btn = Button.new()
+	onboarding_next_btn.text = "[N]"
+	onboarding_next_btn.tooltip_text = "Next Onboarding Act [N]"
+	onboarding_next_btn.pressed.connect(func() -> void:
+		if is_instance_valid(main_game) and main_game.has_method("advance_onboarding_act"):
+			main_game.call("advance_onboarding_act")
+		next_onboarding_act_requested.emit()
+	)
+	ob_hbox.add_child(onboarding_next_btn)
+
+	onboarding_dismiss_btn = Button.new()
+	onboarding_dismiss_btn.text = "×"
+	onboarding_dismiss_btn.tooltip_text = "Dismiss Tutorial Banner"
+	onboarding_dismiss_btn.pressed.connect(func() -> void:
+		onboarding_dismissed_by_user = true
+		onboarding_panel.visible = false
+	)
+	ob_hbox.add_child(onboarding_dismiss_btn)
+
+	# Detailed telemetry sub-box (hidden by default in Clean HUD mode)
+	onboarding_telemetry_details_box = VBoxContainer.new()
+	onboarding_telemetry_details_box.visible = show_advanced_telemetry
+	onboarding_telemetry_details_box.add_theme_constant_override("separation", 2)
+	ob_outer_vbox.add_child(onboarding_telemetry_details_box)
 
 	var ob_top_row := HBoxContainer.new()
 	ob_top_row.add_theme_constant_override("separation", 8)
@@ -608,43 +878,24 @@ func _build_onboarding_and_alert_banners() -> void:
 	onboarding_speaker_label.add_theme_font_size_override("font_size", 11)
 	onboarding_speaker_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	ob_top_row.add_child(onboarding_speaker_label)
-
-	onboarding_voice_btn = Button.new()
-	onboarding_voice_btn.text = "🔈 Voice"
-	onboarding_voice_btn.pressed.connect(func() -> void:
-		if is_instance_valid(audio_director) and audio_director.has_method("play_voice"):
-			var act_d: Dictionary = GameDesignData.get_onboarding_act(current_onboarding_act, current_language)
-			audio_director.call("play_voice", String(act_d.get("voice_key", "act1_aldric")), true)
-		replay_act_voice_requested.emit(current_onboarding_act)
-	)
-	ob_top_row.add_child(onboarding_voice_btn)
-
-	onboarding_next_btn = Button.new()
-	onboarding_next_btn.text = "Next Act [N] ➔"
-	onboarding_next_btn.pressed.connect(func() -> void:
-		if is_instance_valid(main_game) and main_game.has_method("advance_onboarding_act"):
-			main_game.call("advance_onboarding_act")
-		next_onboarding_act_requested.emit()
-	)
-	ob_top_row.add_child(onboarding_next_btn)
-	ob_vbox.add_child(ob_top_row)
+	onboarding_telemetry_details_box.add_child(ob_top_row)
 
 	onboarding_title_label = Label.new()
 	onboarding_title_label.text = "Act 1 — Awakening at the Bastion & Bearings"
 	onboarding_title_label.add_theme_color_override("font_color", Color(1.0, 0.95, 0.82))
-	onboarding_title_label.add_theme_font_size_override("font_size", 14)
-	ob_vbox.add_child(onboarding_title_label)
+	onboarding_title_label.add_theme_font_size_override("font_size", 13)
+	onboarding_telemetry_details_box.add_child(onboarding_title_label)
 
 	onboarding_desc_label = Label.new()
 	onboarding_desc_label.text = "Walk to the golden beacon near the campfire with WASD and rotate the tactical camera with [R] / [F] or Right-Click drag."
 	onboarding_desc_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	onboarding_desc_label.add_theme_font_size_override("font_size", 12)
-	ob_vbox.add_child(onboarding_desc_label)
+	onboarding_desc_label.add_theme_font_size_override("font_size", 11)
+	onboarding_telemetry_details_box.add_child(onboarding_desc_label)
 
 	var ob_prog_row := HBoxContainer.new()
 	ob_prog_row.add_theme_constant_override("separation", 8)
 	onboarding_obj_bar = ProgressBar.new()
-	onboarding_obj_bar.custom_minimum_size = Vector2(140, 14)
+	onboarding_obj_bar.custom_minimum_size = Vector2(140, 12)
 	onboarding_obj_bar.max_value = 100.0
 	onboarding_obj_bar.value = 35.0
 	onboarding_obj_bar.show_percentage = false
@@ -655,21 +906,23 @@ func _build_onboarding_and_alert_banners() -> void:
 	onboarding_obj_label.add_theme_color_override("font_color", Color(0.55, 0.95, 0.68))
 	onboarding_obj_label.add_theme_font_size_override("font_size", 11)
 	ob_prog_row.add_child(onboarding_obj_label)
-	ob_vbox.add_child(ob_prog_row)
+	onboarding_telemetry_details_box.add_child(ob_prog_row)
 
 	# 2. Narrative Alert Banner (below Onboarding Banner when active)
 	alert_banner_panel = PanelContainer.new()
 	alert_banner_panel.name = "AlertBannerPanel"
 	alert_banner_panel.visible = false
-	alert_banner_panel.anchor_left = 0.24
-	alert_banner_panel.anchor_right = 0.76
+	alert_banner_panel.anchor_left = 0.5
+	alert_banner_panel.anchor_right = 0.5
 	alert_banner_panel.anchor_top = 0.0
 	alert_banner_panel.anchor_bottom = 0.0
-	alert_banner_panel.offset_top = 178
-	alert_banner_panel.offset_bottom = 248
+	alert_banner_panel.offset_left = -260
+	alert_banner_panel.offset_right = 260
+	alert_banner_panel.offset_top = 64
+	alert_banner_panel.offset_bottom = 124
 	alert_banner_panel.add_theme_stylebox_override(
 		"panel",
-		_make_panel_style(Color(0.20, 0.05, 0.07, 0.94), Color(1.0, 0.32, 0.28, 0.90), 8, 2)
+		_make_panel_style(Color(0.20, 0.05, 0.07, 0.88), Color(1.0, 0.32, 0.28, 0.85), 10, 1)
 	)
 	root_control.add_child(alert_banner_panel)
 
@@ -678,7 +931,7 @@ func _build_onboarding_and_alert_banners() -> void:
 	alert_banner_panel.add_child(al_hbox)
 
 	alert_portrait_rect = TextureRect.new()
-	alert_portrait_rect.custom_minimum_size = Vector2(54, 54)
+	alert_portrait_rect.custom_minimum_size = Vector2(40, 40)
 	alert_portrait_rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	alert_portrait_rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
 	al_hbox.add_child(alert_portrait_rect)
@@ -687,12 +940,12 @@ func _build_onboarding_and_alert_banners() -> void:
 	al_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	alert_title_label = Label.new()
 	alert_title_label.add_theme_color_override("font_color", Color(1.0, 0.75, 0.32))
-	alert_title_label.add_theme_font_size_override("font_size", 13)
+	alert_title_label.add_theme_font_size_override("font_size", 12)
 	al_vbox.add_child(alert_title_label)
 
 	alert_body_label = Label.new()
 	alert_body_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	alert_body_label.add_theme_font_size_override("font_size", 12)
+	alert_body_label.add_theme_font_size_override("font_size", 11)
 	al_vbox.add_child(alert_body_label)
 	al_hbox.add_child(al_vbox)
 
@@ -705,6 +958,7 @@ func _build_onboarding_and_alert_banners() -> void:
 func _build_left_panel() -> void:
 	left_panel = PanelContainer.new()
 	left_panel.name = "LeftHUDPanel"
+	left_panel.visible = show_advanced_telemetry
 	left_panel.anchor_left = 0.0
 	left_panel.anchor_right = 0.0
 	left_panel.anchor_top = 0.0
@@ -862,6 +1116,7 @@ func _build_left_panel() -> void:
 func _build_right_panel() -> void:
 	right_panel = PanelContainer.new()
 	right_panel.name = "RightHUDPanel"
+	right_panel.visible = show_advanced_telemetry
 	right_panel.anchor_left = 1.0
 	right_panel.anchor_right = 1.0
 	right_panel.anchor_top = 0.0
@@ -970,33 +1225,35 @@ func _build_right_panel() -> void:
 func _build_bottom_stack() -> void:
 	bottom_stack = VBoxContainer.new()
 	bottom_stack.name = "BottomHUDStack"
-	bottom_stack.anchor_left = 0.18
-	bottom_stack.anchor_right = 0.82
+	bottom_stack.anchor_left = 0.25
+	bottom_stack.anchor_right = 0.75
 	bottom_stack.anchor_top = 1.0
 	bottom_stack.anchor_bottom = 1.0
-	bottom_stack.offset_top = -90
-	bottom_stack.offset_bottom = -6
-	bottom_stack.add_theme_constant_override("separation", 4)
+	bottom_stack.offset_top = -86
+	bottom_stack.offset_bottom = -10
+	bottom_stack.add_theme_constant_override("separation", 6)
 	root_control.add_child(bottom_stack)
 
-	# 1. Contextual 3D Interaction Prompt Bar
+	# 1. Contextual 3D Interaction Prompt Pill (shown when near interactable or with compact hint)
 	context_prompt_panel = PanelContainer.new()
 	context_prompt_panel.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-	context_prompt_panel.add_theme_stylebox_override(
-		"panel",
-		_make_panel_style(Color(0.08, 0.14, 0.18, 0.90), Color(0.45, 0.92, 0.68, 0.70), 6, 1)
-	)
+	var cp_style := _make_panel_style(Color(0.06, 0.11, 0.16, 0.78), Color(0.45, 0.92, 0.68, 0.55), 14, 1)
+	cp_style.content_margin_left = 12
+	cp_style.content_margin_right = 12
+	cp_style.content_margin_top = 4
+	cp_style.content_margin_bottom = 4
+	context_prompt_panel.add_theme_stylebox_override("panel", cp_style)
 	context_prompt_label = Label.new()
-	context_prompt_label.text = "🌲 Move near a Resource, Survivor Cage, or Relic Monolith and press [E] (Rotate camera: [R]/[F])"
+	context_prompt_label.text = "🌲 [E] Interact / Harvest"
 	context_prompt_label.add_theme_color_override("font_color", Color(0.85, 0.98, 0.88))
-	context_prompt_label.add_theme_font_size_override("font_size", 12)
+	context_prompt_label.add_theme_font_size_override("font_size", 11)
 	context_prompt_panel.add_child(context_prompt_label)
 	bottom_stack.add_child(context_prompt_panel)
 
-	# 2. 4-Slot 3D Spell Bar ([1][2][3][4] / AUTO)
+	# 2. 4-Slot Compact 46x46px 3D Spell Icons ([1][2][3][4])
 	var spell_hbox := HBoxContainer.new()
 	spell_hbox.alignment = BoxContainer.ALIGNMENT_CENTER
-	spell_hbox.add_theme_constant_override("separation", 10)
+	spell_hbox.add_theme_constant_override("separation", 8)
 	spell_slot_buttons.clear()
 
 	var default_spells := [
@@ -1008,8 +1265,10 @@ func _build_bottom_stack() -> void:
 	for i in range(4):
 		var slot_idx: int = i
 		var spell_btn := Button.new()
-		spell_btn.custom_minimum_size = Vector2(155, 32)
-		spell_btn.text = "%s [%d] %s Lv.1" % [default_spells[i]["icon"], i + 1, default_spells[i]["en"]]
+		spell_btn.custom_minimum_size = Vector2(46, 46)
+		spell_btn.text = "%s\n[%d]" % [default_spells[i]["icon"], i + 1]
+		spell_btn.tooltip_text = "%s [%d]" % [default_spells[i]["en"], i + 1]
+		spell_btn.add_theme_font_size_override("font_size", 11)
 		spell_btn.pressed.connect(func() -> void:
 			if is_instance_valid(player_ref) and player_ref.has_method("cast_spell_slot"):
 				player_ref.call("cast_spell_slot", slot_idx)
@@ -1019,8 +1278,9 @@ func _build_bottom_stack() -> void:
 		spell_slot_buttons.append(spell_btn)
 	bottom_stack.add_child(spell_hbox)
 
-	# 3. Hotkey Reference Bar
+	# 3. Hotkey Reference Bar (hidden by default in Clean HUD mode)
 	hotkey_bar_label = Label.new()
+	hotkey_bar_label.visible = show_advanced_telemetry
 	hotkey_bar_label.horizontal_alignment = HorizontalAlignment.HORIZONTAL_ALIGNMENT_CENTER
 	hotkey_bar_label.add_theme_color_override("font_color", Color(0.78, 0.84, 0.90))
 	hotkey_bar_label.add_theme_font_size_override("font_size", 11)
@@ -1364,6 +1624,33 @@ func _render_settings_modal() -> void:
 		_render_settings_modal()
 	)
 	toggles_grid.add_child(g_btn)
+
+	var telemetry_btn := Button.new()
+	telemetry_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	telemetry_btn.text = (
+		tr_ui("📊 Advanced Telemetry Panels: ON", "📊 Panneaux Télémétrie Avancée : ACTIVÉS")
+		if show_advanced_telemetry
+		else tr_ui("📊 Advanced Telemetry Panels: OFF (Clean HUD Default)", "📊 Panneaux Télémétrie Avancée : MASQUÉS (HUD Épuré)")
+	)
+	telemetry_btn.pressed.connect(func() -> void:
+		toggle_advanced_telemetry()
+		_render_settings_modal()
+	)
+	toggles_grid.add_child(telemetry_btn)
+
+	var restore_ob_btn := Button.new()
+	restore_ob_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	restore_ob_btn.text = (
+		tr_ui("📜 Restore Tutorial Toast Banner", "📜 Réafficher la Bannière Tutoriel")
+		if onboarding_dismissed_by_user
+		else tr_ui("📜 Tutorial Toast: Visible (Click [×] to hide)", "📜 Bannière Tutoriel : Visible ([×] pour masquer)")
+	)
+	restore_ob_btn.pressed.connect(func() -> void:
+		onboarding_dismissed_by_user = not onboarding_dismissed_by_user
+		_apply_clean_hud_visibility()
+		_render_settings_modal()
+	)
+	toggles_grid.add_child(restore_ob_btn)
 
 	settings_body_box.add_child(toggles_grid)
 
@@ -1798,13 +2085,24 @@ func update_onboarding_act_ui(act_data: Dictionary) -> void:
 	onboarding_speaker_label.text = "%s — %s %s" % [spk_name, spk_title, ("(%s)" % emo if not emo.is_empty() else "")]
 	onboarding_title_label.text = String(act_data.get("title", ""))
 	onboarding_desc_label.text = String(act_data.get("instruction_text", act_data.get("instruction", act_data.get("quote", ""))))
-	onboarding_obj_label.text = "🎯 %s" % String(act_data.get("objective", act_data.get("key_hints", "")))
+	var obj_str: String = String(act_data.get("objective", act_data.get("key_hints", act_data.get("title", ""))))
+	onboarding_obj_label.text = "🎯 %s" % obj_str
 	onboarding_obj_bar.value = clampf(float(current_onboarding_act) / float(maxi(1, total_acts)) * 100.0, 14.0, 100.0)
+
+	if is_instance_valid(onboarding_compact_label):
+		var act_prefix: String = tr_ui(
+			"Act %d/%d:" % [current_onboarding_act, total_acts],
+			"Acte %d/%d :" % [current_onboarding_act, total_acts]
+		)
+		var short_obj: String = obj_str if not obj_str.is_empty() else String(act_data.get("title", ""))
+		onboarding_compact_label.text = "%s %s" % [act_prefix, short_obj]
 
 	var p_path: String = String(act_data.get("portrait_path", "res://assets/portraits/aldric_neutral.png"))
 	var tex := _load_portrait_texture(p_path)
 	if tex != null:
 		onboarding_portrait_rect.texture = tex
+
+	onboarding_panel.visible = not onboarding_dismissed_by_user
 
 
 ## ============================================================================
@@ -1838,9 +2136,9 @@ func refresh_language(lang: String = "") -> void:
 	if is_instance_valid(reintroduce_prey_btn):
 		reintroduce_prey_btn.text = tr_ui("🌿 +Prey", "🌿 +Gibier")
 	if is_instance_valid(onboarding_voice_btn):
-		onboarding_voice_btn.text = tr_ui("🔈 Voice", "🔈 Voix")
+		onboarding_voice_btn.text = "🔈" if clean_hud_mode else tr_ui("🔈 Voice", "🔈 Voix")
 	if is_instance_valid(onboarding_next_btn):
-		onboarding_next_btn.text = tr_ui("Next Act [N] ➔", "Acte Suiv. [N] ➔")
+		onboarding_next_btn.text = "[N]" if clean_hud_mode else tr_ui("Next Act [N] ➔", "Acte Suiv. [N] ➔")
 
 	if is_instance_valid(guardian_section_title):
 		guardian_section_title.text = tr_ui("🛡️ GUARDIAN & RESOURCES", "🛡️ GARDIEN & RESSOURCES")
@@ -1886,14 +2184,17 @@ func refresh_language(lang: String = "") -> void:
 			"[ZQSD/WASD] Déplacer · [R/F] Caméra · [E] Récolter/Interagir · [1-4] Sorts · [C] Auto/Actif · [H] Bastion · [K] Armes · [V] Bouclier · [Tab] Codex · [O] Paramètres/Langue · [J] Blender .glb"
 		)
 
-	# Refresh 4 spell slot labels
+	# Refresh 4 compact 46x46px spell slot icons
 	var spells_cat: Array = GameDesignData.get_spells_catalog(current_language)
 	for i in range(mini(spell_slot_buttons.size(), spells_cat.size())):
 		var sp: Dictionary = spells_cat[i]
-		spell_slot_buttons[i].text = "%s [%d] %s" % [
+		spell_slot_buttons[i].text = "%s\n[%d]" % [
 			String(sp.get("icon", "⚡")),
-			i + 1,
-			String(sp.get("name", "Spell"))
+			i + 1
+		]
+		spell_slot_buttons[i].tooltip_text = "%s [%d]" % [
+			String(sp.get("name", "Spell")),
+			i + 1
 		]
 
 	# Refresh onboarding banner in current language
@@ -1958,26 +2259,46 @@ func update_hud(state: Dictionary) -> void:
 		else tr_ui("🦌 Prey: %d" % prey_pop, "🦌 Gibier : %d" % prey_pop)
 	)
 
-	# 2. Guardian & Bastion Vitals + Resources
+	# 2. Guardian & Bastion Vitals + Resources (updates both Clean HUD Top-Left Cluster and Telemetry Left Panel)
 	var hp: int = int(round(float(state.get("player_hp", 160.0))))
 	var max_hp: int = maxi(1, int(round(float(state.get("player_max_hp", 160.0)))))
 	hp_bar.max_value = float(max_hp)
 	hp_bar.value = float(hp)
 	hp_value_label.text = tr_ui("❤️ HP: %d/%d" % [hp, max_hp], "❤️ PV : %d/%d" % [hp, max_hp])
 
+	if is_instance_valid(compact_hp_bar):
+		compact_hp_bar.max_value = float(max_hp)
+		compact_hp_bar.value = float(hp)
+	if is_instance_valid(compact_hp_label):
+		compact_hp_label.text = "❤️ %d/%d" % [hp, max_hp]
+
 	var bhp: int = int(round(float(state.get("bastion_hp", 500.0))))
 	var bmax_hp: int = maxi(1, int(round(float(state.get("bastion_max_hp", 500.0)))))
 	bastion_hp_bar.max_value = float(bmax_hp)
 	bastion_hp_bar.value = float(bhp)
 	bastion_hp_label.text = tr_ui("🏰 Bastion: %d/%d" % [bhp, bmax_hp], "🏰 Bastion : %d/%d" % [bhp, bmax_hp])
+	if is_instance_valid(compact_bastion_label):
+		compact_bastion_label.text = "🏰 %d/%d" % [bhp, bmax_hp]
 
 	var lvl: int = int(state.get("player_level", 1))
 	xp_value_label.text = tr_ui("⭐ Lv. %d" % lvl, "⭐ Niv. %d" % lvl)
+	if is_instance_valid(compact_xp_label):
+		compact_xp_label.text = tr_ui("⭐ Lv.%d" % lvl, "⭐ Niv.%d" % lvl)
 
-	res_wood_label.text = tr_ui("🪵 Wood: %d" % int(state.get("wood", 40)), "🪵 Bois : %d" % int(state.get("wood", 40)))
-	res_stone_label.text = tr_ui("🪨 Stone: %d" % int(state.get("stone", 25)), "🪨 Pierre : %d" % int(state.get("stone", 25)))
-	res_crystal_label.text = tr_ui("💎 Crystal: %d" % int(state.get("crystal", 20)), "💎 Cristal : %d" % int(state.get("crystal", 20)))
+	var wood_val: int = int(state.get("wood", 40))
+	var stone_val: int = int(state.get("stone", 25))
+	var crystal_val: int = int(state.get("crystal", 20))
+	res_wood_label.text = tr_ui("🪵 Wood: %d" % wood_val, "🪵 Bois : %d" % wood_val)
+	res_stone_label.text = tr_ui("🪨 Stone: %d" % stone_val, "🪨 Pierre : %d" % stone_val)
+	res_crystal_label.text = tr_ui("💎 Crystal: %d" % crystal_val, "💎 Cristal : %d" % crystal_val)
 	res_biomass_label.text = tr_ui("🌿 Biomass: %d" % int(state.get("biomass", 30)), "🌿 Biomasse : %d" % int(state.get("biomass", 30)))
+
+	if is_instance_valid(compact_wood_label):
+		compact_wood_label.text = "🪵 %d" % wood_val
+	if is_instance_valid(compact_stone_label):
+		compact_stone_label.text = "🪨 %d" % stone_val
+	if is_instance_valid(compact_crystal_label):
+		compact_crystal_label.text = "💎 %d" % crystal_val
 
 	var w_id: String = String(state.get("equipped_weapon", state.get("equipped_weapon_id", "runic_steel")))
 	equipped_weapon_btn.text = tr_ui("⚔️ Weapon: %s [K]" % w_id, "⚔️ Arme : %s [K]" % w_id)
@@ -1988,6 +2309,9 @@ func update_hud(state: Dictionary) -> void:
 		"🧩 Eden Relics: %d / %d [V]" % [relics, max_relics],
 		"🧩 Reliques d'Éden : %d / %d [V]" % [relics, max_relics]
 	)
+	if is_instance_valid(compact_relic_label):
+		compact_relic_label.text = "🏺 %d/%d" % [relics, max_relics]
+		compact_relic_label.visible = relics > 0
 
 	# 3. Ecosystem & Dragon Status
 	var conway_gen: int = int(state.get("conway_generation", 1))
@@ -2048,6 +2372,8 @@ func update_hud(state: Dictionary) -> void:
 
 	if is_instance_valid(minimap_canvas):
 		minimap_canvas.set_map_state(map_dict)
+	if is_instance_valid(top_right_minimap_canvas):
+		top_right_minimap_canvas.set_map_state(map_dict)
 	var px: int = int(round(float(map_dict.get("player_x", 0.0))))
 	var pz: int = int(round(float(map_dict.get("player_z", 10.0))))
 	minimap_compass_label.text = "X: %d  Z: %d · %s" % [px, pz, tr_ui("Island #", "Île #") + str(island_num)]
