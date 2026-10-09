@@ -38,6 +38,7 @@
 import { CONFIG } from '../config.js';
 import { clamp, lerp, dist2D, angleBetween, getCardinalLabelFR } from '../utils/math.js';
 import { logger } from '../utils/logger.js';
+import { tr } from '../utils/i18n.js';
 
 /**
  * Constantes maîtresses d'équilibrage et de pacing ("Single Source of Truth" du Game Design).
@@ -593,12 +594,12 @@ export function evaluatePreyAndFoodEconomy(enemies = [], foodAmount = 60) {
   const isStarvingCamp = clampedFood <= 0.5;
 
   const statusLabelFR = isPreyCrisis
-    ? '⚠️ EFFONDREMENT DU GIBIER (Réintroduire 25 Biomasse)'
+    ? tr('⚠️ PREY COLLAPSE (Reintroduce 25 Biomass)', '⚠️ EFFONDREMENT DU GIBIER (Réintroduire 25 Biomasse)')
     : isStarvingCamp
-      ? '⚠️ FAMINE AU BASTION (Chassez 1 Biche/Lapin)'
+      ? tr('⚠️ BASTION FAMINE (Hunt 1 Deer/Rabbit)', '⚠️ FAMINE AU BASTION (Chassez 1 Biche/Lapin)')
       : isWellFed
-        ? `🍖 Rassasié (+${econ.WELL_FED_REGEN_BONUS} PV/s, +10% Vit.)`
-        : '🍖 Réserves Basses';
+        ? tr(`🍖 Well-Fed (+${econ.WELL_FED_REGEN_BONUS} HP/s, +10% Spd)`, `🍖 Rassasié (+${econ.WELL_FED_REGEN_BONUS} PV/s, +10% Vit.)`)
+        : tr('🍖 Low Rations', '🍖 Réserves Basses');
 
   return {
     deerCount,
@@ -614,6 +615,7 @@ export function evaluatePreyAndFoodEconomy(enemies = [], foodAmount = 60) {
     regenBonusPerSec: isWellFed ? econ.WELL_FED_REGEN_BONUS : 0,
     speedMultiplier: isWellFed ? econ.WELL_FED_SPEED_MULT : isStarvingCamp ? 0.92 : 1.0,
     statusLabelFR,
+    statusLabel: statusLabelFR,
   };
 }
 
@@ -1215,12 +1217,29 @@ export const DESIGNED_UPGRADES = [
   {
     id: 'patient_zero_tracker',
     legacyId: 'cleave_damage',
-    name: 'Traqueur de Patient Zéro',
-    category: 'Traque Génétique',
-    description:
+    nameEN: 'Patient Zero Tracker',
+    nameFR: 'Traqueur de Patient Zéro',
+    get name() {
+      return tr(this.nameEN, this.nameFR);
+    },
+    categoryEN: 'Genetic Hunt',
+    categoryFR: 'Traque Génétique',
+    get category() {
+      return tr(this.categoryEN, this.categoryFR);
+    },
+    descriptionEN:
+      '+10% sprint speed, +10% cleave damage, and +12% damage against mutations spotted by a Scout.',
+    descriptionFR:
       '+10% vitesse de course, +10% dégâts de fente et +12% dégâts contre les mutations repérées par un Éclaireur.',
+    get description() {
+      return tr(this.descriptionEN, this.descriptionFR);
+    },
     icon: '🎯',
-    counterTarget: 'Lignées Mutantes & Patients Zéro',
+    counterTargetEN: 'Mutant Lineages & Patient Zeros',
+    counterTargetFR: 'Lignées Mutantes & Patients Zéro',
+    get counterTarget() {
+      return tr(this.counterTargetEN, this.counterTargetFR);
+    },
     bonus: {
       cleaveDamageMult: 1.1,
       mutantDamageMult: 1.12,
@@ -1230,12 +1249,29 @@ export const DESIGNED_UPGRADES = [
   {
     id: 'scout_falconry',
     legacyId: 'scout_vision',
-    name: 'Fauconnerie d’Éclaireur',
-    category: 'Renseignement',
-    description:
+    nameEN: 'Scout Falconry',
+    nameFR: 'Fauconnerie d’Éclaireur',
+    get name() {
+      return tr(this.nameEN, this.nameFR);
+    },
+    categoryEN: 'Reconnaissance',
+    categoryFR: 'Renseignement',
+    get category() {
+      return tr(this.categoryEN, this.categoryFR);
+    },
+    descriptionEN:
+      '+12% Scout vision range beyond the frontier and +10% expedition & evasion speed.',
+    descriptionFR:
       '+12% portée de vision des Éclaireurs au-delà de la frontière et +10% vitesse d’expédition et d’esquive.',
+    get description() {
+      return tr(this.descriptionEN, this.descriptionFR);
+    },
     icon: '🦅',
-    counterTarget: 'Détection Précoce en Deep Wilderness',
+    counterTargetEN: 'Early Detection in Deep Wilderness',
+    counterTargetFR: 'Détection Précoce en Deep Wilderness',
+    get counterTarget() {
+      return tr(this.counterTargetEN, this.counterTargetFR);
+    },
     bonus: {
       scoutVisionMult: 1.12,
       scoutSpeedMult: 1.1,
@@ -1244,12 +1280,29 @@ export const DESIGNED_UPGRADES = [
   {
     id: 'juvenile_purge',
     legacyId: 'darwinian_purge',
-    name: 'Purge Juvénile & Terre Brûlée',
-    category: 'Écologie Conway',
-    description:
+    nameEN: 'Juvenile Purge & Scorched Earth',
+    nameFR: 'Purge Juvénile & Terre Brûlée',
+    get name() {
+      return tr(this.nameEN, this.nameFR);
+    },
+    categoryEN: 'Conway Ecology',
+    categoryFR: 'Écologie Conway',
+    get category() {
+      return tr(this.categoryEN, this.categoryFR);
+    },
+    descriptionEN:
+      'Killing a mutant or Baby monster drains 12% of its cell biomass (+12% damage vs Babies, +8% cleave damage).',
+    descriptionFR:
       'Tuer un mutant ou un Bébé monstre draine 12% de la biomasse de sa cellule (+12% dégâts contre les Bébés, +8% dégâts de fente).',
+    get description() {
+      return tr(this.descriptionEN, this.descriptionFR);
+    },
     icon: '🧬',
-    counterTarget: 'Cellules à Densité Optimale (2–5)',
+    counterTargetEN: 'Optimal-Density Cells (2–5)',
+    counterTargetFR: 'Cellules à Densité Optimale (2–5)',
+    get counterTarget() {
+      return tr(this.counterTargetEN, this.counterTargetFR);
+    },
     bonus: {
       cellBiomassDrainOnKill: 0.12,
       babyDamageMult: 1.12,
@@ -1259,12 +1312,29 @@ export const DESIGNED_UPGRADES = [
   {
     id: 'thorn_bulwark',
     legacyId: 'bastion_turret_power',
-    name: 'Muraille d’Épines & Balistes Runiques',
-    category: 'Bastion',
-    description:
+    nameEN: 'Thorn Bulwark & Runic Ballistas',
+    nameFR: 'Muraille d’Épines & Balistes Runiques',
+    get name() {
+      return tr(this.nameEN, this.nameFR);
+    },
+    categoryEN: 'Bastion',
+    categoryFR: 'Bastion',
+    get category() {
+      return tr(this.categoryEN, this.categoryFR);
+    },
+    descriptionEN:
+      '+60 Bastion HP, +12% Watchtower damage, and reflects 6 thorn damage to starving migrating packs.',
+    descriptionFR:
       '+60 PV au Bastion, +12% dégâts des Tours de Guet et renvoie 6 dégâts d’épines aux meutes affamées en migration.',
+    get description() {
+      return tr(this.descriptionEN, this.descriptionFR);
+    },
     icon: '🏰',
-    counterTarget: 'Migrations de Famine (Surpopulation > 6)',
+    counterTargetEN: 'Famine Migrations (Overpopulation > 6)',
+    counterTargetFR: 'Migrations de Famine (Surpopulation > 6)',
+    get counterTarget() {
+      return tr(this.counterTargetEN, this.counterTargetFR);
+    },
     bonus: {
       turretDamageMult: 1.12,
       bastionHpBonus: 60,
@@ -1274,12 +1344,29 @@ export const DESIGNED_UPGRADES = [
   {
     id: 'pyrophage_blade',
     legacyId: 'fire_resist',
-    name: 'Lame Pyrophage & Égide Cryo',
-    category: 'Contre-Mutation',
-    description:
+    nameEN: 'Pyrophage Blade & Cryo Aegis',
+    nameFR: 'Lame Pyrophage & Égide Cryo',
+    get name() {
+      return tr(this.nameEN, this.nameFR);
+    },
+    categoryEN: 'Counter-Mutation',
+    categoryFR: 'Contre-Mutation',
+    get category() {
+      return tr(this.categoryEN, this.categoryFR);
+    },
+    descriptionEN:
+      'Reduces elemental damage by 8% (Pyroclastic Gland, Venom, Frost), widens cleave arc by +0.5m, and +8% damage.',
+    descriptionFR:
       'Réduit de 8% les dégâts élémentaires (Glande Pyroclastique, Venin, Givre), élargit l’arc de fente de +0.5m et +8% dégâts.',
+    get description() {
+      return tr(this.descriptionEN, this.descriptionFR);
+    },
     icon: '🛡️',
-    counterTarget: 'Troll de Feu & Dragons Volcaniques',
+    counterTargetEN: 'Fire Trolls & Volcanic Dragons',
+    counterTargetFR: 'Troll de Feu & Dragons Volcaniques',
+    get counterTarget() {
+      return tr(this.counterTargetEN, this.counterTargetFR);
+    },
     bonus: {
       damageReduction: 0.08,
       cleaveRangeAdd: 0.5,
@@ -1289,12 +1376,29 @@ export const DESIGNED_UPGRADES = [
   {
     id: 'strider_boots',
     legacyId: 'move_speed',
-    name: 'Bottes d’Expédition Véloce',
-    category: 'Mobilité',
-    description:
+    nameEN: 'Swift Expedition Boots',
+    nameFR: 'Bottes d’Expédition Véloce',
+    get name() {
+      return tr(this.nameEN, this.nameFR);
+    },
+    categoryEN: 'Mobility',
+    categoryFR: 'Mobilité',
+    get category() {
+      return tr(this.categoryEN, this.categoryFR);
+    },
+    descriptionEN:
+      '+8% permanent movement speed and -15% dash cooldown to cross the island before an Eco-Tick.',
+    descriptionFR:
       '+8% vitesse de déplacement permanente et réduction de 15% du temps de recharge d’esquive pour traverser l’île avant un Eco-Tick.',
+    get description() {
+      return tr(this.descriptionEN, this.descriptionFR);
+    },
     icon: '🥾',
-    counterTarget: 'Course contre le Compte à Rebours Eco-Tick',
+    counterTargetEN: 'Race Against the Eco-Tick Countdown',
+    counterTargetFR: 'Course contre le Compte à Rebours Eco-Tick',
+    get counterTarget() {
+      return tr(this.counterTargetEN, this.counterTargetFR);
+    },
     bonus: {
       speedMult: 1.08,
       dashCooldownMult: 0.85,
@@ -1303,12 +1407,29 @@ export const DESIGNED_UPGRADES = [
   {
     id: 'amber_blood_vigor',
     legacyId: 'max_hp_regen',
-    name: 'Sang d’Ambre Régénérant',
-    category: 'Survie',
-    description:
+    nameEN: 'Regenerating Amber Blood',
+    nameFR: 'Sang d’Ambre Régénérant',
+    get name() {
+      return tr(this.nameEN, this.nameFR);
+    },
+    categoryEN: 'Survival',
+    categoryFR: 'Survie',
+    get category() {
+      return tr(this.categoryEN, this.categoryFR);
+    },
+    descriptionEN:
+      '+15 Max HP, instant heal for 25 HP, and +1.0 HP/s passive regeneration during deep wilderness expeditions.',
+    descriptionFR:
       '+15 PV Maximum, soin immédiat de 25 PV et régénération passive de +1.0 PV/s lors des expéditions lointaines.',
+    get description() {
+      return tr(this.descriptionEN, this.descriptionFR);
+    },
     icon: '❤️',
-    counterTarget: 'Guerre d’Usure en Terres Sauvages',
+    counterTargetEN: 'War of Attrition in Deep Wilderness',
+    counterTargetFR: 'Guerre d’Usure en Terres Sauvages',
+    get counterTarget() {
+      return tr(this.counterTargetEN, this.counterTargetFR);
+    },
     bonus: {
       maxHpFlat: 15,
       healInstant: 25,

@@ -23,6 +23,7 @@
  */
 
 import { logger } from '../utils/logger.js';
+import { getLanguage, tr } from '../utils/i18n.js';
 
 /**
  * Direction Artistique (DA) unifiée utilisée pour la génération Nano Banana des 10 portraits.
@@ -427,17 +428,22 @@ export const TUTORIAL_ACT_DIALOGUES = Object.freeze({
     actNumber: 1,
     speakerId: 'aldric',
     speaker: 'Aldric',
-    speakerTitle: 'Maître Biologiste & Forgeron Runique',
+    speakerTitleEN: 'Master Biologist & Runic Blacksmith',
+    speakerTitleFR: 'Maître Biologiste & Forgeron Runique',
     emotion: 'neutral',
-    emotionLabel: '🧭 Mentor Bienveillant',
+    emotionLabelEN: '🧭 Benevolent Mentor',
+    emotionLabelFR: '🧭 Mentor Bienveillant',
     portraitUrl: PORTRAIT_ASSETS.aldric_neutral,
     secondaryExpressionUrl: PORTRAIT_ASSETS.aldric_scholar,
     specimenPortraitUrl: null,
     themeColor: '#e2b76b',
     simagreeClass: SIMAGREE_ANIMATION_CLASSES.TALK_BOUNCE,
     voiceAudioKey: 'act1_aldric',
-    ttsUrl: '/assets/audio/tts/act1_aldric.wav',
-    quote:
+    ttsUrlEN: '/assets/audio/tts/en/act1_aldric.wav',
+    ttsUrlFR: '/assets/audio/tts/act1_aldric.wav',
+    quoteEN:
+      '"Welcome to the Bastion Sanctuary, Guardian. The ecosystem around us is frozen for now. Walk to the golden beacon to the South and test your tactical camera."',
+    quoteFR:
       "« Bienvenue au Sanctuaire du Bastion, Gardien. L'écosystème autour de nous est figé pour l'instant. Marche jusqu'à la balise dorée au Sud et ajuste ta caméra. »",
   }),
 
@@ -445,29 +451,36 @@ export const TUTORIAL_ACT_DIALOGUES = Object.freeze({
     actNumber: 2,
     speakerId: 'aldric',
     speaker: 'Aldric',
-    speakerTitle: 'Maître Biologiste & Forgeron Runique',
+    speakerTitleEN: 'Master Biologist & Runic Blacksmith',
+    speakerTitleFR: 'Maître Biologiste & Forgeron Runique',
     emotion: 'combat',
-    emotionLabel: '😤 Posture de Combat',
+    emotionLabelEN: '😤 Battle Stance',
+    emotionLabelFR: '😤 Posture de Combat',
     portraitUrl: PORTRAIT_ASSETS.aldric_combat,
     secondaryExpressionUrl: PORTRAIT_ASSETS.aldric_neutral,
     specimenPortraitUrl: null,
     themeColor: '#f59e0b',
     simagreeClass: SIMAGREE_ANIMATION_CLASSES.BATTLE_SHAKE,
     voiceAudioKey: 'act2_aldric',
-    ttsUrl: '/assets/audio/tts/act2_aldric.wav',
-    quote:
+    ttsUrlEN: '/assets/audio/tts/en/act2_aldric.wav',
+    ttsUrlFR: '/assets/audio/tts/act2_aldric.wav',
+    quoteEN:
+      '"A Stray Goblin and a Marauder Orc are approaching! Strike them with your runic greatsword, dash with Shift, and choose your first spell at level two."',
+    quoteFR:
       '« Un Gobelin égaré puis un Orc maraudeur approchent ! Frappe-les avec ton épée runique, esquive avec Shift, et choisis ton premier sort au niveau deux. »',
     subStepOverrides: Object.freeze({
       pick_first_upgrade: {
         emotion: 'scholar',
-        emotionLabel: '🧐 Maîtrise Runique',
+        emotionLabelEN: '🧐 Runic Mastery',
+        emotionLabelFR: '🧐 Maîtrise Runique',
         portraitUrl: PORTRAIT_ASSETS.aldric_scholar,
         secondaryExpressionUrl: PORTRAIT_ASSETS.aldric_neutral,
         simagreeClass: SIMAGREE_ANIMATION_CLASSES.SCHOLAR_NOD,
       },
       2: {
         emotion: 'scholar',
-        emotionLabel: '🧐 Maîtrise Runique',
+        emotionLabelEN: '🧐 Runic Mastery',
+        emotionLabelFR: '🧐 Maîtrise Runique',
         portraitUrl: PORTRAIT_ASSETS.aldric_scholar,
         secondaryExpressionUrl: PORTRAIT_ASSETS.aldric_neutral,
         simagreeClass: SIMAGREE_ANIMATION_CLASSES.SCHOLAR_NOD,
@@ -479,22 +492,28 @@ export const TUTORIAL_ACT_DIALOGUES = Object.freeze({
     actNumber: 3,
     speakerId: 'aldric',
     speaker: 'Aldric',
-    speakerTitle: 'Maître Biologiste & Forgeron Runique',
+    speakerTitleEN: 'Master Biologist & Runic Blacksmith',
+    speakerTitleFR: 'Maître Biologiste & Forgeron Runique',
     emotion: 'scholar',
-    emotionLabel: '🧐 Analyse Biologique & Récolte',
+    emotionLabelEN: '🧐 Biological Analysis & Harvest',
+    emotionLabelFR: '🧐 Analyse Biologique & Récolte',
     portraitUrl: PORTRAIT_ASSETS.aldric_scholar,
     secondaryExpressionUrl: PORTRAIT_ASSETS.aldric_neutral,
     specimenPortraitUrl: null,
     themeColor: '#48c78e',
     simagreeClass: SIMAGREE_ANIMATION_CLASSES.SCHOLAR_NOD,
     voiceAudioKey: 'act3_aldric',
-    ttsUrl: '/assets/audio/tts/act3_aldric.wav',
-    quote:
+    ttsUrlEN: '/assets/audio/tts/en/act3_aldric.wav',
+    ttsUrlFR: '/assets/audio/tts/act3_aldric.wav',
+    quoteEN:
+      '"Slay that wolf, free the survivor locked in the South-East cage with key E, then harvest wood or crystal for our camp."',
+    quoteFR:
       '« Élimine ce loup, libère le survivant enfermé dans la cage au Sud-Est avec la touche E, puis récolte du bois ou du cristal pour notre camp. »',
     subStepOverrides: Object.freeze({
       rescue_cage_1: {
         emotion: 'combat',
-        emotionLabel: '⚔️ Sauvetage Tactique',
+        emotionLabelEN: '⚔️ Tactical Rescue',
+        emotionLabelFR: '⚔️ Sauvetage Tactique',
         portraitUrl: PORTRAIT_ASSETS.aldric_combat,
         secondaryExpressionUrl: PORTRAIT_ASSETS.aldric_scholar,
         simagreeClass: SIMAGREE_ANIMATION_CLASSES.TALK_BOUNCE,
@@ -506,29 +525,36 @@ export const TUTORIAL_ACT_DIALOGUES = Object.freeze({
     actNumber: 4,
     speakerId: 'aldric',
     speaker: 'Aldric',
-    speakerTitle: 'Maître Biologiste & Forgeron Runique',
+    speakerTitleEN: 'Master Biologist & Runic Blacksmith',
+    speakerTitleFR: 'Maître Biologiste & Forgeron Runique',
     emotion: 'neutral',
-    emotionLabel: '🛡️ Maître Forgeron du Bastion',
+    emotionLabelEN: '🛡️ Master Blacksmith of the Bastion',
+    emotionLabelFR: '🛡️ Maître Forgeron du Bastion',
     portraitUrl: PORTRAIT_ASSETS.aldric_neutral,
     secondaryExpressionUrl: PORTRAIT_ASSETS.aldric_combat,
     specimenPortraitUrl: null,
     themeColor: '#e2b76b',
     simagreeClass: SIMAGREE_ANIMATION_CLASSES.TALK_BOUNCE,
     voiceAudioKey: 'act4_aldric',
-    ttsUrl: '/assets/audio/tts/act4_aldric.wav',
-    quote:
+    ttsUrlEN: '/assets/audio/tts/en/act4_aldric.wav',
+    ttsUrlFR: '/assets/audio/tts/act4_aldric.wav',
+    quoteEN:
+      '"Use our resources to build a Watchtower on the golden pad, then repel the goblin raiders charging our ramparts!"',
+    quoteFR:
       '« Utilise nos ressources pour bâtir une Tour de Guet sur le socle doré, puis repousse les pillards gobelins qui fondent sur nos remparts ! »',
     subStepOverrides: Object.freeze({
       repel_goblin_raiders: {
         emotion: 'combat',
-        emotionLabel: '😤 Défense des Remparts !',
+        emotionLabelEN: '😤 Defend the Ramparts!',
+        emotionLabelFR: '😤 Défense des Remparts !',
         portraitUrl: PORTRAIT_ASSETS.aldric_combat,
         secondaryExpressionUrl: PORTRAIT_ASSETS.aldric_neutral,
         simagreeClass: SIMAGREE_ANIMATION_CLASSES.BATTLE_SHAKE,
       },
       1: {
         emotion: 'combat',
-        emotionLabel: '😤 Défense des Remparts !',
+        emotionLabelEN: '😤 Defend the Ramparts!',
+        emotionLabelFR: '😤 Défense des Remparts !',
         portraitUrl: PORTRAIT_ASSETS.aldric_combat,
         secondaryExpressionUrl: PORTRAIT_ASSETS.aldric_neutral,
         simagreeClass: SIMAGREE_ANIMATION_CLASSES.BATTLE_SHAKE,
@@ -540,17 +566,22 @@ export const TUTORIAL_ACT_DIALOGUES = Object.freeze({
     actNumber: 5,
     speakerId: 'kaelen',
     speaker: 'Kaelen',
-    speakerTitle: 'Cheffe des Éclaireurs Hors-Frontière',
+    speakerTitleEN: 'Chief Frontier Scout',
+    speakerTitleFR: 'Cheffe des Éclaireurs Hors-Frontière',
     emotion: 'scout',
-    emotionLabel: '🦅 Reconnaissance Hors-Frontière',
+    emotionLabelEN: '🦅 Deep Wilderness Reconnaissance',
+    emotionLabelFR: '🦅 Reconnaissance Hors-Frontière',
     portraitUrl: PORTRAIT_ASSETS.kaelen_scout,
     secondaryExpressionUrl: PORTRAIT_ASSETS.kaelen_proud,
     specimenPortraitUrl: null,
     themeColor: '#3ec7e6',
     simagreeClass: SIMAGREE_ANIMATION_CLASSES.TALK_BOUNCE,
     voiceAudioKey: 'act5_kaelen',
-    ttsUrl: '/assets/audio/tts/act5_kaelen.wav',
-    quote:
+    ttsUrlEN: '/assets/audio/tts/en/act5_kaelen.wav',
+    ttsUrlFR: '/assets/audio/tts/act5_kaelen.wav',
+    quoteEN:
+      '"Thank you for freeing me! Assign a survivor to the Scout role in the left panel: we will patrol beyond the frontier to track mutations."',
+    quoteFR:
       "« Merci de m'avoir libérée ! Affecte un survivant au rôle d'Éclaireur dans le panneau gauche : nous irons patrouiller au-delà de la frontière pour traquer les mutations. »",
   }),
 
@@ -558,29 +589,36 @@ export const TUTORIAL_ACT_DIALOGUES = Object.freeze({
     actNumber: 6,
     speakerId: 'kaelen',
     speaker: 'Kaelen',
-    speakerTitle: 'Cheffe des Éclaireurs Hors-Frontière',
+    speakerTitleEN: 'Chief Frontier Scout',
+    speakerTitleFR: 'Cheffe des Éclaireurs Hors-Frontière',
     emotion: 'shocked',
-    emotionLabel: '😱 Alerte Paniquée !',
+    emotionLabelEN: '😱 Urgent Scout Alert!',
+    emotionLabelFR: '😱 Alerte Paniquée !',
     portraitUrl: PORTRAIT_ASSETS.kaelen_shocked,
     secondaryExpressionUrl: PORTRAIT_ASSETS.specimen_fire_troll,
     specimenPortraitUrl: PORTRAIT_ASSETS.specimen_fire_troll,
     themeColor: '#ef4444',
     simagreeClass: SIMAGREE_ANIMATION_CLASSES.PANIC_PULSE,
     voiceAudioKey: 'act6_kaelen',
-    ttsUrl: '/assets/audio/tts/act6_kaelen.wav',
-    quote:
+    ttsUrlEN: '/assets/audio/tts/en/act6_kaelen.wav',
+    ttsUrlFR: '/assets/audio/tts/act6_kaelen.wav',
+    quoteEN:
+      '"Priority alert! I spotted a Baby Fire Troll in the North-East! It is a Patient Zero: eliminate it quickly before it matures into an adult and reproduces!"',
+    quoteFR:
       "« Alerte prioritaire ! J'ai repéré un Bébé Troll de Feu au Nord-Est ! C'est un Patient Zéro : élimine-le vite avant qu'il ne devienne adulte et ne se reproduise ! »",
     subStepOverrides: Object.freeze({
       open_phylo_codex: {
         emotion: 'scout',
-        emotionLabel: '🧐 Rapport Phylogénétique [Tab]',
+        emotionLabelEN: '🧐 Phylogenetic Report [Tab]',
+        emotionLabelFR: '🧐 Rapport Phylogénétique [Tab]',
         portraitUrl: PORTRAIT_ASSETS.kaelen_scout,
         secondaryExpressionUrl: PORTRAIT_ASSETS.aldric_scholar,
         simagreeClass: SIMAGREE_ANIMATION_CLASSES.SCHOLAR_NOD,
       },
       1: {
         emotion: 'scout',
-        emotionLabel: '🧐 Rapport Phylogénétique [Tab]',
+        emotionLabelEN: '🧐 Phylogenetic Report [Tab]',
+        emotionLabelFR: '🧐 Rapport Phylogénétique [Tab]',
         portraitUrl: PORTRAIT_ASSETS.kaelen_scout,
         secondaryExpressionUrl: PORTRAIT_ASSETS.aldric_scholar,
         simagreeClass: SIMAGREE_ANIMATION_CLASSES.SCHOLAR_NOD,
@@ -592,55 +630,32 @@ export const TUTORIAL_ACT_DIALOGUES = Object.freeze({
     actNumber: 7,
     speakerId: 'kaelen',
     speaker: 'Kaelen',
-    speakerTitle: 'Cheffe des Éclaireurs Hors-Frontière',
+    speakerTitleEN: 'Chief Frontier Scout',
+    speakerTitleFR: 'Cheffe des Éclaireurs Hors-Frontière',
     emotion: 'proud',
-    emotionLabel: '🌟 Victoire & Éveil Darwinien',
+    emotionLabelEN: '🌟 Victory & Darwinian Awakening',
+    emotionLabelFR: '🌟 Victoire & Éveil Darwinien',
     portraitUrl: PORTRAIT_ASSETS.kaelen_proud,
     secondaryExpressionUrl: PORTRAIT_ASSETS.specimen_dragon_sovereign,
     specimenPortraitUrl: PORTRAIT_ASSETS.specimen_dragon_sovereign,
     themeColor: '#fbbf24',
     simagreeClass: SIMAGREE_ANIMATION_CLASSES.PROUD_GLOW,
     voiceAudioKey: 'act7_kaelen',
-    ttsUrl: '/assets/audio/tts/act7_kaelen.wav',
-    quote:
+    ttsUrlEN: '/assets/audio/tts/en/act7_kaelen.wav',
+    ttsUrlFR: '/assets/audio/tts/act7_kaelen.wav',
+    quoteEN:
+      '"Well done! The Darwinian ecosystem now awakens across the entire island. Beware the Dragons of the caldera: as long as we do not attack them, they leave us in peace!"',
+    quoteFR:
       "« Bien joué ! L'écosystème darwinien s'éveille maintenant sur toute l'île. Mais attention aux Dragons de la caldeira : tant qu'on ne les attaque pas, ils nous laissent en paix ! »",
   }),
 });
 
 /**
- * Retourne la présentation complète du personnage (Aldric pour les Actes 1–4, Kaelen pour les Actes 5–7),
- * son portrait principal, son portrait secondaire (pour l'alternance animée pendant la parole),
- * son badge d'émotion, sa classe d'animation CSS « simagrée », sa clé audio TTS et sa réplique.
+ * Returns the complete localized character presentation for Onboarding Acts 1–7.
  *
- * @param {number|string} [actNumber=1] - Numéro de l'acte (`1..7`) ou identifiant (`'act1'`, `'act_6_patient_zero'`).
- * @param {number|string|null} [subStep=null] - Sous-étape optionnelle (index `0..2` ou id `'kill_stray_goblin'`, etc.).
- * @returns {{
- *   actNumber: number,
- *   subStep: number|string|null,
- *   speakerId: string,
- *   speaker: string,
- *   speakerName: string,
- *   speakerTitle: string,
- *   title: string,
- *   themeColor: string,
- *   emotion: string,
- *   emotionLabel: string,
- *   portraitUrl: string,
- *   secondaryExpressionUrl: string,
- *   secondaryPortraitUrl: string,
- *   altPortraitUrl: string,
- *   specimenPortraitUrl: string|null,
- *   simagreeClass: string,
- *   animationClass: string,
- *   cssClass: string,
- *   voiceAudioKey: string,
- *   voiceKey: string,
- *   audioKey: string,
- *   ttsUrl: string,
- *   quote: string,
- *   characterQuote: string,
- *   dialogueText: string
- * }}
+ * @param {number|string} [actNumber=1]
+ * @param {number|string|null} [subStep=null]
+ * @returns {object}
  */
 export function getTutorialDialoguePresentation(actNumber = 1, subStep = null) {
   let parsedAct = 1;
@@ -662,13 +677,19 @@ export function getTutorialDialoguePresentation(actNumber = 1, subStep = null) {
       ? baseSpec.subStepOverrides[subStep]
       : null;
 
+  const speakerTitle = tr(baseSpec.speakerTitleEN, baseSpec.speakerTitleFR);
   const emotion = override?.emotion || baseSpec.emotion;
-  const emotionLabel = override?.emotionLabel || baseSpec.emotionLabel;
+  const emotionLabel = override
+    ? tr(override.emotionLabelEN, override.emotionLabelFR)
+    : tr(baseSpec.emotionLabelEN, baseSpec.emotionLabelFR);
   const portraitUrl = override?.portraitUrl || baseSpec.portraitUrl;
   const secondaryExpressionUrl =
     override?.secondaryExpressionUrl || baseSpec.secondaryExpressionUrl || portraitUrl;
   const simagreeClass = override?.simagreeClass || baseSpec.simagreeClass;
-  const quote = override?.quote || baseSpec.quote;
+  const quote = override?.quoteEN
+    ? tr(override.quoteEN, override.quoteFR)
+    : tr(baseSpec.quoteEN, baseSpec.quoteFR);
+  const ttsUrl = getLanguage() === 'fr' ? baseSpec.ttsUrlFR : baseSpec.ttsUrlEN;
 
   return {
     actNumber: parsedAct,
@@ -676,8 +697,8 @@ export function getTutorialDialoguePresentation(actNumber = 1, subStep = null) {
     speakerId: baseSpec.speakerId,
     speaker: baseSpec.speaker,
     speakerName: baseSpec.speaker,
-    speakerTitle: baseSpec.speakerTitle,
-    title: baseSpec.speakerTitle,
+    speakerTitle,
+    title: speakerTitle,
     themeColor: baseSpec.themeColor,
     emotion,
     emotionLabel,
@@ -693,7 +714,7 @@ export function getTutorialDialoguePresentation(actNumber = 1, subStep = null) {
     voiceAudioKey: baseSpec.voiceAudioKey,
     voiceKey: baseSpec.voiceAudioKey,
     audioKey: baseSpec.voiceAudioKey,
-    ttsUrl: baseSpec.ttsUrl,
+    ttsUrl,
     quote,
     characterQuote: quote,
     dialogueText: quote,
@@ -701,11 +722,16 @@ export function getTutorialDialoguePresentation(actNumber = 1, subStep = null) {
 }
 
 /**
- * Récupère un descripteur de portrait par identifiant de personnage et émotion.
+ * Alias of `getTutorialDialoguePresentation` for convenience.
+ */
+export const getOnboardingPortraitPresentation = getTutorialDialoguePresentation;
+
+/**
+ * Retrieves a portrait descriptor by character id and emotion.
  *
- * @param {'aldric'|'kaelen'|'fire_troll'|'dragon_sovereign'|'land_shark'|'giant_mole'|string} [characterId='aldric']
- * @param {'neutral'|'combat'|'scholar'|'scout'|'shocked'|'proud'|'roar'|string} [emotion='neutral']
- * @returns {Object} Descripteur de portrait avec `url`, `simagreeClass`, `emotionLabel`, etc.
+ * @param {string} [characterId='aldric']
+ * @param {string} [emotion='neutral']
+ * @returns {Object}
  */
 export function getCharacterPortrait(characterId = 'aldric', emotion = 'neutral') {
   const charEntry = CHARACTER_PORTRAITS[characterId] || CHARACTER_PORTRAITS.aldric;
@@ -720,41 +746,30 @@ export function getCharacterPortrait(characterId = 'aldric', emotion = 'neutral'
 }
 
 /**
- * Retourne la configuration visuelle et vocale pour la Bannière Centrale d'Alerte
- * (`patient_zero`, `eradicated`, `dragon_wrath`, `shark_landing`, `mole_eruption`, `prey_crisis`).
+ * Returns the localized visual and voice configuration for the Central Alert Banner
+ * (`patient_zero`, `eradicated`, `dragon_wrath`, `shark_landing`, `mole_eruption`, `prey_crisis`, `relic_found`, `island_victory`, `game_over`).
  *
- * @param {'patient_zero'|'eradicated'|'dragon_wrath'|'shark_landing'|'mole_eruption'|'prey_crisis'|string} [alertType='patient_zero']
- * @returns {{
- *   alertType: string,
- *   speaker: string,
- *   speakerTitle: string,
- *   emotionLabel: string,
- *   portraitUrl: string,
- *   secondaryExpressionUrl: string,
- *   specimenPortraitUrl: string,
- *   simagreeClass: string,
- *   specimenSimagreeClass: string,
- *   themeColor: string,
- *   voiceAudioKey: string|null,
- *   quote: string
- * }}
+ * @param {string} [alertType='patient_zero']
+ * @returns {object}
  */
 export function getAlertBannerPortraitPresentation(alertType = 'patient_zero') {
   if (alertType === 'shark_landing' || alertType === 'land_shark' || alertType === 'shark') {
     return {
       alertType: 'shark_landing',
       speaker: 'Kaelen',
-      speakerTitle: 'Cheffe des Éclaireurs Hors-Frontière',
-      emotionLabel: '🦈 DÉBARQUEMENT AMPHIBIE !',
+      speakerTitle: tr('Chief Frontier Scout', 'Cheffe des Éclaireurs Hors-Frontière'),
+      emotionLabel: tr('🦈 AMPHIBIOUS LANDING!', '🦈 DÉBARQUEMENT AMPHIBIE !'),
       portraitUrl: PORTRAIT_ASSETS.specimen_land_shark,
       secondaryExpressionUrl: PORTRAIT_ASSETS.kaelen_shocked,
       specimenPortraitUrl: PORTRAIT_ASSETS.specimen_land_shark,
       simagreeClass: SIMAGREE_ANIMATION_CLASSES.ROAR_TREMBLE,
       specimenSimagreeClass: SIMAGREE_ANIMATION_CLASSES.ROAR_TREMBLE,
       themeColor: '#0ea5e9',
-      voiceAudioKey: 'alert_patient_zero',
-      quote:
-        '« Les Requins des Abysses ont développé des pattes musclées et des branchies amphibies ! Ils sortent de la mer et débarquent sur nos plages ! »',
+      voiceAudioKey: 'alert_shark_landing',
+      quote: tr(
+        '"Deep-sea Sharks have evolved muscular legs and amphibious gills! They are emerging from the ocean onto our beaches!"',
+        '« Les Requins des Abysses ont développé des pattes musclées et des branchies amphibies ! Ils sortent de la mer et débarquent sur nos plages ! »'
+      ),
     };
   }
 
@@ -762,17 +777,19 @@ export function getAlertBannerPortraitPresentation(alertType = 'patient_zero') {
     return {
       alertType: 'mole_eruption',
       speaker: 'Kaelen',
-      speakerTitle: 'Cheffe des Éclaireurs Hors-Frontière',
-      emotionLabel: '🕳️ ÉRUPTION SOUTERRAINE !',
+      speakerTitle: tr('Chief Frontier Scout', 'Cheffe des Éclaireurs Hors-Frontière'),
+      emotionLabel: tr('🕳️ SUBTERRANEAN ERUPTION!', '🕳️ ÉRUPTION SOUTERRAINE !'),
       portraitUrl: PORTRAIT_ASSETS.specimen_giant_mole,
       secondaryExpressionUrl: PORTRAIT_ASSETS.kaelen_shocked,
       specimenPortraitUrl: PORTRAIT_ASSETS.specimen_giant_mole,
       simagreeClass: SIMAGREE_ANIMATION_CLASSES.BATTLE_SHAKE,
       specimenSimagreeClass: SIMAGREE_ANIMATION_CLASSES.BATTLE_SHAKE,
       themeColor: '#d97706',
-      voiceAudioKey: 'alert_patient_zero',
-      quote:
-        '« Le sol tremble ! Des Taupes Géantes Fouisseuses surgissent des galeries souterraines et menacent de s’hybrider avec les Trolls ! »',
+      voiceAudioKey: 'alert_mole_eruption',
+      quote: tr(
+        '"The ground is trembling! Burrowing Giant Moles are erupting from underground tunnels and threaten to hybridize with Trolls!"',
+        '« Le sol tremble ! Des Taupes Géantes Fouisseuses surgissent des galeries souterraines et menacent de s’hybrider avec les Trolls ! »'
+      ),
     };
   }
 
@@ -785,17 +802,19 @@ export function getAlertBannerPortraitPresentation(alertType = 'patient_zero') {
     return {
       alertType: 'prey_crisis',
       speaker: 'Aldric',
-      speakerTitle: 'Maître Biologiste & Forgeron Runique',
-      emotionLabel: '🦌 CRISE ÉCOLOGIQUE DU GIBIER !',
+      speakerTitle: tr('Master Biologist & Runic Blacksmith', 'Maître Biologiste & Forgeron Runique'),
+      emotionLabel: tr('🦌 ECOLOGICAL PREY CRISIS!', '🦌 CRISE ÉCOLOGIQUE DU GIBIER !'),
       portraitUrl: PORTRAIT_ASSETS.aldric_scholar,
       secondaryExpressionUrl: PORTRAIT_ASSETS.kaelen_shocked,
       specimenPortraitUrl: PORTRAIT_ASSETS.aldric_scholar,
       simagreeClass: SIMAGREE_ANIMATION_CLASSES.PANIC_PULSE,
       specimenSimagreeClass: SIMAGREE_ANIMATION_CLASSES.PANIC_PULSE,
       themeColor: '#eab308',
-      voiceAudioKey: null,
-      quote:
-        '« Attention à tes sorts de zone ! Les Biches et les Lapins ne réapparaissent pas tout seuls : s’ils s’éteignent, notre camp tombera en famine et les prédateurs affamés fondront sur le Bastion ! »',
+      voiceAudioKey: 'alert_prey_crisis',
+      quote: tr(
+        '"Watch your area spells! Deer and Rabbits do not repopulate on their own: if they go extinct, our camp will starve and hungry predators will swarm the Bastion!"',
+        '« Attention à tes sorts de zone ! Les Biches et les Lapins ne réapparaissent pas tout seuls : s’ils s’éteignent, notre camp tombera en famine et les prédateurs affamés fondront sur le Bastion ! »'
+      ),
     };
   }
 
@@ -803,8 +822,8 @@ export function getAlertBannerPortraitPresentation(alertType = 'patient_zero') {
     return {
       alertType: 'dragon_wrath',
       speaker: 'Kaelen',
-      speakerTitle: 'Cheffe des Éclaireurs Hors-Frontière',
-      emotionLabel: '🐉 COURROUX DRACONIQUE !',
+      speakerTitle: tr('Chief Frontier Scout', 'Cheffe des Éclaireurs Hors-Frontière'),
+      emotionLabel: tr('🐉 DRAGON WRATH!', '🐉 COURROUX DRACONIQUE !'),
       portraitUrl: PORTRAIT_ASSETS.specimen_dragon_sovereign,
       secondaryExpressionUrl: PORTRAIT_ASSETS.kaelen_shocked,
       specimenPortraitUrl: PORTRAIT_ASSETS.specimen_dragon_sovereign,
@@ -812,8 +831,10 @@ export function getAlertBannerPortraitPresentation(alertType = 'patient_zero') {
       specimenSimagreeClass: SIMAGREE_ANIMATION_CLASSES.ROAR_TREMBLE,
       themeColor: '#dc2626',
       voiceAudioKey: 'alert_dragon_wrath',
-      quote:
-        "« Malheur ! Tu as provoqué un Dragon Souverain ! Toute l'espèce entre en fureur et fond sur notre Bastion ! »",
+      quote: tr(
+        '"Disaster! You provoked a Sovereign Dragon! The entire species is enraged and descending upon our Bastion!"',
+        "« Malheur ! Tu as provoqué un Dragon Souverain ! Toute l'espèce entre en fureur et fond sur notre Bastion ! »"
+      ),
     };
   }
 
@@ -825,8 +846,8 @@ export function getAlertBannerPortraitPresentation(alertType = 'patient_zero') {
     return {
       alertType: 'relic_found',
       speaker: 'Aldric',
-      speakerTitle: 'Maître Biologiste & Forgeron Runique',
-      emotionLabel: '🏛️ RELIQUE D’ÉDEN ACTIVÉE !',
+      speakerTitle: tr('Master Biologist & Runic Blacksmith', 'Maître Biologiste & Forgeron Runique'),
+      emotionLabel: tr('🏛️ EDEN RELIC ACTIVATED!', '🏛️ RELIQUE D’ÉDEN ACTIVÉE !'),
       portraitUrl: PORTRAIT_ASSETS.aldric_scholar,
       secondaryExpressionUrl: PORTRAIT_ASSETS.aldric_neutral,
       specimenPortraitUrl: PORTRAIT_ASSETS.aldric_scholar,
@@ -834,8 +855,10 @@ export function getAlertBannerPortraitPresentation(alertType = 'patient_zero') {
       specimenSimagreeClass: SIMAGREE_ANIMATION_CLASSES.PROUD_GLOW,
       themeColor: '#00e5ff',
       voiceAudioKey: 'alert_relic_found',
-      quote:
-        '« Un Fragment de Relique d’Éden résonne avec le Foyer du Sanctuaire ! Réunis les trois fragments pour ériger le Dôme-Bouclier Planétaire ! »',
+      quote: tr(
+        '"An Eden Relic Fragment resonates with the Sanctuary Hearth! Unite all three fragments to raise the Planetary Shield Dome!"',
+        '« Un Fragment de Relique d’Éden résonne avec le Foyer du Sanctuaire ! Réunis les trois fragments pour ériger le Dôme-Bouclier Planétaire ! »'
+      ),
     };
   }
 
@@ -847,8 +870,8 @@ export function getAlertBannerPortraitPresentation(alertType = 'patient_zero') {
     return {
       alertType: 'island_victory',
       speaker: 'Kaelen',
-      speakerTitle: 'Cheffe des Éclaireurs Hors-Frontière',
-      emotionLabel: '🛡️ DÔME PLANÉTAIRE D’ÉDEN !',
+      speakerTitle: tr('Chief Frontier Scout', 'Cheffe des Éclaireurs Hors-Frontière'),
+      emotionLabel: tr('🛡️ EDEN PLANETARY DOME!', '🛡️ DÔME PLANÉTAIRE D’ÉDEN !'),
       portraitUrl: PORTRAIT_ASSETS.kaelen_proud,
       secondaryExpressionUrl: PORTRAIT_ASSETS.aldric_scholar,
       specimenPortraitUrl: PORTRAIT_ASSETS.kaelen_proud,
@@ -856,8 +879,10 @@ export function getAlertBannerPortraitPresentation(alertType = 'patient_zero') {
       specimenSimagreeClass: SIMAGREE_ANIMATION_CLASSES.PROUD_GLOW,
       themeColor: '#38bdf8',
       voiceAudioKey: 'alert_island_victory',
-      quote:
-        '« Les trois Reliques d’Éden sont réunies ! Le Dôme-Bouclier Planétaire protège l’île entière et pacifie les prédateurs sauvages ! »',
+      quote: tr(
+        '"All three Eden Relics are united! The Planetary Shield Dome protects the entire island and pacifies wild predators!"',
+        '« Les trois Reliques d’Éden sont réunies ! Le Dôme-Bouclier Planétaire protège l’île entière et pacifie les prédateurs sauvages ! »'
+      ),
     };
   }
 
@@ -869,8 +894,8 @@ export function getAlertBannerPortraitPresentation(alertType = 'patient_zero') {
     return {
       alertType: 'game_over',
       speaker: 'Aldric',
-      speakerTitle: 'Maître Biologiste & Forgeron Runique',
-      emotionLabel: '🕯️ REQUIEM DU SANCTUAIRE',
+      speakerTitle: tr('Master Biologist & Runic Blacksmith', 'Maître Biologiste & Forgeron Runique'),
+      emotionLabel: tr('🕯️ SANCTUARY REQUIEM', '🕯️ REQUIEM DU SANCTUAIRE'),
       portraitUrl: PORTRAIT_ASSETS.aldric_scholar,
       secondaryExpressionUrl: PORTRAIT_ASSETS.aldric_neutral,
       specimenPortraitUrl: PORTRAIT_ASSETS.aldric_scholar,
@@ -878,8 +903,10 @@ export function getAlertBannerPortraitPresentation(alertType = 'patient_zero') {
       specimenSimagreeClass: SIMAGREE_ANIMATION_CLASSES.SCHOLAR_NOD,
       themeColor: '#dc2626',
       voiceAudioKey: 'alert_gameover_requiem',
-      quote:
-        '« Même les plus grands Gardiens tombent parfois sous la loi de Darwin, mon ami. Écoute le chant du Sanctuaire : veux-tu repartir à zéro selon la règle sacrée du roguelike, ou laisser la flamme d’Éden te relever pour continuer cette expédition ? »',
+      quote: tr(
+        '"Even the greatest Guardians sometimes fall to Darwin’s law, my friend. Hear the Sanctuary’s song: will you restart from zero by the sacred roguelike rule, or let Eden’s flame raise you to continue this expedition?"',
+        '« Même les plus grands Gardiens tombent parfois sous la loi de Darwin, mon ami. Écoute le chant du Sanctuaire : veux-tu repartir à zéro selon la règle sacrée du roguelike, ou laisser la flamme d’Éden te relever pour continuer cette expédition ? »'
+      ),
     };
   }
 
@@ -887,8 +914,8 @@ export function getAlertBannerPortraitPresentation(alertType = 'patient_zero') {
     return {
       alertType: 'eradicated',
       speaker: 'Kaelen',
-      speakerTitle: 'Cheffe des Éclaireurs Hors-Frontière',
-      emotionLabel: '🌟 Lignée Éradiquée !',
+      speakerTitle: tr('Chief Frontier Scout', 'Cheffe des Éclaireurs Hors-Frontière'),
+      emotionLabel: tr('🌟 Lineage Eradicated!', '🌟 Lignée Éradiquée !'),
       portraitUrl: PORTRAIT_ASSETS.kaelen_proud,
       secondaryExpressionUrl: PORTRAIT_ASSETS.kaelen_scout,
       specimenPortraitUrl: PORTRAIT_ASSETS.specimen_fire_troll,
@@ -896,16 +923,18 @@ export function getAlertBannerPortraitPresentation(alertType = 'patient_zero') {
       specimenSimagreeClass: SIMAGREE_ANIMATION_CLASSES.PROUD_GLOW,
       themeColor: '#48c78e',
       voiceAudioKey: null,
-      quote:
-        "« Beau travail, Gardien ! Le dernier porteur a été neutralisé avant que sa mutation ne domine l'île ! »",
+      quote: tr(
+        '"Great work, Guardian! The last carrier was neutralized before its mutation could dominate the island!"',
+        "« Beau travail, Gardien ! Le dernier porteur a été neutralisé avant que sa mutation ne domine l'île ! »"
+      ),
     };
   }
 
   return {
     alertType: 'patient_zero',
     speaker: 'Kaelen',
-    speakerTitle: 'Cheffe des Éclaireurs Hors-Frontière',
-    emotionLabel: '😱 Alerte Patient Zéro !',
+    speakerTitle: tr('Chief Frontier Scout', 'Cheffe des Éclaireurs Hors-Frontière'),
+    emotionLabel: tr('😱 Patient Zero Alert!', '😱 Alerte Patient Zéro !'),
     portraitUrl: PORTRAIT_ASSETS.kaelen_shocked,
     secondaryExpressionUrl: PORTRAIT_ASSETS.specimen_fire_troll,
     specimenPortraitUrl: PORTRAIT_ASSETS.specimen_fire_troll,
@@ -913,20 +942,20 @@ export function getAlertBannerPortraitPresentation(alertType = 'patient_zero') {
     specimenSimagreeClass: SIMAGREE_ANIMATION_CLASSES.ROAR_TREMBLE,
     themeColor: '#ef4444',
     voiceAudioKey: 'alert_patient_zero',
-    quote:
-      '« Alerte Éclaireur ! Nouveau Patient Zéro mutant repéré dans les terres sauvages ! Traque-le avant le prochain cycle de reproduction ! »',
+    quote: tr(
+      '"Scout Alert! New mutant Patient Zero spotted in the deep wilderness! Hunt it down before the next breeding cycle!"',
+      '« Alerte Éclaireur ! Nouveau Patient Zéro mutant repéré dans les terres sauvages ! Traque-le avant le prochain cycle de reproduction ! »'
+    ),
   };
 }
 
-// Journalisation de l'initialisation des portraits Nano Banana pour la traçabilité
 logger.info(
   'PORTRAITS',
-  'Catalogue Nano Banana (10 portraits 256x256 PNG & 6 profils de simagrées) initialisé.',
+  'Nano Banana Portrait Catalog (10 portraits 256x256 PNG & 6 expression profiles) initialized.',
   {
     style: NANO_BANANA_ART_DIRECTION.styleName,
     models: NANO_BANANA_ART_DIRECTION.modelsUsed,
     assetsCount: Object.keys(PORTRAIT_ASSETS).length,
-    portraits: Object.values(PORTRAIT_ASSETS),
   }
 );
 

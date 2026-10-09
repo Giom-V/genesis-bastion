@@ -31,6 +31,7 @@ import { CONFIG } from '../config.js';
 import { DESIGNED_UPGRADES } from './BalanceAndPacing.js';
 import { clamp } from '../utils/math.js';
 import { logger } from '../utils/logger.js';
+import { tr, translateString } from '../utils/i18n.js';
 
 /**
  * Définition des deux modes de gameplay sélectionnables au départ et permutables à tout moment via `[C]`.
@@ -38,22 +39,48 @@ import { logger } from '../utils/logger.js';
 export const COMBAT_MODES = Object.freeze({
   vampire_survivors: {
     id: 'vampire_survivors',
-    name: 'Mode Vampire Survivors (Auto-Cast)',
-    shortLabel: 'Auto (Vampire Survivors)',
+    nameEN: 'Vampire Survivors Mode (Auto-Cast)',
+    nameFR: 'Mode Vampire Survivors (Auto-Cast)',
+    get name() {
+      return tr(this.nameEN, this.nameFR);
+    },
+    shortLabelEN: 'Auto (Vampire Survivors)',
+    shortLabelFR: 'Auto (Vampire Survivors)',
+    get shortLabel() {
+      return tr(this.shortLabelEN, this.shortLabelFR);
+    },
     badgeIcon: '🧛',
-    description:
+    descriptionEN:
+      'Focus on positioning, dodging [Shift], and strategy: your Hero automatically swings their sword and casts all equipped spells as soon as an enemy is in range.',
+    descriptionFR:
       'Concentrez-vous sur le placement, l’esquive [Shift] et la stratégie : votre Héros frappe automatiquement à l’épée et déclenche tous ses sorts dès qu’un ennemi est à portée.',
+    get description() {
+      return tr(this.descriptionEN, this.descriptionFR);
+    },
     autoMelee: true,
     autoCastSpells: true,
     starterAbilityId: 'spinning_blades',
   },
   diablo_action: {
     id: 'diablo_action',
-    name: 'Mode Diablo (Action & Sorts Actifs)',
-    shortLabel: 'Actif (Diablo ARPG)',
+    nameEN: 'Diablo Mode (Action & Active Spells)',
+    nameFR: 'Mode Diablo (Action & Sorts Actifs)',
+    get name() {
+      return tr(this.nameEN, this.nameFR);
+    },
+    shortLabelEN: 'Active (Diablo ARPG)',
+    shortLabelFR: 'Actif (Diablo ARPG)',
+    get shortLabel() {
+      return tr(this.shortLabelEN, this.shortLabelFR);
+    },
     badgeIcon: '⚔️',
-    description:
+    descriptionEN:
+      'Full visceral control: strike with [Left Click / Space], dodge with [Shift], and trigger your 4 equipped special abilities with keys [1] [2] [3] [4].',
+    descriptionFR:
       'Contrôle viscéral total : frappez au [Clic Gauche / Espace], esquivez avec [Clic Droit / Shift], et déclenchez vos 4 compétences spéciales équipées avec les touches [1] [2] [3] [4].',
+    get description() {
+      return tr(this.descriptionEN, this.descriptionFR);
+    },
     autoMelee: false,
     autoCastSpells: false,
     starterAbilityId: 'pyro_nova',
@@ -71,8 +98,16 @@ export const ROGUELIKE_ABILITIES = [
     id: 'spinning_blades',
     type: 'ability',
     isSpell: true,
-    name: 'Lames Orbitales Spectrales',
-    category: 'Orbite 3D Permanente',
+    nameEN: 'Spectral Orbiting Blades',
+    nameFR: 'Lames Orbitales Spectrales',
+    get name() {
+      return tr(this.nameEN, this.nameFR);
+    },
+    categoryEN: 'Permanent 3D Orbit',
+    categoryFR: 'Orbite 3D Permanente',
+    get category() {
+      return tr(this.categoryEN, this.categoryFR);
+    },
     rarity: 'common',
     icon: '🌀',
     colorHex: 0x00e5ff,
@@ -82,9 +117,18 @@ export const ROGUELIKE_ABILITIES = [
     baseDamage: 18,
     baseRange: 4.2,
     baseCount: 2,
-    description:
+    descriptionEN:
+      'Summons 2 to 5 spectral blades that orbit permanently in 3D around the Hero and slice any enemy on contact.',
+    descriptionFR:
       'Invoque 2 à 5 lames spectrales qui tournent en orbite 3D permanente autour du Héros et tranchent tout ennemi au contact.',
-    levelScalingDesc: '+1 lame orbitale, +8% dégâts et +4% portée par niveau.',
+    get description() {
+      return tr(this.descriptionEN, this.descriptionFR);
+    },
+    levelScalingDescEN: '+1 orbiting blade, +8% damage, and +4% range per level.',
+    levelScalingDescFR: '+1 lame orbitale, +8% dégâts et +4% portée par niveau.',
+    get levelScalingDesc() {
+      return tr(this.levelScalingDescEN, this.levelScalingDescFR);
+    },
     affinityMutation: 'winged_leap',
     affinitySpecies: 'goblin',
   },
@@ -92,8 +136,16 @@ export const ROGUELIKE_ABILITIES = [
     id: 'pyro_nova',
     type: 'ability',
     isSpell: true,
-    name: 'Nova Pyroclastique',
-    category: 'Explosion Élémentaire (Feu)',
+    nameEN: 'Pyroclastic Nova',
+    nameFR: 'Nova Pyroclastique',
+    get name() {
+      return tr(this.nameEN, this.nameFR);
+    },
+    categoryEN: 'Elemental Blast (Fire)',
+    categoryFR: 'Explosion Élémentaire (Feu)',
+    get category() {
+      return tr(this.categoryEN, this.categoryFR);
+    },
     rarity: 'rare',
     icon: '🔥',
     colorHex: 0xff4500,
@@ -105,9 +157,18 @@ export const ROGUELIKE_ABILITIES = [
     baseCount: 1,
     burnDps: 8,
     burnDuration: 3.0,
-    description:
+    descriptionEN:
+      'Unleashes a circular shockwave of magma around the Hero, scorching nearby packs and inflicting continuous burn.',
+    descriptionFR:
       'Libère une onde de choc circulaire de magma autour du Héros, calcinant les meutes proches et leur infligeant une brûlure continue.',
-    levelScalingDesc: '+8% dégâts de feu, +4% de rayon et -4% de recharge par niveau.',
+    get description() {
+      return tr(this.descriptionEN, this.descriptionFR);
+    },
+    levelScalingDescEN: '+8% fire damage, +4% radius, and -4% cooldown per level.',
+    levelScalingDescFR: '+8% dégâts de feu, +4% de rayon et -4% de recharge par niveau.',
+    get levelScalingDesc() {
+      return tr(this.levelScalingDescEN, this.levelScalingDescFR);
+    },
     affinityMutation: 'pyro_gland',
     affinitySpecies: 'troll',
   },
@@ -115,8 +176,16 @@ export const ROGUELIKE_ABILITIES = [
     id: 'chain_lightning',
     type: 'ability',
     isSpell: true,
-    name: 'Arc Foudroyant',
-    category: 'Foudre en Chaîne',
+    nameEN: 'Chain Lightning Arc',
+    nameFR: 'Arc Foudroyant',
+    get name() {
+      return tr(this.nameEN, this.nameFR);
+    },
+    categoryEN: 'Chain Lightning',
+    categoryFR: 'Foudre en Chaîne',
+    get category() {
+      return tr(this.categoryEN, this.categoryFR);
+    },
     rarity: 'rare',
     icon: '⚡',
     colorHex: 0x48dbfb,
@@ -126,9 +195,18 @@ export const ROGUELIKE_ABILITIES = [
     baseDamage: 34,
     baseRange: 13.0,
     baseCount: 3,
-    description:
+    descriptionEN:
+      'Strikes the nearest enemy with a high-voltage 3D lightning bolt that bounces instantaneously from monster to monster (3 to 7 targets).',
+    descriptionFR:
       'Frappe l’ennemi le plus proche d’un éclair 3D haute tension qui rebondit instantanément de monstre en monstre (3 à 7 cibles).',
-    levelScalingDesc: '+1 rebond de foudre, +8% dégâts et -4% de recharge par niveau.',
+    get description() {
+      return tr(this.descriptionEN, this.descriptionFR);
+    },
+    levelScalingDescEN: '+1 lightning bounce, +8% damage, and -4% cooldown per level.',
+    levelScalingDescFR: '+1 rebond de foudre, +8% dégâts et -4% de recharge par niveau.',
+    get levelScalingDesc() {
+      return tr(this.levelScalingDescEN, this.levelScalingDescFR);
+    },
     affinityMutation: 'winged_leap',
     affinitySpecies: 'vulture',
   },
@@ -136,8 +214,16 @@ export const ROGUELIKE_ABILITIES = [
     id: 'frost_spear',
     type: 'ability',
     isSpell: true,
-    name: 'Javelot Cryogénique',
-    category: 'Contrôle & Perforation (Glace)',
+    nameEN: 'Cryogenic Javelin',
+    nameFR: 'Javelot Cryogénique',
+    get name() {
+      return tr(this.nameEN, this.nameFR);
+    },
+    categoryEN: 'Control & Pierce (Ice)',
+    categoryFR: 'Contrôle & Perforation (Glace)',
+    get category() {
+      return tr(this.categoryEN, this.categoryFR);
+    },
     rarity: 'common',
     icon: '❄️',
     colorHex: 0x00d2d3,
@@ -149,9 +235,18 @@ export const ROGUELIKE_ABILITIES = [
     baseCount: 1,
     slowFactor: 0.5,
     slowDuration: 3.5,
-    description:
+    descriptionEN:
+      'Hurls a long-range piercing ice spear that slows hit enemies by 50% — ideal for stopping a fleeing Patient Zero!',
+    descriptionFR:
       'Projette une lance de glace perforante à longue portée qui ralentit les ennemis touchés de 50% — idéal pour stopper un Patient Zéro en fuite !',
-    levelScalingDesc: '+1 javelot aux niveaux 3 & 5, +8% dégâts et +4% portée par niveau.',
+    get description() {
+      return tr(this.descriptionEN, this.descriptionFR);
+    },
+    levelScalingDescEN: '+1 javelin at levels 3 & 5, +8% damage, and +4% range per level.',
+    levelScalingDescFR: '+1 javelot aux niveaux 3 & 5, +8% dégâts et +4% portée par niveau.',
+    get levelScalingDesc() {
+      return tr(this.levelScalingDescEN, this.levelScalingDescFR);
+    },
     affinityMutation: 'cryo_blood',
     affinitySpecies: 'wolf',
   },
@@ -159,8 +254,16 @@ export const ROGUELIKE_ABILITIES = [
     id: 'venom_volley',
     type: 'ability',
     isSpell: true,
-    name: 'Salve Venimeuse',
-    category: 'Barrage Toxique (DoT)',
+    nameEN: 'Venomous Volley',
+    nameFR: 'Salve Venimeuse',
+    get name() {
+      return tr(this.nameEN, this.nameFR);
+    },
+    categoryEN: 'Toxic Barrage (DoT)',
+    categoryFR: 'Barrage Toxique (DoT)',
+    get category() {
+      return tr(this.categoryEN, this.categoryFR);
+    },
     rarity: 'common',
     icon: '🧪',
     colorHex: 0x39ff14,
@@ -172,9 +275,18 @@ export const ROGUELIKE_ABILITIES = [
     baseCount: 5,
     poisonDps: 10,
     poisonDuration: 4.0,
-    description:
+    descriptionEN:
+      'Fires a fan of 5 neurotoxic daggers that poison enemies over time and reduce their regeneration.',
+    descriptionFR:
       'Tire un éventail de 5 dagues neurotoxiques qui empoisonnent les ennemis sur la durée et réduisent leur régénération.',
-    levelScalingDesc: '+1 dague par niveau et +8% dégâts de poison.',
+    get description() {
+      return tr(this.descriptionEN, this.descriptionFR);
+    },
+    levelScalingDescEN: '+1 dagger per level and +8% poison damage.',
+    levelScalingDescFR: '+1 dague par niveau et +8% dégâts de poison.',
+    get levelScalingDesc() {
+      return tr(this.levelScalingDescEN, this.levelScalingDescFR);
+    },
     affinityMutation: 'venom_sacs',
     affinitySpecies: 'orc',
   },
@@ -182,8 +294,16 @@ export const ROGUELIKE_ABILITIES = [
     id: 'meteor_strike',
     type: 'ability',
     isSpell: true,
-    name: 'Météore d’Ambre',
-    category: 'Frappe Anti-Apex',
+    nameEN: 'Amber Meteor',
+    nameFR: 'Météore d’Ambre',
+    get name() {
+      return tr(this.nameEN, this.nameFR);
+    },
+    categoryEN: 'Anti-Apex Strike',
+    categoryFR: 'Frappe Anti-Apex',
+    get category() {
+      return tr(this.categoryEN, this.categoryFR);
+    },
     rarity: 'epic',
     icon: '☄️',
     colorHex: 0xff9f43,
@@ -194,9 +314,18 @@ export const ROGUELIKE_ABILITIES = [
     baseRange: 15.0,
     baseCount: 1,
     aoeRadius: 5.5,
-    description:
+    descriptionEN:
+      'Prioritizes the creature with the highest Fitness Score (or Patient Zero) in range and calls down a devastating explosive meteor.',
+    descriptionFR:
       'Cible prioritairement la créature au plus haut Fitness Score (ou Patient Zéro) à portée et abat un météore explosif dévastateur.',
-    levelScalingDesc: '+8% dégâts d’impact, +4% de rayon d’explosion et -4% de recharge par niveau.',
+    get description() {
+      return tr(this.descriptionEN, this.descriptionFR);
+    },
+    levelScalingDescEN: '+8% impact damage, +4% blast radius, and -4% cooldown per level.',
+    levelScalingDescFR: '+8% dégâts d’impact, +4% de rayon d’explosion et -4% de recharge par niveau.',
+    get levelScalingDesc() {
+      return tr(this.levelScalingDescEN, this.levelScalingDescFR);
+    },
     affinityMutation: 'titan_growth',
     affinitySpecies: 'dragon',
   },
@@ -204,8 +333,16 @@ export const ROGUELIKE_ABILITIES = [
     id: 'soul_siphon',
     type: 'ability',
     isSpell: true,
-    name: 'Siphon Vampirique',
-    category: 'Drain de Vie Hématophage',
+    nameEN: 'Vampiric Soul Siphon',
+    nameFR: 'Siphon Vampirique',
+    get name() {
+      return tr(this.nameEN, this.nameFR);
+    },
+    categoryEN: 'Hematophagous Life Drain',
+    categoryFR: 'Drain de Vie Hématophage',
+    get category() {
+      return tr(this.categoryEN, this.categoryFR);
+    },
     rarity: 'rare',
     icon: '🩸',
     colorHex: 0xff4757,
@@ -216,9 +353,18 @@ export const ROGUELIKE_ABILITIES = [
     baseRange: 10.5,
     baseCount: 2,
     lifestealRatio: 0.45,
-    description:
+    descriptionEN:
+      'Tethers the Hero to nearby enemies with a crimson beam that drains their vitality and immediately restores your HP.',
+    descriptionFR:
       'Relie le Héros aux ennemis proches par un faisceau cramoisi qui draine leur vitalité et restaure immédiatement vos PV.',
-    levelScalingDesc: '+1 cible drainée, +8% dégâts et +2% de soin vampirique par niveau.',
+    get description() {
+      return tr(this.descriptionEN, this.descriptionFR);
+    },
+    levelScalingDescEN: '+1 drained target, +8% damage, and +2% vampiric lifesteal per level.',
+    levelScalingDescFR: '+1 cible drainée, +8% dégâts et +2% de soin vampirique par niveau.',
+    get levelScalingDesc() {
+      return tr(this.levelScalingDescEN, this.levelScalingDescFR);
+    },
     affinityMutation: 'vampiric_maw',
     affinitySpecies: 'lion',
   },
@@ -226,8 +372,16 @@ export const ROGUELIKE_ABILITIES = [
     id: 'seismic_slam',
     type: 'ability',
     isSpell: true,
-    name: 'Onde Sismique',
-    category: 'Onde de Choc & Étourdissement',
+    nameEN: 'Seismic Shockwave',
+    nameFR: 'Onde Sismique',
+    get name() {
+      return tr(this.nameEN, this.nameFR);
+    },
+    categoryEN: 'Shockwave & Stun',
+    categoryFR: 'Onde de Choc & Étourdissement',
+    get category() {
+      return tr(this.categoryEN, this.categoryFR);
+    },
     rarity: 'common',
     icon: '🔨',
     colorHex: 0xe6a145,
@@ -239,9 +393,18 @@ export const ROGUELIKE_ABILITIES = [
     baseCount: 1,
     knockbackDist: 5.5,
     stunDuration: 1.4,
-    description:
+    descriptionEN:
+      'Shatters the ground to unleash a telluric shockwave that violently knocks back and stuns all nearby creatures.',
+    descriptionFR:
       'Fracasse le sol pour créer une onde tellurique qui repousse violemment (Knockback) et étourdit toutes les créatures alentour.',
-    levelScalingDesc: '+8% dégâts, +4% rayon et +0.12s d’étourdissement par niveau.',
+    get description() {
+      return tr(this.descriptionEN, this.descriptionFR);
+    },
+    levelScalingDescEN: '+8% damage, +4% radius, and +0.12s stun duration per level.',
+    levelScalingDescFR: '+8% dégâts, +4% rayon et +0.12s d’étourdissement par niveau.',
+    get levelScalingDesc() {
+      return tr(this.levelScalingDescEN, this.levelScalingDescFR);
+    },
     affinityMutation: 'osteo_plating',
     affinitySpecies: 'troll',
   },
@@ -554,15 +717,22 @@ export class AdaptiveMasterySystem {
 
       if (newRank > prevRank) {
         this.speciesRanks[spId] = newRank;
-        const spName = CONFIG.SPECIES?.[spId]?.name || enemy.genome?.speciesName || spId;
+        const rawSpName = CONFIG.SPECIES?.[spId]?.name || enemy.genome?.speciesName || spId;
+        const spName = translateString(rawSpName);
         const notif = {
           id: `mastery_sp_${spId}_r${newRank}_${Date.now()}`,
           type: 'species_slayer',
           speciesId: spId,
           rank: newRank,
           bonusPct,
-          title: `⚔️ Maîtrise : Fléau des ${spName}s (Rang ${newRank})`,
-          subtitle: `+${bonusPct}% Dégâts contre l’espèce ${spName} (${nextKills} éliminés, rendement décroissant)`,
+          title: tr(
+            `⚔️ Mastery: ${spName} Slayer (Rank ${newRank})`,
+            `⚔️ Maîtrise : Fléau des ${rawSpName}s (Rang ${newRank})`
+          ),
+          subtitle: tr(
+            `+${bonusPct}% Damage vs ${spName} species (${nextKills} eliminated, diminishing returns)`,
+            `+${bonusPct}% Dégâts contre l’espèce ${rawSpName} (${nextKills} éliminés, rendement décroissant)`
+          ),
           badgeText: `vs ${spName} +${bonusPct}%`,
           colorCss: '#e6a145',
           colorHex: 0xe6a145,
@@ -601,15 +771,22 @@ export class AdaptiveMasterySystem {
       if (newMutRank > prevMutRank) {
         this.mutationRanks[mutId] = newMutRank;
         const mutDef = CONFIG.MUTATIONS?.[mutId];
-        const mutLabel = mutDef?.shortLabel || mutDef?.name || mutId;
+        const rawMutLabel = mutDef?.shortLabel || mutDef?.name || mutId;
+        const mutLabel = translateString(rawMutLabel);
         const notif = {
           id: `mastery_mut_${mutId}_r${newMutRank}_${Date.now()}`,
           type: 'mutation_slayer',
           mutationId: mutId,
           rank: newMutRank,
           bonusPct,
-          title: `🧬 Adaptation Génétique : Chasseur [${mutLabel}] (Rang ${newMutRank})`,
-          subtitle: `+${bonusPct}% Dégâts contre les mutants [${mutLabel}] & affinité de sort (+15%) !`,
+          title: tr(
+            `🧬 Genetic Adaptation: [${mutLabel}] Hunter (Rank ${newMutRank})`,
+            `🧬 Adaptation Génétique : Chasseur [${rawMutLabel}] (Rang ${newMutRank})`
+          ),
+          subtitle: tr(
+            `+${bonusPct}% Damage vs [${mutLabel}] mutants & spell affinity (+15%)!`,
+            `+${bonusPct}% Dégâts contre les mutants [${rawMutLabel}] & affinité de sort (+15%) !`
+          ),
           badgeText: `vs ${mutLabel} +${bonusPct}%`,
           colorCss: mutDef?.colorCss || '#ff4757',
           colorHex: mutDef?.colorHex || 0xff4757,
@@ -717,9 +894,15 @@ export class AdaptiveMasterySystem {
         damageCategory: category,
         rank: newRank,
         resistancePct: meta.pct,
-        title: `🛡️ Adaptation Corporelle : ${meta.label} (Rang ${newRank})`,
-        subtitle: `Réduit de ${meta.pct}% tous les dégâts de type ${meta.shortName} !`,
-        badgeText: `${meta.icon} Rés. ${meta.shortName} +${meta.pct}%`,
+        title: tr(
+          `🛡️ Bodily Adaptation: ${meta.label} (Rank ${newRank})`,
+          `🛡️ Adaptation Corporelle : ${meta.label} (Rang ${newRank})`
+        ),
+        subtitle: tr(
+          `Reduces all ${meta.shortName} damage by ${meta.pct}%!`,
+          `Réduit de ${meta.pct}% tous les dégâts de type ${meta.shortName} !`
+        ),
+        badgeText: `${meta.icon} ${tr('Res.', 'Rés.')} ${meta.shortName} +${meta.pct}%`,
         colorCss: meta.colorCss,
         colorHex: meta.colorHex,
       };
@@ -750,32 +933,32 @@ export class AdaptiveMasterySystem {
     const pct = this.computeResistanceBonusPct(hits, isPhys);
     const map = {
       fire: {
-        label: 'Ignifugation Sang-de-Dragon',
-        shortName: 'Feu',
+        label: tr('Dragon-Blood Fireproofing', 'Ignifugation Sang-de-Dragon'),
+        shortName: tr('Fire', 'Feu'),
         icon: '🔥',
         pct,
         colorCss: '#ff5252',
         colorHex: 0xff5252,
       },
       venom: {
-        label: 'Immunité Antitoxine',
-        shortName: 'Venin',
+        label: tr('Antitoxin Immunity', 'Immunité Antitoxine'),
+        shortName: tr('Venom', 'Venin'),
         icon: '🧪',
         pct,
         colorCss: '#39ff14',
         colorHex: 0x39ff14,
       },
       cryo: {
-        label: 'Sang Calorigène',
-        shortName: 'Givre',
+        label: tr('Calorigenic Blood', 'Sang Calorigène'),
+        shortName: tr('Frost', 'Givre'),
         icon: '❄️',
         pct,
         colorCss: '#00e5ff',
         colorHex: 0x00e5ff,
       },
       physical: {
-        label: 'Endurcissement Ostéo-Dermique',
-        shortName: 'Physique',
+        label: tr('Osteo-Dermal Hardening', 'Endurcissement Ostéo-Dermique'),
+        shortName: tr('Physical', 'Physique'),
         icon: '🛡️',
         pct,
         colorCss: '#f0ead6',
@@ -948,7 +1131,8 @@ export class AdaptiveMasterySystem {
       .filter(([, kills]) => kills > 0)
       .map(([spId, kills]) => {
         const rank = this.speciesRanks[spId] || 0;
-        const spName = CONFIG.SPECIES?.[spId]?.name || spId;
+        const rawSpName = CONFIG.SPECIES?.[spId]?.name || spId;
+        const spName = translateString(rawSpName);
         const nextThreshold =
           this.speciesThresholds[Math.min(rank, this.speciesThresholds.length - 1)] || kills;
         return {
@@ -967,9 +1151,10 @@ export class AdaptiveMasterySystem {
       .map(([mutId, kills]) => {
         const rank = this.mutationRanks[mutId] || 0;
         const mutDef = CONFIG.MUTATIONS?.[mutId];
+        const rawMutName = mutDef?.shortLabel || mutDef?.name || mutId;
         return {
           id: mutId,
-          name: mutDef?.shortLabel || mutDef?.name || mutId,
+          name: translateString(rawMutName),
           kills,
           rank,
           bonusPct: this.computeMutationSlayerBonusPct(kills),
@@ -1012,6 +1197,43 @@ export class AdaptiveMasterySystem {
       totalAdaptationsCount,
     };
   }
+
+  /**
+   * Alias de `getSummaryForHUD()` conformément à la directive Phase 13.
+   */
+  getMasteriesSummaryForHUD() {
+    return this.getSummaryForHUD();
+  }
+}
+
+/**
+ * Retourne la liste complète des 8 définitions de sorts 3D localisés selon la langue active (`'en'` ou `'fr'`).
+ *
+ * @returns {Array<object>}
+ */
+export function getAllSpellDefinitions() {
+  return ROGUELIKE_ABILITIES.map((ab) => ({
+    ...ab,
+    name: ab.name,
+    category: ab.category,
+    description: ab.description,
+    levelScalingDesc: ab.levelScalingDesc,
+  }));
+}
+
+/**
+ * Retourne la liste complète des 7 cartes passives de contre-adaptation localisées selon la langue active (`'en'` ou `'fr'`).
+ *
+ * @returns {Array<object>}
+ */
+export function getAllPassiveCards() {
+  return DESIGNED_UPGRADES.map((upg) => ({
+    ...upg,
+    name: upg.name,
+    category: upg.category,
+    description: upg.description,
+    counterTarget: upg.counterTarget,
+  }));
 }
 
 /**
@@ -1086,12 +1308,18 @@ export function drawRoguelikeLevelUpChoices(
 
     const isUpgrade = currentLvl > 0;
     const cardTitle = isUpgrade
-      ? `${ability.name} (Niv. ${nextLvl})`
-      : `${ability.name} (Nouveau Sort)`;
+      ? tr(`${ability.name} (Lv. ${nextLvl})`, `${ability.name} (Niv. ${nextLvl})`)
+      : tr(`${ability.name} (New Spell)`, `${ability.name} (Nouveau Sort)`);
 
     const cardDesc = isUpgrade
-      ? `${ability.levelScalingDesc} → Dégâts: ${statsNext.damage} | Portée: ${statsNext.range}m | Recharge: ${statsNext.cooldown}s.`
-      : `${ability.description} (Dégâts: ${statsNext.damage} | Recharge: ${statsNext.cooldown}s).`;
+      ? tr(
+          `${ability.levelScalingDesc} → Damage: ${statsNext.damage} | Range: ${statsNext.range}m | Cooldown: ${statsNext.cooldown}s.`,
+          `${ability.levelScalingDesc} → Dégâts: ${statsNext.damage} | Portée: ${statsNext.range}m | Recharge: ${statsNext.cooldown}s.`
+        )
+      : tr(
+          `${ability.description} (Damage: ${statsNext.damage} | Cooldown: ${statsNext.cooldown}s).`,
+          `${ability.description} (Dégâts: ${statsNext.damage} | Recharge: ${statsNext.cooldown}s).`
+        );
 
     candidates.push({
       id: ability.id,
@@ -1103,7 +1331,7 @@ export function drawRoguelikeLevelUpChoices(
       maxLevel: ability.maxLevel,
       name: cardTitle,
       baseName: ability.name,
-      category: `Sort 3D • ${ability.category}`,
+      category: tr(`3D Spell • ${ability.category}`, `Sort 3D • ${ability.category}`),
       rarity: ability.rarity,
       icon: ability.icon,
       colorHex: ability.colorHex,
@@ -1123,6 +1351,10 @@ export function drawRoguelikeLevelUpChoices(
 
     candidates.push({
       ...upg,
+      name: upg.name,
+      category: upg.category,
+      description: upg.description,
+      counterTarget: upg.counterTarget,
       cardType: 'passive',
       isSpell: false,
       isNewSpell: false,
@@ -1162,12 +1394,20 @@ export function drawRoguelikeLevelUpChoices(
   return selected.slice(0, requestedCount);
 }
 
+/**
+ * Alias de `drawRoguelikeLevelUpChoices` conformément à la directive Phase 13.
+ */
+export const getLevelUpChoices = drawRoguelikeLevelUpChoices;
+
 export default {
   COMBAT_MODES,
   ROGUELIKE_ABILITIES,
   ROGUELIKE_ABILITIES_BY_ID,
   getAbilityStatsAtLevel,
+  getAllSpellDefinitions,
+  getAllPassiveCards,
   drawRoguelikeLevelUpChoices,
+  getLevelUpChoices,
   computeSpeciesSlayerBonusPct,
   computeMutationSlayerBonusPct,
   computeResistanceBonusPct,

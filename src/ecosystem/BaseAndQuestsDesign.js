@@ -1,41 +1,57 @@
 /**
  * @file src/ecosystem/BaseAndQuestsDesign.js
- * @description Système d'Architecture 3D du Bastion (5 Bâtiments améliorables Niv. 0 → 3 sur socles
- * physiques `[E]` ou panneau `[H]`), Centre d'Ordres de Mission des Éclaireurs (`SCOUT_MISSIONS_CATALOG`)
- * et Générateur de Quêtes Dynamiques d'Éradication de Lignée (`DynamicQuestSystem`).
- *
- * Ce module répond aux deux besoins clés d'engagement à moyen terme :
- * 1. **Progression Tangible de la Base (Bastion)** :
- *    - Autour du feu de camp `(0, 0)`, 5 emplacements de bâtiments (`sanctuary_hearth`, `watchtower`,
- *      `scout_guild`, `lumber_forge`, `biolab`) sont matérialisés en 3D.
- *    - Le joueur peut s'approcher physiquement d'un chantier 3D et appuyer sur **`[E]`** (ou cliquer
- *      dans le panneau gauche / modale **`[H]`**) pour construire (`Niv. 0 → 1`) puis améliorer
- *      (`Niv. 1 → 2 → 3`) chaque structure avec des effets visuels et mécaniques majeurs.
- *
- * 2. **Ordres de Mission d'Éclaireurs & Quêtes Dynamiques d'Éradication** :
- *    - Le joueur peut ordonner à ses Éclaireurs une mission précise :
- *      - `track_lineage` : **🔍 Traquer tous les porteurs d'une lignée mutante** (ex. *Trolls de Feu*)
- *      - `find_cages` : **⛓️ Localiser les Cages de Survivants**
- *      - `scout_volcano` : **🌋 Explorer la Caldeira & Terres Sauvages**
- *      - `perimeter_alert` : **🛡️ Vigilance Frontière Anti-Hordes**
- *    - `DynamicQuestSystem` génère des opérations en 2 phases :
- *      - **Phase 1 (Renseignement)** : Envoyer les Éclaireurs repérer 100% des porteurs de la lignée (`Repérés : X / Y`).
- *      - **Phase 2 (Extermination)** : Éliminer tous les porteurs repérés (`Restants : Y → 0`), y compris les Bébés avant leur passage à l'âge adulte.
+ * @description Bilingual (EN default / FR 2nd) 3D Bastion Architecture (5 Upgradable Buildings Lvl 0 → 3
+ * on `[E]` pads or `[H]` modal), Scout Mission Orders (`SCOUT_MISSIONS_CATALOG`), Dynamic Lineage
+ * Eradication Quests (`DynamicQuestSystem`), Legendary Elemental Weapons (`ELEMENTAL_WEAPONS_CATALOG`),
+ * Eden Relic Fragments (`RELIC_FRAGMENTS_SPEC`), and Multi-Island Campaign Tiers (`getIslandTierSpec`).
  */
 
 import { CONFIG } from '../config.js';
 import { clamp } from '../utils/math.js';
 import { logger } from '../utils/logger.js';
+import { getLanguage, tr, translateString } from '../utils/i18n.js';
 
 /**
- * Catalogue des 5 Bâtiments du Bastion (Niv. 0 Chantier au sol → Niv. 1 → Niv. 2 → Niv. 3).
- * Chaque bâtiment possède une coordonnée 3D fixe (`padPos`) autour du sanctuaire central `(0, 0)`.
+ * Helper to create a bilingual building entry whose `.name`, `.shortName`, `.description`, and `.tiers`
+ * dynamically resolve to English (`'en'`, default) or French (`'fr'`).
+ *
+ * @param {object} spec
+ * @returns {object}
+ */
+function createBilingualBuilding(spec) {
+  return {
+    ...spec,
+    get name() {
+      return tr(spec.nameEN, spec.nameFR);
+    },
+    get shortName() {
+      return tr(spec.shortNameEN, spec.shortNameFR);
+    },
+    get description() {
+      return tr(spec.descriptionEN, spec.descriptionFR);
+    },
+    tiers: spec.tiersBilingual.map((t) => ({
+      ...t,
+      get tierName() {
+        return tr(t.tierNameEN, t.tierNameFR);
+      },
+      get effectDesc() {
+        return tr(t.effectDescEN, t.effectDescFR);
+      },
+    })),
+  };
+}
+
+/**
+ * Catalog of the 5 Bastion Buildings (Lvl 0 Pad → Lvl 1 → Lvl 2 → Lvl 3).
  */
 export const BASTION_BUILDINGS_CATALOG = [
-  {
+  createBilingualBuilding({
     id: 'sanctuary_hearth',
-    name: 'Cœur du Sanctuaire',
-    shortName: 'Cœur du Bastion',
+    nameEN: 'Sanctuary Hearth',
+    nameFR: 'Cœur du Sanctuaire',
+    shortNameEN: 'Bastion Core',
+    shortNameFR: 'Cœur du Bastion',
     icon: '🔥',
     hotkey: 'F5',
     padPos: { x: 0, z: 0 },
@@ -44,36 +60,46 @@ export const BASTION_BUILDINGS_CATALOG = [
     maxLevel: 3,
     colorHex: 0xff9f43,
     colorCss: '#ff9f43',
-    description:
+    descriptionEN:
+      'The sacred hearth of the Bastion. Upgrading it increases Bastion Max HP, accelerates Hero regeneration near the fire, and houses more survivors.',
+    descriptionFR:
       'Le foyer sacré du Bastion. L’améliorer augmente les PV max du Bastion, accélère la régénération du Héros près du feu et accueille davantage de survivants.',
-    tiers: [
+    tiersBilingual: [
       {
         level: 1,
-        tierName: 'Foyer des Survivants (Niv. 1)',
+        tierNameEN: 'Survivors’ Hearth (Lvl 1)',
+        tierNameFR: 'Foyer des Survivants (Niv. 1)',
         cost: { wood: 0, crystal: 0, biomass: 0 },
-        effectDesc: '500 PV Max Bastion • Soin Héros +15 PV/s • Capacité : 8 Survivants.',
-        stats: { bastionMaxHp: 500, heroHealRate: 15, maxSurvivors: 8, passiveauraRange: 14 },
+        effectDescEN: '500 Bastion Max HP • Hero Heal +15 HP/s • Capacity: 8 Survivors.',
+        effectDescFR: '500 PV Max Bastion • Soin Héros +15 PV/s • Capacité : 8 Survivants.',
+        stats: { bastionMaxHp: 500, heroHealRate: 15, maxSurvivors: 8, passiveAuraRange: 14 },
       },
       {
         level: 2,
-        tierName: 'Citadelle d’Ambre (Niv. 2)',
+        tierNameEN: 'Amber Citadel (Lvl 2)',
+        tierNameFR: 'Citadelle d’Ambre (Niv. 2)',
         cost: { wood: 35, crystal: 15, biomass: 10 },
-        effectDesc: '+250 PV Max Bastion (750) • Soin Héros +28 PV/s • +15% Vitesse autour du Bastion.',
+        effectDescEN: '+250 Bastion Max HP (750) • Hero Heal +28 HP/s • +15% Speed around the Bastion.',
+        effectDescFR: '+250 PV Max Bastion (750) • Soin Héros +28 PV/s • +15% Vitesse autour du Bastion.',
         stats: { bastionMaxHp: 750, heroHealRate: 28, maxSurvivors: 12, passiveAuraRange: 18 },
       },
       {
         level: 3,
-        tierName: 'Forteresse Solaire Invincible (Niv. 3)',
+        tierNameEN: 'Invincible Solar Fortress (Lvl 3)',
+        tierNameFR: 'Forteresse Solaire Invincible (Niv. 3)',
         cost: { wood: 60, crystal: 35, biomass: 25 },
-        effectDesc: '+550 PV Max Bastion (1050) • Soin Héros +45 PV/s • Aura sacrée brûlant les assaillants (12 DPS).',
+        effectDescEN: '+550 Bastion Max HP (1050) • Hero Heal +45 HP/s • Sacred Aura burning attackers (12 DPS).',
+        effectDescFR: '+550 PV Max Bastion (1050) • Soin Héros +45 PV/s • Aura sacrée brûlant les assaillants (12 DPS).',
         stats: { bastionMaxHp: 1050, heroHealRate: 45, maxSurvivors: 16, passiveAuraRange: 22, auraBurnDps: 12 },
       },
     ],
-  },
-  {
+  }),
+  createBilingualBuilding({
     id: 'watchtower',
-    name: 'Tour de Guet',
-    shortName: 'Tour de Guet',
+    nameEN: 'Watchtower',
+    nameFR: 'Tour de Guet',
+    shortNameEN: 'Watchtower',
+    shortNameFR: 'Tour de Guet',
     icon: '🏹',
     hotkey: 'F1',
     padPos: { x: 8.5, z: -7.5 },
@@ -82,36 +108,46 @@ export const BASTION_BUILDINGS_CATALOG = [
     maxLevel: 3,
     colorHex: 0xe6a145,
     colorCss: '#e6a145',
-    description:
+    descriptionEN:
+      'Automated defensive turret built in the North-East of the camp. Protects the Bastion against raids and famine migrations during your expeditions.',
+    descriptionFR:
       'Tourelle défensive automatique érigée au Nord-Est du camp. Protège le Bastion contre les raids et les migrations de famine pendant vos expéditions.',
-    tiers: [
+    tiersBilingual: [
       {
         level: 1,
-        tierName: 'Tour d’Archer (Niv. 1)',
+        tierNameEN: 'Archer Tower (Lvl 1)',
+        tierNameFR: 'Tour d’Archer (Niv. 1)',
         cost: { wood: 25, crystal: 10, biomass: 0 },
-        effectDesc: 'Tir automatique (18 dégâts / 1.35s, portée 34m) sur les ennemis proches.',
+        effectDescEN: 'Auto-fire (18 dmg / 1.35s, 34m range) against nearby enemies.',
+        effectDescFR: 'Tir automatique (18 dégâts / 1.35s, portée 34m) sur les ennemis proches.',
         stats: { damage: 18, fireInterval: 1.35, range: 34, boltsCount: 1, mutantDamageMult: 1.0, slowOnHit: 0 },
       },
       {
         level: 2,
-        tierName: 'Baliste Double Cryogénique (Niv. 2)',
+        tierNameEN: 'Cryogenic Twin Ballista (Lvl 2)',
+        tierNameFR: 'Baliste Double Cryogénique (Niv. 2)',
         cost: { wood: 40, crystal: 20, biomass: 10 },
-        effectDesc: 'Tire 2 carreaux givrants (30 dégâts / 1.15s, portée 40m) qui ralentissent les cibles de 35%.',
+        effectDescEN: 'Fires 2 frost bolts (30 dmg / 1.15s, 40m range) slowing targets by 35%.',
+        effectDescFR: 'Tire 2 carreaux givrants (30 dégâts / 1.15s, portée 40m) qui ralentissent les cibles de 35%.',
         stats: { damage: 30, fireInterval: 1.15, range: 40, boltsCount: 2, mutantDamageMult: 1.25, slowOnHit: 0.35 },
       },
       {
         level: 3,
-        tierName: 'Tour Pyrophage Anti-Mutants (Niv. 3)',
+        tierNameEN: 'Anti-Mutant Pyrophage Tower (Lvl 3)',
+        tierNameFR: 'Tour Pyrophage Anti-Mutants (Niv. 3)',
         cost: { wood: 65, crystal: 35, biomass: 25 },
-        effectDesc: 'Artillerie runique (48 dégâts / 0.95s, portée 46m) infligeant +100% de dégâts aux Mutants et Hybrides !',
+        effectDescEN: 'Runic artillery (48 dmg / 0.95s, 46m range) dealing +100% damage to Mutants & Hybrids!',
+        effectDescFR: 'Artillerie runique (48 dégâts / 0.95s, portée 46m) infligeant +100% de dégâts aux Mutants et Hybrides !',
         stats: { damage: 48, fireInterval: 0.95, range: 46, boltsCount: 3, mutantDamageMult: 2.0, slowOnHit: 0.45 },
       },
     ],
-  },
-  {
+  }),
+  createBilingualBuilding({
     id: 'scout_guild',
-    name: 'Guilde des Éclaireurs',
-    shortName: 'Guilde Éclaireurs',
+    nameEN: 'Scout Guild',
+    nameFR: 'Guilde des Éclaireurs',
+    shortNameEN: 'Scout Guild',
+    shortNameFR: 'Guilde Éclaireurs',
     icon: '🦅',
     hotkey: 'F2',
     padPos: { x: -8.5, z: -7.5 },
@@ -120,37 +156,47 @@ export const BASTION_BUILDINGS_CATALOG = [
     maxLevel: 3,
     colorHex: 0x1e90ff,
     colorCss: '#1e90ff',
-    description:
+    descriptionEN:
+      'Cartographic command post in the North-West. Allows issuing targeted Mission Orders to Scouts and boosts their expedition speed and detection range.',
+    descriptionFR:
       'Poste de commandement cartographique au Nord-Ouest. Permet de donner des Ordres de Mission précis aux Éclaireurs et augmente leur vitesse et portée de détection.',
-    tiers: [
+    tiersBilingual: [
       {
         level: 1,
-        tierName: 'Poste de Fauconnerie (Niv. 1)',
+        tierNameEN: 'Falconry Post (Lvl 1)',
+        tierNameFR: 'Poste de Fauconnerie (Niv. 1)',
         cost: { wood: 20, crystal: 15, biomass: 0 },
-        effectDesc: '+30% portée de vision des Éclaireurs (44m), +25% vitesse d’expédition et Missions Ciblées optimisées.',
+        effectDescEN: '+30% Scout vision range (44m), +25% expedition speed & targeted Scout Missions.',
+        effectDescFR: '+30% portée de vision des Éclaireurs (44m), +25% vitesse d’expédition et Missions Ciblées optimisées.',
         stats: { visionMult: 1.3, speedMult: 1.25, slowBeaconOnPatientZero: false, bonusScoutsOnBuild: 1 },
       },
       {
         level: 2,
-        tierName: 'Observatoire des Lignées (Niv. 2)',
+        tierNameEN: 'Lineage Observatory (Lvl 2)',
+        tierNameFR: 'Observatoire des Lignées (Niv. 2)',
         cost: { wood: 35, crystal: 25, biomass: 12 },
-        effectDesc: '+60% vision (54m), +45% vitesse, et les Éclaireurs posent une Balise Ralentissante (-35% vitesse) sur chaque Patient Zéro repéré !',
+        effectDescEN: '+60% vision (54m), +45% speed, and Scouts plant a Slowing Beacon (-35% speed) on every spotted Patient Zero!',
+        effectDescFR: '+60% vision (54m), +45% vitesse, et les Éclaireurs posent une Balise Ralentissante (-35% vitesse) sur chaque Patient Zéro repéré !',
         stats: { visionMult: 1.6, speedMult: 1.45, slowBeaconOnPatientZero: true, slowBeaconFactor: 0.65, bonusScoutsOnBuild: 0 },
       },
       {
         level: 3,
-        tierName: 'Réseau Téléscopique Omniscient (Niv. 3)',
+        tierNameEN: 'Omniscient Telescopic Network (Lvl 3)',
+        tierNameFR: 'Réseau Téléscopique Omniscient (Niv. 3)',
         cost: { wood: 55, crystal: 40, biomass: 25 },
-        effectDesc: '+95% vision (66m), +70% vitesse, immunité des Éclaireurs en fuite et marquage instantané des nouveau-nés mutants !',
+        effectDescEN: '+95% vision (66m), +70% speed, fleeing Scout immunity, and instant marking of newborn mutants!',
+        effectDescFR: '+95% vision (66m), +70% vitesse, immunité des Éclaireurs en fuite et marquage instantané des nouveau-nés mutants !',
         stats: { visionMult: 1.95, speedMult: 1.7, slowBeaconOnPatientZero: true, slowBeaconFactor: 0.5, autoSpotNewbornMutants: true },
       },
     ],
-  },
-  {
+  }),
+  createBilingualBuilding({
     id: 'lumber_forge',
     legacyId: 'palisade',
-    name: 'Atelier & Palissade Runique',
-    shortName: 'Atelier & Remparts',
+    nameEN: 'Runic Workshop & Palisade',
+    nameFR: 'Atelier & Palissade Runique',
+    shortNameEN: 'Workshop & Ramparts',
+    shortNameFR: 'Atelier & Remparts',
     icon: '🛡️',
     hotkey: 'F3',
     padPos: { x: 8.5, z: 7.5 },
@@ -159,36 +205,46 @@ export const BASTION_BUILDINGS_CATALOG = [
     maxLevel: 3,
     colorHex: 0x38c172,
     colorCss: '#38c172',
-    description:
+    descriptionEN:
+      'Alchemical sawmill and thorn ramparts in the South-East. Passively generates Wood and Crystal every 5s and reflects damage to starving hordes.',
+    descriptionFR:
       'Scierie alchimique et remparts d’épines au Sud-Est. Génère passivement du Bois et du Cristal toutes les 5s et renvoie les dégâts aux hordes affamées.',
-    tiers: [
+    tiersBilingual: [
       {
         level: 1,
-        tierName: 'Palissade d’Épines & Scierie (Niv. 1)',
+        tierNameEN: 'Thorn Palisade & Sawmill (Lvl 1)',
+        tierNameFR: 'Palissade d’Épines & Scierie (Niv. 1)',
         cost: { wood: 30, crystal: 5, biomass: 0 },
-        effectDesc: '+180 PV au Bastion, renvoie 10 dégâts d’épines aux assaillants et produit +2 Bois / +1 Cristal toutes les 5s.',
+        effectDescEN: '+180 Bastion HP, reflects 10 thorn damage to attackers, and produces +2 Wood / +1 Crystal every 5s.',
+        effectDescFR: '+180 PV au Bastion, renvoie 10 dégâts d’épines aux assaillants et produit +2 Bois / +1 Cristal toutes les 5s.',
         stats: { hpBonus: 180, thornsDamage: 10, woodPer5Sec: 2, crystalPer5Sec: 1 },
       },
       {
         level: 2,
-        tierName: 'Rempart Ferré & Forge (Niv. 2)',
+        tierNameEN: 'Ironclad Rampart & Forge (Lvl 2)',
+        tierNameFR: 'Rempart Ferré & Forge (Niv. 2)',
         cost: { wood: 45, crystal: 20, biomass: 10 },
-        effectDesc: '+380 PV au Bastion, renvoie 22 dégâts d’épines et produit +4 Bois / +3 Cristal toutes les 5s.',
+        effectDescEN: '+380 Bastion HP, reflects 22 thorn damage, and produces +4 Wood / +3 Crystal every 5s.',
+        effectDescFR: '+380 PV au Bastion, renvoie 22 dégâts d’épines et produit +4 Bois / +3 Cristal toutes les 5s.',
         stats: { hpBonus: 380, thornsDamage: 22, woodPer5Sec: 4, crystalPer5Sec: 3 },
       },
       {
         level: 3,
-        tierName: 'Bastion d’Obsidienne Automatisé (Niv. 3)',
+        tierNameEN: 'Automated Obsidian Bastion (Lvl 3)',
+        tierNameFR: 'Bastion d’Obsidienne Automatisé (Niv. 3)',
         cost: { wood: 70, crystal: 35, biomass: 20 },
-        effectDesc: '+650 PV au Bastion, renvoie 38 dégâts d’épines et produit +7 Bois / +5 Cristal / +2 Biomasse toutes les 5s.',
+        effectDescEN: '+650 Bastion HP, reflects 38 thorn damage, and produces +7 Wood / +5 Crystal / +2 Biomass every 5s.',
+        effectDescFR: '+650 PV au Bastion, renvoie 38 dégâts d’épines et produit +7 Bois / +5 Cristal / +2 Biomasse toutes les 5s.',
         stats: { hpBonus: 650, thornsDamage: 38, woodPer5Sec: 7, crystalPer5Sec: 5, biomassPer5Sec: 2 },
       },
     ],
-  },
-  {
+  }),
+  createBilingualBuilding({
     id: 'biolab',
-    name: 'Bio-Laboratoire Génétique',
-    shortName: 'Bio-Laboratoire',
+    nameEN: 'Genetic Bio-Laboratory',
+    nameFR: 'Bio-Laboratoire Génétique',
+    shortNameEN: 'Bio-Laboratory',
+    shortNameFR: 'Bio-Laboratoire',
     icon: '🧬',
     hotkey: 'F4',
     padPos: { x: -8.5, z: 7.5 },
@@ -197,36 +253,44 @@ export const BASTION_BUILDINGS_CATALOG = [
     maxLevel: 3,
     colorHex: 0x00d2d3,
     colorCss: '#00d2d3',
-    description:
+    descriptionEN:
+      'Darwinian laboratory in the South-West. Analyzes creature genomes, slows the maturation of mutant Babies across the island, and boosts your damage against mutant lineages.',
+    descriptionFR:
       'Laboratoire darwinien au Sud-Ouest. Analyse le génome des créatures, ralentit la croissance des Bébés mutants sur l’île et augmente vos dégâts contre les lignées.',
-    tiers: [
+    tiersBilingual: [
       {
         level: 1,
-        tierName: 'Séquenceur de Génome (Niv. 1)',
+        tierNameEN: 'Genome Sequencer (Lvl 1)',
+        tierNameFR: 'Séquenceur de Génome (Niv. 1)',
         cost: { wood: 20, crystal: 20, biomass: 0 },
-        effectDesc: '+15% dégâts du Héros contre les Mutants/Hybrides et ralentit de 20% la maturation des Bébés mutants (+5s pour les tuer !).',
-        stats: { heroMutantDamageBonus: 0.15, babyMaturationSlowMult: 1.2,scoutVisionBonus: 12 },
+        effectDescEN: '+15% Hero damage vs Mutants/Hybrids and slows mutant Baby maturation by 20% (+5s window to slay them!).',
+        effectDescFR: '+15% dégâts du Héros contre les Mutants/Hybrides et ralentit de 20% la maturation des Bébés mutants (+5s pour les tuer !).',
+        stats: { heroMutantDamageBonus: 0.15, babyMaturationSlowMult: 1.2, scoutVisionBonus: 12 },
       },
       {
         level: 2,
-        tierName: 'Inhibiteur de Dominance (Niv. 2)',
+        tierNameEN: 'Dominance Inhibitor (Lvl 2)',
+        tierNameFR: 'Inhibiteur de Dominance (Niv. 2)',
         cost: { wood: 35, crystal: 30, biomass: 15 },
-        effectDesc: '+30% dégâts contre les Mutants, ralentit de 40% la maturation des Bébés mutants et réduit la transmission mendélienne ennemie.',
+        effectDescEN: '+30% damage vs Mutants, slows mutant Baby maturation by 40%, and reduces enemy Mendelian inheritance.',
+        effectDescFR: '+30% dégâts contre les Mutants, ralentit de 40% la maturation des Bébés mutants et réduit la transmission mendélienne ennemie.',
         stats: { heroMutantDamageBonus: 0.3, babyMaturationSlowMult: 1.4, scoutVisionBonus: 22 },
       },
       {
         level: 3,
-        tierName: 'Sanctuaire d’Éradication Génétique (Niv. 3)',
+        tierNameEN: 'Genetic Eradication Sanctuary (Lvl 3)',
+        tierNameFR: 'Sanctuaire d’Éradication Génétique (Niv. 3)',
         cost: { wood: 55, crystal: 45, biomass: 30 },
-        effectDesc: '+50% dégâts contre les Mutants, ralentit de 60% la maturation des Bébés mutants et +50% XP/Biomasse sur chaque Patient Zéro !',
+        effectDescEN: '+50% damage vs Mutants, slows mutant Baby maturation by 60%, and +50% XP/Biomass from every Patient Zero!',
+        effectDescFR: '+50% dégâts contre les Mutants, ralentit de 60% la maturation des Bébés mutants et +50% XP/Biomasse sur chaque Patient Zéro !',
         stats: { heroMutantDamageBonus: 0.5, babyMaturationSlowMult: 1.6, scoutVisionBonus: 34, bonusMutantXpMult: 1.5 },
       },
     ],
-  },
+  }),
 ];
 
 /**
- * Dictionnaire d'accès rapide aux bâtiments par `id` (supporte aussi l'alias `'palisade'` -> `'lumber_forge'`).
+ * Dictionary of buildings by `id` (including `'palisade'` -> `'lumber_forge'`).
  */
 export const BASTION_BUILDINGS_BY_ID = Object.freeze(
   BASTION_BUILDINGS_CATALOG.reduce((acc, b) => {
@@ -237,12 +301,11 @@ export const BASTION_BUILDINGS_BY_ID = Object.freeze(
 );
 
 /**
- * Retourne la spécification complète d'un bâtiment du Bastion à son niveau actuel ainsi que
- * le coût et les effets de son prochain niveau (`currentLevel + 1`).
+ * Returns the localized upgrade specification for a Bastion building at `currentLevel`.
  *
- * @param {string} buildingId - Identifiant du bâtiment (`'watchtower'`, `'scout_guild'`, `'lumber_forge'`, `'biolab'`, `'sanctuary_hearth'`, ou `'palisade'`).
- * @param {number} [currentLevel=0] - Niveau actuel du bâtiment (`0` à `3`).
- * @returns {object} Spécification détaillée pour l'UI et la logique 3D.
+ * @param {string} buildingId
+ * @param {number} [currentLevel=0]
+ * @returns {object}
  */
 export function getBuildingUpgradeSpec(buildingId, currentLevel = 0) {
   const def = BASTION_BUILDINGS_BY_ID[buildingId] || BASTION_BUILDINGS_CATALOG[1];
@@ -260,12 +323,18 @@ export function getBuildingUpgradeSpec(buildingId, currentLevel = 0) {
         biomass: nextTier?.cost?.biomass || 0,
       };
 
-  const actionVerb = lvl === 0 ? 'Construire' : isMaxed ? 'Niveau Max' : `Améliorer Niv. ${nextLevel}`;
+  const actionVerb =
+    lvl === 0
+      ? tr('Build', 'Construire')
+      : isMaxed
+        ? tr('Max Level', 'Niveau Max')
+        : tr(`Upgrade Lvl ${nextLevel}`, `Améliorer Niv. ${nextLevel}`);
+
   const costParts = [];
-  if (cost.wood > 0) costParts.push(`${cost.wood} Bois`);
-  if (cost.crystal > 0) costParts.push(`${cost.crystal} Cristal`);
-  if (cost.biomass > 0) costParts.push(`${cost.biomass} Biomasse`);
-  const costText = isMaxed ? 'MAX' : costParts.length > 0 ? costParts.join(' • ') : 'Gratuit';
+  if (cost.wood > 0) costParts.push(`${cost.wood} ${tr('Wood', 'Bois')}`);
+  if (cost.crystal > 0) costParts.push(`${cost.crystal} ${tr('Crystal', 'Cristal')}`);
+  if (cost.biomass > 0) costParts.push(`${cost.biomass} ${tr('Biomass', 'Biomasse')}`);
+  const costText = isMaxed ? 'MAX' : costParts.length > 0 ? costParts.join(' • ') : tr('Free', 'Gratuit');
 
   return {
     id: def.id,
@@ -286,24 +355,30 @@ export function getBuildingUpgradeSpec(buildingId, currentLevel = 0) {
     actionVerb,
     cost,
     costText,
-    currentTierName: currentTier ? currentTier.tierName : 'Chantier Vierge (Niv. 0)',
-    nextTierName: nextTier ? nextTier.tierName : 'Niveau Maximum',
-    currentEffectDesc: currentTier ? currentTier.effectDesc : 'Non construit — Approchez-vous du socle [E] ou cliquez pour bâtir.',
-    nextEffectDesc: nextTier ? nextTier.effectDesc : 'Amélioration maximale atteinte.',
+    currentTierName: currentTier ? currentTier.tierName : tr('Empty Pad (Lvl 0)', 'Chantier Vierge (Niv. 0)'),
+    nextTierName: nextTier ? nextTier.tierName : tr('Maximum Level', 'Niveau Maximum'),
+    currentEffectDesc: currentTier
+      ? currentTier.effectDesc
+      : tr(
+          'Not built yet — Approach the pad [E] or click to build.',
+          'Non construit — Approchez-vous du socle [E] ou cliquez pour bâtir.'
+        ),
+    nextEffectDesc: nextTier ? nextTier.effectDesc : tr('Maximum upgrade reached.', 'Amélioration maximale atteinte.'),
+    levelDesc: currentTier ? currentTier.effectDesc : nextTier ? nextTier.effectDesc : def.description,
     statsAtCurrent: currentTier ? { ...currentTier.stats } : null,
     statsAtNext: nextTier ? { ...nextTier.stats } : null,
     worldPromptText: isMaxed
-      ? `${def.icon} ${def.name} (Niv. MAX)`
-      : `[E] ${actionVerb} : ${def.name} (${costText})`,
+      ? `${def.icon} ${def.name} (${tr('Lvl MAX', 'Niv. MAX')})`
+      : `[E] ${actionVerb}: ${def.name} (${costText})`,
   };
 }
 
 /**
- * Vérifie si le joueur dispose des ressources nécessaires pour construire ou améliorer un bâtiment.
+ * Checks if the player can afford a building construction or upgrade.
  *
  * @param {string} buildingId
- * @param {number} currentLevel
- * @param {{ wood?: number, crystal?: number, biomass?: number }} [resources={}]
+ * @param {number} [currentLevel=0]
+ * @param {object} [resources={}]
  * @returns {boolean}
  */
 export function canAffordBuildingUpgrade(buildingId, currentLevel = 0, resources = {}) {
@@ -316,57 +391,109 @@ export function canAffordBuildingUpgrade(buildingId, currentLevel = 0, resources
 }
 
 /**
- * Catalogue des 4 Ordres de Mission que le joueur peut confier à ses Éclaireurs (`role === 'scout'`).
+ * Catalog of the 4 Scout Mission Orders (Bilingual EN default / FR 2nd).
  */
 export const SCOUT_MISSIONS_CATALOG = [
   {
     id: 'track_lineage',
-    name: 'Traquer la Lignée Mutante',
-    shortLabel: '🔍 Traquer Lignée',
+    nameEN: 'Track Mutant Lineage',
+    nameFR: 'Traquer la Lignée Mutante',
+    shortLabelEN: '🔍 Track Lineage',
+    shortLabelFR: '🔍 Traquer Lignée',
+    get name() {
+      return tr(this.nameEN, this.nameFR);
+    },
+    get shortLabel() {
+      return tr(this.shortLabelEN, this.shortLabelFR);
+    },
     icon: '🔍',
     colorHex: 0xff4757,
     colorCss: '#ff4757',
     speedBonusMult: 1.45,
-    description:
+    descriptionEN:
+      'Your Scouts prioritize locating all carriers (Babies and Adults) of the targeted mutation (e.g., Fire Trolls) and mark them with a 3D sky beam.',
+    descriptionFR:
       'Vos Éclaireurs recherchent en priorité absolue tous les individus (Bébés et Adultes) porteurs de la mutation ciblée (ex: Trolls de Feu) et les marquent d’un faisceau céleste 3D.',
+    get description() {
+      return tr(this.descriptionEN, this.descriptionFR);
+    },
   },
   {
     id: 'find_cages',
-    name: 'Secourir les Survivants en Cage',
-    shortLabel: '⛓️ Chercher Cages',
+    nameEN: 'Rescue Caged Survivors',
+    nameFR: 'Secourir les Survivants en Cage',
+    shortLabelEN: '⛓️ Find Cages',
+    shortLabelFR: '⛓️ Chercher Cages',
+    get name() {
+      return tr(this.nameEN, this.nameFR);
+    },
+    get shortLabel() {
+      return tr(this.shortLabelEN, this.shortLabelFR);
+    },
     icon: '⛓️',
     colorHex: 0xffd166,
     colorCss: '#ffd166',
     speedBonusMult: 1.3,
-    description:
+    descriptionEN:
+      'Your Scouts patrol toward locked Prisoner Cages to reveal their exact coordinates on your Minimap.',
+    descriptionFR:
       'Vos Éclaireurs patrouillent vers les Cages de Prisonniers non libérées pour révéler leur position exacte sur votre Minimap.',
+    get description() {
+      return tr(this.descriptionEN, this.descriptionFR);
+    },
   },
   {
     id: 'scout_volcano',
-    name: 'Explorer la Caldeira & Terres Sauvages',
-    shortLabel: '🌋 Exploration Profonde',
+    nameEN: 'Scout Caldera & Deep Wilds',
+    nameFR: 'Explorer la Caldeira & Terres Sauvages',
+    shortLabelEN: '🌋 Deep Exploration',
+    shortLabelFR: '🌋 Exploration Profonde',
+    get name() {
+      return tr(this.nameEN, this.nameFR);
+    },
+    get shortLabel() {
+      return tr(this.shortLabelEN, this.shortLabelFR);
+    },
     icon: '🌋',
     colorHex: 0x1e90ff,
     colorCss: '#1e90ff',
     speedBonusMult: 1.2,
-    description:
+    descriptionEN:
+      'Deep wilderness expedition (50m to 108m) into the Volcanic Caldera and ancient forests to spot emerging threats early.',
+    descriptionFR:
       'Expédition au-delà de la frontière (50m à 108m) dans la Caldeira Volcanique et les forêts profondes pour anticiper toute nouvelle émergence.',
+    get description() {
+      return tr(this.descriptionEN, this.descriptionFR);
+    },
   },
   {
     id: 'perimeter_alert',
-    name: 'Vigilance Frontière Anti-Hordes',
-    shortLabel: '🛡️ Garde Frontière',
+    nameEN: 'Anti-Horde Frontier Watch',
+    nameFR: 'Vigilance Frontière Anti-Hordes',
+    shortLabelEN: '🛡️ Frontier Watch',
+    shortLabelFR: '🛡️ Garde Frontière',
+    get name() {
+      return tr(this.nameEN, this.nameFR);
+    },
+    get shortLabel() {
+      return tr(this.shortLabelEN, this.shortLabelFR);
+    },
     icon: '🛡️',
     colorHex: 0x38c172,
     colorCss: '#38c172',
     speedBonusMult: 1.15,
-    description:
+    descriptionEN:
+      'Circular patrol around the Bastion (35m to 58m) to detect starving packs migrating toward your ramparts.',
+    descriptionFR:
       'Patrouille circulaire autour du Bastion (35m à 58m) pour repérer les meutes en famine qui migrent vers vos remparts.',
+    get description() {
+      return tr(this.descriptionEN, this.descriptionFR);
+    },
   },
 ];
 
 /**
- * Dictionnaire d'accès rapide aux missions d'Éclaireurs par `id`.
+ * Dictionary of Scout Missions by `id`.
  */
 export const SCOUT_MISSIONS_BY_ID = Object.freeze(
   SCOUT_MISSIONS_CATALOG.reduce((acc, m) => {
@@ -376,7 +503,30 @@ export const SCOUT_MISSIONS_BY_ID = Object.freeze(
 );
 
 /**
- * Retourne les détails formatés d'une mission d'Éclaireur (avec le nom de la mutation/lignée ciblée).
+ * Returns localized mutation label (`'en'` default or `'fr'`).
+ * @param {string|null} mutationId
+ * @returns {string}
+ */
+function getLocalizedMutationLabel(mutationId) {
+  if (!mutationId) return tr('All Mutations', 'Toutes les Mutations');
+  const mapEN = {
+    pyro_gland: 'Pyro / Fire',
+    venom_sacs: 'Venom / Poison',
+    osteo_plating: 'Osteo Armor',
+    winged_leap: 'Winged Leap',
+    cryo_blood: 'Cryo / Frost',
+    vampiric_maw: 'Vampirism',
+    titan_growth: 'Titan / Giant',
+    amphibious_lungs: 'Amphibious Walker',
+  };
+  const mutDef = CONFIG.MUTATIONS?.[mutationId];
+  const frLabel = mutDef?.shortLabel || mutDef?.name || mutationId;
+  const enLabel = mapEN[mutationId] || translateString(frLabel, 'en');
+  return tr(enLabel, frLabel);
+}
+
+/**
+ * Returns formatted details of a Scout Mission in the active language.
  *
  * @param {string} [missionType='track_lineage']
  * @param {string|null} [targetMutationId='pyro_gland']
@@ -384,18 +534,18 @@ export const SCOUT_MISSIONS_BY_ID = Object.freeze(
  */
 export function getScoutMissionSpec(missionType = 'track_lineage', targetMutationId = 'pyro_gland') {
   const base = SCOUT_MISSIONS_BY_ID[missionType] || SCOUT_MISSIONS_CATALOG[0];
-  const mutDef = targetMutationId ? CONFIG.MUTATIONS?.[targetMutationId] : null;
-  const targetLabel = mutDef
-    ? mutDef.shortLabel || mutDef.name
-    : targetMutationId || 'Toutes les Mutations';
+  const targetLabel = getLocalizedMutationLabel(targetMutationId);
 
   const fullTitle =
     base.id === 'track_lineage'
-      ? `🔍 Mission Éclaireurs : Traquer [${targetLabel}]`
-      : `${base.icon} Mission Éclaireurs : ${base.name}`;
+      ? tr(`🔍 Scout Mission: Track [${targetLabel}]`, `🔍 Mission Éclaireurs : Traquer [${targetLabel}]`)
+      : tr(`${base.icon} Scout Mission: ${base.name}`, `${base.icon} Mission Éclaireurs : ${base.name}`);
 
   return {
     ...base,
+    name: base.name,
+    shortLabel: base.shortLabel,
+    description: base.description,
     type: base.id,
     targetMutationId: base.id === 'track_lineage' ? targetMutationId || 'pyro_gland' : null,
     targetLabel,
@@ -404,34 +554,25 @@ export function getScoutMissionSpec(missionType = 'track_lineage', targetMutatio
 }
 
 /**
- * Système de Quêtes Dynamiques d'Éradication de Lignée & d'Architecture du Bastion (`DynamicQuestSystem`).
- *
- * Donne au joueur des objectifs clairs, mesurables et gratifiants :
- * 1. **Quête d'Éradication de Lignée (`type: 'eradicate_lineage'`)** :
- *    - *Exemple* : **« Opération : Éradication des Trolls de Feu [Pyro / Feu] »**
- *    - **Étape 1 (Mission Éclaireurs)** : Localiser tous les porteurs de la lignée avec vos Éclaireurs (`Repérés : X / Y`).
- *    - **Étape 2 (Extermination)** : Éliminer 100% des porteurs de la lignée (`Éliminés : K / Total`, `Restants : Y → 0`).
- * 2. **Quête d'Architecture du Bastion (`type: 'upgrade_bastion'`)** :
- *    - Guide pas à pas le joueur pour construire et améliorer ses bâtiments sur les socles 3D du camp (`[E]`) ou via le panneau Bastion (`[H]`).
+ * Dynamic Lineage Eradication & Bastion Architecture Quest System (`DynamicQuestSystem`).
  */
 export class DynamicQuestSystem {
   constructor() {
-    /** @type {Array<object>} Quêtes actives */
+    /** @type {Array<object>} Active quests */
     this.activeQuests = [];
-    /** @type {Array<object>} Quêtes accomplies */
+    /** @type {Array<object>} Completed quests */
     this.completedQuests = [];
-    /** @type {Array<object>} Récompenses et bannières en attente d'attribution au joueur */
+    /** @type {Array<object>} Pending rewards */
     this.pendingRewards = [];
-    /** @type {number} Compteur monotone d'ID de quête */
+    /** @type {number} Monotonic quest sequence ID */
     this.nextQuestSeq = 1;
 
-    // Initialise les quêtes de départ (Architecture du Bastion + Traque de la Lignée Pyro)
     this.startLineageEradicationQuest('pyro_gland', 'troll');
     this.startBaseUpgradeQuest();
   }
 
   /**
-   * Réinitialise intégralement les quêtes dynamiques pour une nouvelle run Roguelike ("Repartir à Zéro").
+   * Resets all dynamic quests for a new Roguelike run ("Restart from Zero").
    */
   resetForNewRoguelikeRun() {
     this.activeQuests = [];
@@ -443,48 +584,140 @@ export class DynamicQuestSystem {
   }
 
   /**
-   * Alias de `resetForNewRoguelikeRun()`.
+   * Alias of `resetForNewRoguelikeRun()`.
    */
   reset() {
     this.resetForNewRoguelikeRun();
   }
 
   /**
-   * Démarre (ou met en priorité) une quête dynamique d'éradication d'une lignée mutante ou hybride.
+   * Refreshes localized quest titles and step descriptions according to `getLanguage()`.
+   * @param {object} quest
+   */
+  _refreshQuestLocalization(quest) {
+    if (!quest) return quest;
+    if (quest.type === 'eradicate_lineage') {
+      const mutId = quest.targetMutationId || 'pyro_gland';
+      const mutLabel = getLocalizedMutationLabel(mutId);
+      const spDef = CONFIG.SPECIES?.[quest.speciesHint] || CONFIG.SPECIES?.troll;
+      const spName = translateString(spDef?.name || 'Mutants', getLanguage());
+      const lineageDisplayName =
+        mutId === 'pyro_gland' && quest.speciesHint === 'troll'
+          ? tr('Fire Trolls (Pyroclastic Gland)', 'Trolls de Feu (Glande Pyroclastique)')
+          : tr(`[${mutLabel}] Carriers (${spName})`, `Porteurs de [${mutLabel}] (${spName})`);
+
+      quest.title = tr(
+        `📜 Operation: Eradication — ${lineageDisplayName}`,
+        `📜 Opération : Éradication — ${lineageDisplayName}`
+      );
+      quest.shortTitle = tr(`Eradicate: ${lineageDisplayName}`, `Éradiquer : ${lineageDisplayName}`);
+
+      const totalCarriers = quest.totalCarriers ?? 1;
+      const spottedCarriers = quest.spottedCarriers ?? 0;
+      const unspottedCarriers = quest.unspottedCarriers ?? 1;
+      const babyCarriers = quest.babyCarriers ?? 0;
+      const allCurrentlySpotted = totalCarriers > 0 && spottedCarriers >= totalCarriers;
+
+      quest.step1Text = allCurrentlySpotted
+        ? tr(
+            `✅ 1. Scouts: All [${mutLabel}] carriers located (${spottedCarriers}/${totalCarriers})!`,
+            `✅ 1. Éclaireurs : Tous les porteurs [${mutLabel}] sont localisés (${spottedCarriers}/${totalCarriers}) !`
+          )
+        : tr(
+            `🔍 1. Scouts: Locate all [${mutLabel}] carriers (${spottedCarriers}/${Math.max(1, totalCarriers)} spotted)`,
+            `🔍 1. Éclaireurs : Localiser tous les porteurs [${mutLabel}] (${spottedCarriers}/${Math.max(1, totalCarriers)} repérés)`
+          );
+
+      const babyWarn =
+        babyCarriers > 0
+          ? tr(` incl. ${babyCarriers} Baby!`, ` dont ${babyCarriers} Bébé(s) !`)
+          : '';
+      quest.step2Text =
+        totalCarriers === 0 && quest.slainCount > 0
+          ? tr(
+              `✅ 2. Extermination: [${mutLabel}] lineage eradicated (${quest.slainCount} slain)!`,
+              `✅ 2. Extermination : Lignée [${mutLabel}] éradiquée (${quest.slainCount} éliminés) !`
+            )
+          : tr(
+              `⚔️ 2. Extermination: Eliminate all [${mutLabel}] (${totalCarriers} remaining${babyWarn} • ${quest.slainCount || 0} slain)`,
+              `⚔️ 2. Extermination : Éliminer tous les [${mutLabel}] (${totalCarriers} restant(s)${babyWarn} • ${quest.slainCount || 0} tué(s))`
+            );
+
+      if (!quest.scoutMissionAssigned && unspottedCarriers > 0) {
+        quest.actionHint = tr(
+          `💡 Order Scouts to "🔍 Track [${mutLabel}]" to reveal the ${unspottedCarriers} hidden carrier(s)!`,
+          `💡 Ordonnez aux Éclaireurs « 🔍 Traquer [${mutLabel}] » pour révéler les ${unspottedCarriers} porteur(s) caché(s) !`
+        );
+      } else if (unspottedCarriers > 0) {
+        quest.actionHint = tr(
+          `🦅 Your Scouts are tracking the ${unspottedCarriers} remaining [${mutLabel}] carrier(s) in the wilds...`,
+          `🦅 Vos Éclaireurs traquent les ${unspottedCarriers} porteur(s) [${mutLabel}] restant(s) dans les terres sauvages...`
+        );
+      } else if (totalCarriers > 0) {
+        quest.actionHint = tr(
+          `🎯 All [${mutLabel}] carriers are locked on the Minimap! Strike them down before the next Eco-Tick!`,
+          `🎯 Tous les [${mutLabel}] sont verrouillés sur la Minimap ! Foncez les éliminer avant le prochain Eco-Tick !`
+        );
+      }
+    } else if (quest.type === 'upgrade_bastion') {
+      const builtCount = quest.buildingsConstructed ?? 0;
+      const maxLvl = quest.highestUpgradeLevel ?? 1;
+      const step1Done = builtCount >= quest.targetBuildingsCount;
+      const step2Done = maxLvl >= quest.targetUpgradeLevel;
+
+      quest.title = tr(
+        '🏰 Bastion Architecture: Build & Upgrade the Sanctuary',
+        '🏰 Architecture du Bastion : Bâtir & Améliorer le Sanctuaire'
+      );
+      quest.shortTitle = tr(
+        'Expand the Bastion (Pads [E] or [H])',
+        'Développer le Bastion (Chantiers [E] ou [H])'
+      );
+      quest.step1Text = tr(
+        `${step1Done ? '✅' : '🔨'} 1. Build ${quest.targetBuildingsCount} buildings at the Bastion (${builtCount}/${quest.targetBuildingsCount})`,
+        `${step1Done ? '✅' : '🔨'} 1. Construire ${quest.targetBuildingsCount} bâtiments au Bastion (${builtCount}/${quest.targetBuildingsCount})`
+      );
+      quest.step2Text = tr(
+        `${step2Done ? '✅' : '⬆️'} 2. Upgrade a building to Level ${quest.targetUpgradeLevel} (Current max: Lvl ${maxLvl})`,
+        `${step2Done ? '✅' : '⬆️'} 2. Améliorer un bâtiment au Niveau ${quest.targetUpgradeLevel} (Max actuel : Niv. ${maxLvl})`
+      );
+      quest.actionHint = tr(
+        'Approach a golden pad around the campfire and press [E] (or open [H]) to upgrade your Base!',
+        'Approchez-vous d’un socle doré autour du feu de camp et appuyez sur [E] (ou ouvrez [H]) pour améliorer la Base !'
+      );
+    }
+    return quest;
+  }
+
+  /**
+   * Starts (or prioritizes) a dynamic lineage eradication quest.
    *
-   * @param {string} [mutationId='pyro_gland'] - Identifiant de la mutation ciblée (ex. `'pyro_gland'`).
-   * @param {string} [speciesHint='troll'] - Espèce emblématique porteuse (ex. `'troll'`).
-   * @returns {object} La quête créée ou existante.
+   * @param {string} [mutationId='pyro_gland']
+   * @param {string} [speciesHint='troll']
+   * @returns {object}
    */
   startLineageEradicationQuest(mutationId = 'pyro_gland', speciesHint = 'troll') {
     const existing = this.activeQuests.find(
       (q) => q.type === 'eradicate_lineage' && q.targetMutationId === mutationId && !q.completed
     );
     if (existing) {
-      // Place cette quête en tête de liste (prioritaire)
+      this._refreshQuestLocalization(existing);
       this.activeQuests = [existing, ...this.activeQuests.filter((q) => q.id !== existing.id)];
       return existing;
     }
 
     const mutDef = CONFIG.MUTATIONS?.[mutationId] || CONFIG.MUTATIONS?.pyro_gland;
-    const spDef = CONFIG.SPECIES?.[speciesHint] || CONFIG.SPECIES?.troll;
-    const mutLabel = mutDef?.shortLabel || mutDef?.name || mutationId;
-    const lineageDisplayName =
-      mutationId === 'pyro_gland' && speciesHint === 'troll'
-        ? 'Trolls de Feu (Glande Pyroclastique)'
-        : `Porteurs de [${mutLabel}] (${spDef?.name || 'Mutants'})`;
-
     const quest = {
       id: `quest_lineage_${mutationId}_${this.nextQuestSeq++}`,
       type: 'eradicate_lineage',
       targetMutationId: mutationId,
       speciesHint,
-      title: `📜 Opération : Éradication — ${lineageDisplayName}`,
-      shortTitle: `Éradiquer : ${lineageDisplayName}`,
+      title: '',
+      shortTitle: '',
       icon: '🎯',
       colorCss: mutDef?.colorCss || '#ff4757',
       colorHex: mutDef?.colorHex || 0xff4757,
-      phase: 1, // 1 = Repérage Éclaireurs, 2 = Extermination
+      phase: 1,
       totalCarriers: 1,
       spottedCarriers: 0,
       unspottedCarriers: 1,
@@ -493,9 +726,9 @@ export class DynamicQuestSystem {
       peakCarriersSeen: 1,
       scoutMissionAssigned: false,
       completed: false,
-      step1Text: `1. Mission Éclaireurs : Localiser tous les porteurs [${mutLabel}] (0/1 repéré)`,
-      step2Text: `2. Extermination : Éliminer toute la lignée [${mutLabel}] (1 restant)`,
-      actionHint: `Cliquez sur « 🔍 Traquer [${mutLabel}] » pour envoyer vos Éclaireurs débusquer toute la lignée !`,
+      step1Text: '',
+      step2Text: '',
+      actionHint: '',
       rewards: {
         wood: 45,
         crystal: 35,
@@ -504,8 +737,9 @@ export class DynamicQuestSystem {
       },
     };
 
+    this._refreshQuestLocalization(quest);
     this.activeQuests.unshift(quest);
-    logger.info('QUEST', `Nouvelle quête lancée : ${quest.title}`, {
+    logger.info('QUEST', `New quest started: ${quest.title}`, {
       questId: quest.id,
       targetMutationId: mutationId,
     });
@@ -513,19 +747,19 @@ export class DynamicQuestSystem {
   }
 
   /**
-   * Démarre la quête fil-rouge de développement et d'amélioration du Bastion.
+   * Starts the Bastion development quest.
    *
-   * @returns {object} Quête de développement de base.
+   * @returns {object}
    */
   startBaseUpgradeQuest() {
     const existing = this.activeQuests.find((q) => q.type === 'upgrade_bastion' && !q.completed);
-    if (existing) return existing;
+    if (existing) return this._refreshQuestLocalization(existing);
 
     const quest = {
       id: `quest_bastion_upgrade_${this.nextQuestSeq++}`,
       type: 'upgrade_bastion',
-      title: '🏰 Architecture du Bastion : Bâtir & Améliorer le Sanctuaire',
-      shortTitle: 'Développer le Bastion (Chantiers [E] ou [H])',
+      title: '',
+      shortTitle: '',
       icon: '🏰',
       colorCss: '#e6a145',
       colorHex: 0xe6a145,
@@ -534,10 +768,9 @@ export class DynamicQuestSystem {
       highestUpgradeLevel: 1,
       targetUpgradeLevel: 2,
       completed: false,
-      step1Text: '1. Construire au moins 2 bâtiments sur les socles 3D du camp [E] ou via [H] (0/2)',
-      step2Text: '2. Améliorer un bâtiment au Niveau 2 (Niv. max actuel : 1/2)',
-      actionHint:
-        'Approchez-vous d’un socle doré autour du feu de camp et appuyez sur [E] (ou ouvrez [H]) pour améliorer la Base !',
+      step1Text: '',
+      step2Text: '',
+      actionHint: '',
       rewards: {
         wood: 40,
         crystal: 30,
@@ -546,14 +779,15 @@ export class DynamicQuestSystem {
       },
     };
 
+    this._refreshQuestLocalization(quest);
     this.activeQuests.push(quest);
     return quest;
   }
 
   /**
-   * Enregistre l'élimination d'un ennemi pour mettre à jour les compteurs de chasse de la quête active.
+   * Records an enemy kill to update active quest counters.
    *
-   * @param {object} enemy - Ennemi éliminé.
+   * @param {object} enemy
    */
   recordEnemyKilled(enemy) {
     if (!enemy) return;
@@ -571,13 +805,7 @@ export class DynamicQuestSystem {
   }
 
   /**
-   * Met à jour en temps réel l'état de toutes les quêtes actives à partir de la population ennemie,
-   * des niveaux de bâtiments du Bastion et de l'ordre de mission actuel des Éclaireurs.
-   *
-   * @param {Array<object>} [enemies=[]] - Liste des ennemis vivants dans le monde.
-   * @param {object} [buildingLevels={}] - Niveaux actuels des bâtiments (`{ watchtower: 1, scout_guild: 0, ... }`).
-   * @param {object} [activeScoutMission={}] - Mission active des Éclaireurs (`{ type, targetMutationId }`).
-   * @param {boolean} [isTutorialActive=false] - Si vrai, ne clôture pas prématurément les quêtes avant que des porteurs existent.
+   * Updates all active quests from live enemy population, building levels, and scout missions.
    */
   update(
     enemies = [],
@@ -592,9 +820,6 @@ export class DynamicQuestSystem {
 
       if (quest.type === 'eradicate_lineage') {
         const mutId = quest.targetMutationId;
-        const mutDef = CONFIG.MUTATIONS?.[mutId];
-        const mutLabel = mutDef?.shortLabel || mutDef?.name || mutId;
-
         const carriers = safeEnemies.filter(
           (e) =>
             e &&
@@ -623,25 +848,8 @@ export class DynamicQuestSystem {
         const allCurrentlySpotted = totalCarriers > 0 && spottedCarriers >= totalCarriers;
         quest.phase = allCurrentlySpotted ? 2 : 1;
 
-        quest.step1Text = allCurrentlySpotted
-          ? `✅ 1. Éclaireurs : Tous les porteurs [${mutLabel}] sont localisés (${spottedCarriers}/${totalCarriers}) !`
-          : `🔍 1. Éclaireurs : Localiser tous les porteurs [${mutLabel}] (${spottedCarriers}/${Math.max(1, totalCarriers)} repérés)`;
+        this._refreshQuestLocalization(quest);
 
-        const babyWarn = babyCarriers > 0 ? ` dont ${babyCarriers} Bébé(s) !` : '';
-        quest.step2Text =
-          totalCarriers === 0 && quest.slainCount > 0
-            ? `✅ 2. Extermination : Lignée [${mutLabel}] éradiquée (${quest.slainCount} éliminés) !`
-            : `⚔️ 2. Extermination : Éliminer tous les [${mutLabel}] (${totalCarriers} restant(s)${babyWarn} • ${quest.slainCount} tué(s))`;
-
-        if (!quest.scoutMissionAssigned && unspottedCarriers > 0) {
-          quest.actionHint = `💡 Ordonnez aux Éclaireurs « 🔍 Traquer [${mutLabel}] » pour révéler les ${unspottedCarriers} porteur(s) caché(s) !`;
-        } else if (unspottedCarriers > 0) {
-          quest.actionHint = `🦅 Vos Éclaireurs traquent les ${unspottedCarriers} porteur(s) [${mutLabel}] restant(s) dans les terres sauvages...`;
-        } else if (totalCarriers > 0) {
-          quest.actionHint = `🎯 Tous les [${mutLabel}] sont verrouillés sur la Minimap ! Foncez les éliminer avant le prochain Eco-Tick !`;
-        }
-
-        // Condition de victoire de la quête : au moins 1 porteur a été tué et il n'en reste plus aucun en vie !
         if (totalCarriers === 0 && quest.slainCount > 0 && !isTutorialActive) {
           this._completeQuest(quest);
         }
@@ -660,8 +868,7 @@ export class DynamicQuestSystem {
         const step1Done = builtList.length >= quest.targetBuildingsCount;
         const step2Done = maxLvl >= quest.targetUpgradeLevel;
 
-        quest.step1Text = `${step1Done ? '✅' : '🔨'} 1. Construire ${quest.targetBuildingsCount} bâtiments au Bastion (${builtList.length}/${quest.targetBuildingsCount})`;
-        quest.step2Text = `${step2Done ? '✅' : '⬆️'} 2. Améliorer un bâtiment au Niveau ${quest.targetUpgradeLevel} (Max actuel : Niv. ${maxLvl})`;
+        this._refreshQuestLocalization(quest);
 
         if (step1Done && step2Done) {
           this._completeQuest(quest);
@@ -669,7 +876,6 @@ export class DynamicQuestSystem {
       }
     }
 
-    // Si aucune quête d'éradication de lignée n'est active et qu'une autre mutation existe dans le monde, en lance une nouvelle !
     const hasActiveLineageQuest = this.activeQuests.some(
       (q) => q.type === 'eradicate_lineage' && !q.completed
     );
@@ -687,19 +893,26 @@ export class DynamicQuestSystem {
   }
 
   /**
-   * Marque une quête comme accomplie et met ses récompenses en file d'attente.
+   * Marks a quest as completed and queues its reward notification.
    * @param {object} quest
    */
   _completeQuest(quest) {
     if (quest.completed) return;
     quest.completed = true;
+    this._refreshQuestLocalization(quest);
     this.completedQuests.push(quest);
     this.activeQuests = this.activeQuests.filter((q) => q.id !== quest.id);
 
     const rewardEntry = {
       questId: quest.id,
-      title: `🏆 QUÊTE ACCOMPLIE : ${quest.shortTitle}`,
-      subtitle: `Récompense : +${quest.rewards.wood} Bois, +${quest.rewards.crystal} Cristal, +${quest.rewards.biomass} Biomasse & +${quest.rewards.xp} XP !`,
+      title: tr(
+        `🏆 QUEST COMPLETED: ${quest.shortTitle}`,
+        `🏆 QUÊTE ACCOMPLIE : ${quest.shortTitle}`
+      ),
+      subtitle: tr(
+        `Reward: +${quest.rewards.wood} Wood, +${quest.rewards.crystal} Crystal, +${quest.rewards.biomass} Biomass & +${quest.rewards.xp} XP!`,
+        `Récompense : +${quest.rewards.wood} Bois, +${quest.rewards.crystal} Cristal, +${quest.rewards.biomass} Biomasse & +${quest.rewards.xp} XP !`
+      ),
       rewards: { ...quest.rewards },
       colorCss: quest.colorCss,
       colorHex: quest.colorHex,
@@ -709,7 +922,7 @@ export class DynamicQuestSystem {
   }
 
   /**
-   * Consomme et retourne les récompenses des quêtes récemment accomplies.
+   * Consumes and returns recently completed quest rewards.
    * @returns {Array<object>}
    */
   consumePendingRewards() {
@@ -720,37 +933,131 @@ export class DynamicQuestSystem {
   }
 
   /**
-   * Retourne la quête prioritaire actuelle (ainsi que la liste complète des quêtes actives) pour le HUD.
+   * Returns the primary active quest and all active quests for the HUD, localized in the active language.
    * @returns {{ primaryQuest: object|null, activeQuests: Array<object>, completedCount: number }}
    */
   getQuestsSummaryForHUD() {
+    for (const q of this.activeQuests) {
+      this._refreshQuestLocalization(q);
+    }
     return {
       primaryQuest: this.activeQuests[0] || null,
       activeQuests: [...this.activeQuests],
       completedCount: this.completedQuests.length,
     };
   }
+
+  /**
+   * Alias of `getQuestsSummaryForHUD()`.
+   */
+  getHUDState() {
+    return this.getQuestsSummaryForHUD();
+  }
 }
 
 /**
- * Catalogue complet des Armes Élémentaires Légendaires (Phase 8 RPG Artifacts).
- * Inclut l'arme de départ (`runic_steel`) et les 4 grandes armes élémentaires à débloquer sur les Autels 3D (`[E]`)
- * ou via l'Armurerie des Artefacts (`[K]`).
+ * English localization metadata for the 5 Legendary Elemental Weapons.
  */
-export const ELEMENTAL_WEAPONS_CATALOG = Object.values(CONFIG.ELEMENTAL_WEAPONS || {});
+const ELEMENTAL_WEAPONS_EN_META = {
+  runic_steel: {
+    nameEN: 'Bastion Runic Greatsword',
+    shortNameEN: 'Runic Greatsword',
+    descriptionEN:
+      'Standard runic steel blade forged at the Sanctuary. Balanced, without elemental affinity.',
+    passiveSummaryEN: 'Balanced starter weapon (Damage ×1.00, Range ×1.00).',
+  },
+  fire_greatsword: {
+    nameEN: 'Solar Blade of Ignis',
+    shortNameEN: 'Fire Blade',
+    descriptionEN:
+      '+12% cleave damage, ignites targets (8 DPS for 3.5s), triggers a solar detonation on kill, and deals +15% damage vs Wild Beasts & Giant Moles.',
+    passiveSummaryEN:
+      '🔥 +12% Damage • Burn (8 DPS/3.5s) • Solar blast on kill • +15% vs Beasts & Moles',
+  },
+  ice_greatsword: {
+    nameEN: 'Frost Greatsword of Boreas',
+    shortNameEN: 'Ice Weapon',
+    descriptionEN:
+      '+10% damage and +12% cleave range, inflicts Frost (-35% speed for 3.5s), shatters Osteo-Dermal Plating, and deals +15% damage vs Pyro Mutants & Land Sharks.',
+    passiveSummaryEN:
+      '❄️ +10% Damage • +12% Range • Frost (-35% speed) • Armor-Shatter • +15% vs Fire Mutants & Sharks',
+  },
+  lightning_greatsword: {
+    nameEN: 'Thunder Glaive of Aether',
+    shortNameEN: 'Lightning Weapon',
+    descriptionEN:
+      '+10% damage, +12% attack speed, and +8% move speed. Every strike chains lightning across 3 nearby enemies (12 dmg) and deals +15% damage vs Greenskins & Amphibians.',
+    passiveSummaryEN:
+      '⚡ +10% Damage • +12% Atk Speed • +8% Move Speed • Chain Lightning (12 dmg) • +15% vs Goblins/Orcs',
+  },
+  venom_greatsword: {
+    nameEN: 'Symbiotic Emerald Scythe',
+    shortNameEN: 'Venom & Biomass Weapon',
+    descriptionEN:
+      '+10% damage, inflicts Corrosive Venom (7 DPS, -15% enemy damage), grants 8% Lifesteal, AUTOMATICALLY SPARES Herbivore Prey (0 damage to Deer/Rabbits!), and harvests +1 Biomass per kill.',
+    passiveSummaryEN:
+      '🧪 +10% Damage • 8% Lifesteal • Venom (7 DPS) • Prey Immunity (Spares Deer/Rabbits) • +1 Biomass/kill',
+  },
+};
 
 /**
- * Indexation rapide des armes élémentaires par `id`.
+ * Wraps a raw weapon config entry with bilingual getters (`name`, `shortName`, `description`, `passiveSummary`, `passiveSummaryFR`).
+ * @param {object} rawWeapon
+ * @returns {object}
+ */
+function createBilingualWeaponSpec(rawWeapon) {
+  const enMeta = ELEMENTAL_WEAPONS_EN_META[rawWeapon.id] || {};
+  const nameFR = rawWeapon.name;
+  const shortNameFR = rawWeapon.shortName;
+  const descriptionFR = rawWeapon.description;
+  const passiveSummaryFR = rawWeapon.passiveSummaryFR;
+
+  return {
+    ...rawWeapon,
+    nameEN: enMeta.nameEN || nameFR,
+    nameFR,
+    shortNameEN: enMeta.shortNameEN || shortNameFR,
+    shortNameFR,
+    descriptionEN: enMeta.descriptionEN || descriptionFR,
+    descriptionFR,
+    passiveSummaryEN: enMeta.passiveSummaryEN || passiveSummaryFR,
+    get name() {
+      return tr(this.nameEN, this.nameFR);
+    },
+    get shortName() {
+      return tr(this.shortNameEN, this.shortNameFR);
+    },
+    get description() {
+      return tr(this.descriptionEN, this.descriptionFR);
+    },
+    get passiveSummary() {
+      return tr(this.passiveSummaryEN, passiveSummaryFR);
+    },
+    get passiveSummaryFR() {
+      return tr(this.passiveSummaryEN, passiveSummaryFR);
+    },
+  };
+}
+
+/**
+ * Complete catalog of Legendary Elemental Weapons (bilingual EN default / FR 2nd).
+ */
+export const ELEMENTAL_WEAPONS_CATALOG = Object.values(CONFIG.ELEMENTAL_WEAPONS || {}).map(
+  createBilingualWeaponSpec
+);
+
+/**
+ * Fast lookup of Elemental Weapons by `id`.
  */
 export const ELEMENTAL_WEAPONS_BY_ID = Object.fromEntries(
   ELEMENTAL_WEAPONS_CATALOG.map((w) => [w.id, w])
 );
 
 /**
- * Retourne la spécification complète d'une arme élémentaire par son identifiant.
+ * Returns the complete localized specification of an Elemental Weapon by `weaponId`.
  *
- * @param {string} [weaponId='runic_steel'] - Identifiant de l'arme (`'runic_steel'`, `'fire_greatsword'`, `'ice_greatsword'`, `'lightning_greatsword'`, `'venom_greatsword'`).
- * @returns {object} Spécification de l'arme élémentaire.
+ * @param {string} [weaponId='runic_steel']
+ * @returns {object}
  */
 export function getElementalWeaponSpec(weaponId = 'runic_steel') {
   return (
@@ -761,19 +1068,36 @@ export function getElementalWeaponSpec(weaponId = 'runic_steel') {
 }
 
 /**
- * Spécification des 3 Fragments de Relique d'Éden et du Dôme-Bouclier Planétaire (`RELIC_FRAGMENTS_SPEC`).
+ * Returns all Elemental Weapon specifications localized in the active language.
+ *
+ * @returns {Array<object>}
+ */
+export function getAllElementalWeaponSpecs() {
+  return ELEMENTAL_WEAPONS_CATALOG;
+}
+
+/**
+ * Specification of the 3 Eden Relic Fragments and the Planetary Island Shield Dome (`RELIC_FRAGMENTS_SPEC`).
  */
 export const RELIC_FRAGMENTS_SPEC = {
   requiredCount: CONFIG.RELIC_FRAGMENTS?.REQUIRED_COUNT ?? 3,
   shieldDomeRadius: CONFIG.RELIC_FRAGMENTS?.SHIELD_DOME_RADIUS ?? 115,
   fragmentRewardXp: CONFIG.RELIC_FRAGMENTS?.FRAGMENT_REWARD_XP ?? 50,
   fragmentRewardCrystal: CONFIG.RELIC_FRAGMENTS?.FRAGMENT_REWARD_CRYSTAL ?? 15,
-  shrines: CONFIG.RELIC_FRAGMENTS?.SHRINES || [
+  shrines: [
     {
       id: 'relic_dawn_north',
       index: 1,
-      name: 'Fragment d’Aube (Nord)',
-      sectorLabel: 'Hautes Terres du Nord',
+      nameEN: 'Fragment of Dawn (North)',
+      nameFR: 'Fragment d’Aube (Nord)',
+      sectorLabelEN: 'Northern Highlands',
+      sectorLabelFR: 'Hautes Terres du Nord',
+      get name() {
+        return tr(this.nameEN, this.nameFR);
+      },
+      get sectorLabel() {
+        return tr(this.sectorLabelEN, this.sectorLabelFR);
+      },
       pos: { x: 4, z: -64 },
       colorHex: 0x00e5ff,
       colorCss: '#00e5ff',
@@ -781,8 +1105,16 @@ export const RELIC_FRAGMENTS_SPEC = {
     {
       id: 'relic_breakers_southeast',
       index: 2,
-      name: 'Fragment des Brisants (Sud-Est)',
-      sectorLabel: 'Littoral & Plaines du Sud-Est',
+      nameEN: 'Fragment of Breakers (South-East)',
+      nameFR: 'Fragment des Brisants (Sud-Est)',
+      sectorLabelEN: 'South-East Coast & Plains',
+      sectorLabelFR: 'Littoral & Plaines du Sud-Est',
+      get name() {
+        return tr(this.nameEN, this.nameFR);
+      },
+      get sectorLabel() {
+        return tr(this.sectorLabelEN, this.sectorLabelFR);
+      },
       pos: { x: 58, z: 42 },
       colorHex: 0xffd32a,
       colorCss: '#ffd32a',
@@ -790,8 +1122,16 @@ export const RELIC_FRAGMENTS_SPEC = {
     {
       id: 'relic_caldera_southwest',
       index: 3,
-      name: 'Fragment de Caldeira (Sud-Ouest)',
-      sectorLabel: 'Lisière Volcanique Sud-Ouest',
+      nameEN: 'Fragment of Caldera (South-West)',
+      nameFR: 'Fragment de Caldeira (Sud-Ouest)',
+      sectorLabelEN: 'South-West Volcanic Rim',
+      sectorLabelFR: 'Lisière Volcanique Sud-Ouest',
+      get name() {
+        return tr(this.nameEN, this.nameFR);
+      },
+      get sectorLabel() {
+        return tr(this.sectorLabelEN, this.sectorLabelFR);
+      },
       pos: { x: -56, z: 44 },
       colorHex: 0xff5e57,
       colorCss: '#ff5e57',
@@ -800,39 +1140,59 @@ export const RELIC_FRAGMENTS_SPEC = {
 };
 
 /**
- * Configuration des paliers de difficulté de campagne multi-îles (`ISLAND_TIERS_CONFIG`).
+ * Multi-island campaign difficulty tiers (`ISLAND_TIERS_CONFIG`).
  */
 export const ISLAND_TIERS_CONFIG = CONFIG.ISLAND_TIERS || [];
 
+const ISLAND_TIERS_EN_META = {
+  1: {
+    nameEN: 'Island 1: Emerald Sanctuary Archipelago',
+    subtitleEN: 'Balanced Awakening Ecosystem (Difficulty ×1.00)',
+  },
+  2: {
+    nameEN: 'Island 2: Abyssal Caldera Archipelago',
+    subtitleEN: 'Accelerated Evolution & Early Mutants (Difficulty ×1.35)',
+  },
+  3: {
+    nameEN: 'Island 3: Obsidian Mutant Wilds',
+    subtitleEN: 'High-Mutation Predator Ecosystem (Difficulty ×1.75)',
+  },
+  4: {
+    nameEN: 'Island 4: Primordial Draconic Sanctuary',
+    subtitleEN: 'Extreme Apex Darwinian Crucible (Difficulty ×2.20)',
+  },
+};
+
 /**
- * Résout les paramètres de difficulté et d'écosystème pour une île donnée (`1, 2, 3, ...`).
- * Au-delà de l'Île 4, les multiplicateurs continuent de croître de façon procédurale (`+35%` stats / île, `+4%` mutation / île).
+ * Resolves the localized difficulty and ecosystem parameters for a given island (`1, 2, 3, ...`).
  *
- * @param {number} [islandNumber=1] - Numéro de l'île (`1+`).
- * @returns {{
- *   islandNumber: number,
- *   name: string,
- *   subtitle: string,
- *   enemyStatMultiplier: number,
- *   mutationRateBonus: number,
- *   initialMutantCount: number,
- *   sharkLandingTimeSec: number,
- *   moleEruptionTimeSec: number,
- *   skyTintHex: number
- * }} Spécification complète du palier d'île.
+ * @param {number} [islandNumber=1]
+ * @returns {object}
  */
 export function getIslandTierSpec(islandNumber = 1) {
   const safeNum = Math.max(1, Math.floor(Number(islandNumber) || 1));
   const preset = ISLAND_TIERS_CONFIG.find((t) => t.islandNumber === safeNum);
   if (preset) {
-    return { ...preset };
+    const enMeta = ISLAND_TIERS_EN_META[safeNum] || {};
+    return {
+      ...preset,
+      name: tr(enMeta.nameEN || preset.name, preset.name),
+      subtitle: tr(enMeta.subtitleEN || preset.subtitle, preset.subtitle),
+    };
   }
   const extraTiers = safeNum - 1;
+  const multStr = (1 + extraTiers * 0.35).toFixed(2);
   return {
     islandNumber: safeNum,
-    name: `Île ${safeNum} : Archipel Abyssal Primordial #${safeNum}`,
-    subtitle: `Écosystème Hyper-Mutagène (Difficulté ×${(1 + extraTiers * 0.35).toFixed(2)})`,
-    enemyStatMultiplier: Number((1.0 + extraTiers * 0.35).toFixed(2)),
+    name: tr(
+      `Island ${safeNum}: Primordial Abyssal Archipelago #${safeNum}`,
+      `Île ${safeNum} : Archipel Abyssal Primordial #${safeNum}`
+    ),
+    subtitle: tr(
+      `Hyper-Mutagenic Ecosystem (Difficulty ×${multStr})`,
+      `Écosystème Hyper-Mutagène (Difficulté ×${multStr})`
+    ),
+    enemyStatMultiplier: Number(multStr),
     mutationRateBonus: Number(Math.min(0.32, extraTiers * 0.04).toFixed(3)),
     initialMutantCount: Math.min(12, 1 + extraTiers * 2),
     sharkLandingTimeSec: Math.max(10, 40 - extraTiers * 6),
@@ -852,6 +1212,7 @@ export default {
   ELEMENTAL_WEAPONS_CATALOG,
   ELEMENTAL_WEAPONS_BY_ID,
   getElementalWeaponSpec,
+  getAllElementalWeaponSpecs,
   RELIC_FRAGMENTS_SPEC,
   ISLAND_TIERS_CONFIG,
   getIslandTierSpec,
