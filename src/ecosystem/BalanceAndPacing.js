@@ -45,19 +45,140 @@ import { logger } from '../utils/logger.js';
 export const BALANCE = {
   /**
    * Durées de maturation (en secondes) du stade Bébé (`baby`) au stade Adulte reproducteur (`adult`).
-   * Calibrées par rapport au temps de trajet du joueur (vitesse 13.5 u/s, dash 30 u/s) :
-   * Traverser 75 unités depuis le Bastion prend ~5.2s ; avec le délai de détection de l'Éclaireur,
-   * le joueur dispose d'une fenêtre d'interception tendue mais juste de 20 à 35 secondes avant
-   * le premier Eco-Tick reproducteur de l'adulte.
+   * Différenciées fortement par espèce pour refléter la biologie de chaque clade :
+   * - Gobelin (12s) & Loup (15s) : croissance rapide mais fragile.
+   * - Orc (22s) & Lion (26s) : croissance intermédiaire.
+   * - Troll (34s) & Dragon (50s) : longue période juvénile vulnérable permettant au joueur
+   *   d'intercepter un colosse ou un Dragon mutant avant sa maturité.
    */
   MATURATION_BY_SPECIES: {
-    goblin: 16,
-    wolf: 18,
-    vulture: 20,
+    goblin: 12,
+    wolf: 15,
+    vulture: 17,
     orc: 22,
+    lion: 26,
+    troll: 34,
+    dragon: 50,
+  },
+
+  /**
+   * Cooldowns de gestation / reproduction de base (en secondes) entre deux pontes/portées
+   * pour chaque parent adulte (`reproductionCooldown = genes.gestationTime`).
+   */
+  GESTATION_BY_SPECIES: {
+    goblin: 9,
+    wolf: 13,
+    vulture: 15,
+    orc: 18,
     lion: 24,
-    troll: 28,
-    dragon: 38,
+    troll: 30,
+    dragon: 65,
+  },
+
+  /**
+   * Gène d'agressivité de base (`0.05` à `1.00`) et posture comportementale (`aggroStance`) par espèce :
+   * - `'hostile'` : chasse activement le joueur et assiège le Bastion.
+   * - `'territorial'` : patrouille son biome avec rayon d'aggro réduit (`aggroRadius * (0.45 + 0.55 * aggressiveness)`)
+   *   sauf en cas de famine (`starving`) ou d'attaque directe.
+   * - `'pacifist_apex'` : les Dragons sont des souverains paisibles (`0.08`) qui n'attaquent jamais
+   *   en premier, mais déclenchent le Courroux Draconique (`90s`) de toute leur espèce s'ils sont attaqués.
+   */
+  AGGRESSIVENESS_BY_SPECIES: {
+    orc: 0.88,
+    wolf: 0.82,
+    goblin: 0.75,
+    lion: 0.70,
+    troll: 0.48,
+    vulture: 0.38,
+    dragon: 0.08,
+  },
+
+  AGGRO_STANCE_BY_SPECIES: {
+    orc: 'hostile',
+    wolf: 'hostile',
+    goblin: 'hostile',
+    lion: 'hostile',
+    troll: 'territorial',
+    vulture: 'territorial',
+    dragon: 'pacifist_apex',
+  },
+
+  /**
+   * Paramètres de repeuplement sauvage depuis les habitats cachés (terriers, tanières, falaises, crêtes)
+   * garantissant qu'aucune des 7 espèces de base ne s'éteint définitivement (`< 2` individus vivants).
+   */
+  REPOPULATION_BY_SPECIES: {
+    goblin: {
+      cooldown: 8,
+      minThreshold: 2,
+      spawnCount: 2,
+      habitatLabel: 'les terriers forestiers',
+      messageFR: 'Des Gobelins sauvages émergent de leurs terriers forestiers !',
+    },
+    wolf: {
+      cooldown: 12,
+      minThreshold: 2,
+      spawnCount: 2,
+      habitatLabel: 'les tanières sylvestres',
+      messageFR: 'Des Loups sauvages quittent leurs tanières sylvestres !',
+    },
+    vulture: {
+      cooldown: 12,
+      minThreshold: 2,
+      spawnCount: 2,
+      habitatLabel: 'les nids des falaises escarpées',
+      messageFR: 'Des Vautours descendent en piqué depuis les nids des falaises !',
+    },
+    orc: {
+      cooldown: 16,
+      minThreshold: 2,
+      spawnCount: 2,
+      habitatLabel: 'les campements enfouis des plaines',
+      messageFR: 'Une patrouille d’Orcs sauvages surgit des campements enfouis !',
+    },
+    lion: {
+      cooldown: 16,
+      minThreshold: 2,
+      spawnCount: 2,
+      habitatLabel: 'les hautes herbes sauvages',
+      messageFR: 'Un couple de Lions sauvages regagne son territoire dans les plaines !',
+    },
+    troll: {
+      cooldown: 16,
+      minThreshold: 2,
+      spawnCount: 2,
+      habitatLabel: 'les cavernes profondes des hautes terres',
+      messageFR: 'Des Trolls anciens sortent des cavernes profondes des hautes terres !',
+    },
+    dragon: {
+      cooldown: 28,
+      minThreshold: 2,
+      spawnCount: 2,
+      habitatLabel: 'les crêtes volcaniques inaccessibles',
+      messageFR: 'Un couple de Dragons ancestraux se pose sur la caldeira volcanique !',
+    },
+  },
+
+  /**
+   * Paramètres du Courroux d'Espèce (Collective Species Wrath) lorsqu'une espèce `pacifist_apex`
+   * (Dragon) est provoquée par le joueur.
+   */
+  SPECIES_WRATH: {
+    DURATION_SEC: CONFIG.ECO?.SPECIES_WRATH_DURATION ?? 90,
+    SPEED_MULTIPLIER: 1.25,
+    AGGRO_OVERRIDE: 1.0,
+  },
+
+  /**
+   * Paramètres du croisement génétique à expansion de spectre (Scope-Expanding Crossover) :
+   * Chaque gène quantitatif tire uniformément dans `[min(Dad, Mom), max(Dad, Mom)]`
+   * puis est multiplié par un facteur de dérive uniforme dans `[0.90, 1.10]` (+/- 10%).
+   */
+  CROSSOVER_DRIFT: {
+    MIN_MULTIPLIER: 0.90,
+    MAX_MULTIPLIER: 1.10,
+    MIN_CLAMP_FACTOR: 0.35,
+    MAX_CLAMP_FACTOR: 4.5,
   },
 
   /**
@@ -150,6 +271,159 @@ function sampleRng(rng = Math.random) {
 }
 
 /**
+ * Calcule l'héritage d'un gène quantitatif selon la formule de croisement à expansion de spectre :
+ * `rawValue = uniform(min(valDad, valMom), max(valDad, valMom))`
+ * `mutatedValue = rawValue * uniform(0.90, 1.10)`
+ * Ainsi, même si deux parents ont la même valeur (ex. `10`), l'enfant peut dériver dans `[9, 11]`,
+ * élargissant le pool génétique de génération en génération pour que la sélection naturelle opère.
+ *
+ * @param {number} valDad - Valeur du gène chez le parent A.
+ * @param {number} valMom - Valeur du gène chez le parent B.
+ * @param {number} [minBound=0.1] - Borne minimale absolue autorisée pour ce gène.
+ * @param {number} [maxBound=9999] - Borne maximale absolue autorisée pour ce gène.
+ * @param {Function|object} [rng=Math.random] - Générateur aléatoire.
+ * @returns {number} Valeur héritée et dérivée du gène.
+ */
+export function sampleScopeExpandingGene(
+  valDad,
+  valMom,
+  minBound = 0.1,
+  maxBound = 9999,
+  rng = Math.random
+) {
+  const safeDad = Number.isFinite(valDad) ? valDad : minBound;
+  const safeMom = Number.isFinite(valMom) ? valMom : safeDad;
+  const low = Math.min(safeDad, safeMom);
+  const high = Math.max(safeDad, safeMom);
+  const rawValue = low + (high - low) * sampleRng(rng);
+  const driftMin = BALANCE.CROSSOVER_DRIFT.MIN_MULTIPLIER;
+  const driftMax = BALANCE.CROSSOVER_DRIFT.MAX_MULTIPLIER;
+  const driftFactor = driftMin + (driftMax - driftMin) * sampleRng(rng);
+  const mutatedValue = rawValue * driftFactor;
+  return Number(clamp(mutatedValue, minBound, maxBound).toFixed(3));
+}
+
+/**
+ * Résout le profil reproductif, comportemental (agressivité / posture) et de repeuplement sauvage
+ * d'une espèce (pure ou hybride).
+ *
+ * @param {string} [speciesId='goblin'] - Identifiant de l'espèce (`'goblin'`, `'dragon'`, `'orc_troll'`, etc.).
+ * @param {object} [genes={}] - Gènes individuels éventuels (`gestationTime`, `aggressiveness`).
+ * @param {string[]} [mutations=[]] - Mutations actives éventuelles.
+ * @returns {{
+ *   speciesId: string,
+ *   gestationTime: number,
+ *   maturationTime: number,
+ *   aggressiveness: number,
+ *   aggroStance: 'hostile' | 'territorial' | 'pacifist_apex',
+ *   isPacifistApex: boolean,
+ *   effectiveAggroRadiusMultiplier: number,
+ *   repopulationCooldown: number,
+ *   repopulationHabitatLabel: string,
+ *   repopulationMessageFR: string,
+ *   wrathDurationSec: number,
+ *   wrathSpeedMultiplier: number
+ * }} Profil reproductif et comportemental complet.
+ */
+export function getSpeciesReproductiveAndAggroProfile(
+  speciesId = 'goblin',
+  genes = {},
+  mutations = []
+) {
+  const spCfg = CONFIG?.SPECIES?.[speciesId];
+  let baseGestation =
+    spCfg?.baseGestationTime ?? BALANCE.GESTATION_BY_SPECIES[speciesId];
+  let baseAggro =
+    spCfg?.baseAggressiveness ?? BALANCE.AGGRESSIVENESS_BY_SPECIES[speciesId];
+  let aggroStance =
+    spCfg?.aggroStance ?? BALANCE.AGGRO_STANCE_BY_SPECIES[speciesId] ?? 'hostile';
+
+  if (typeof baseGestation !== 'number' || typeof baseAggro !== 'number') {
+    if (typeof speciesId === 'string' && speciesId.includes('_')) {
+      const [pA, pB] = speciesId.split('_');
+      const gA =
+        CONFIG?.SPECIES?.[pA]?.baseGestationTime ??
+        BALANCE.GESTATION_BY_SPECIES[pA] ??
+        16;
+      const gB =
+        CONFIG?.SPECIES?.[pB]?.baseGestationTime ??
+        BALANCE.GESTATION_BY_SPECIES[pB] ??
+        16;
+      baseGestation = (gA + gB) * 0.5;
+
+      const aA =
+        CONFIG?.SPECIES?.[pA]?.baseAggressiveness ??
+        BALANCE.AGGRESSIVENESS_BY_SPECIES[pA] ??
+        0.7;
+      const aB =
+        CONFIG?.SPECIES?.[pB]?.baseAggressiveness ??
+        BALANCE.AGGRESSIVENESS_BY_SPECIES[pB] ??
+        0.7;
+      baseAggro = (aA + aB) * 0.5;
+
+      const stA =
+        CONFIG?.SPECIES?.[pA]?.aggroStance ??
+        BALANCE.AGGRO_STANCE_BY_SPECIES[pA] ??
+        'hostile';
+      const stB =
+        CONFIG?.SPECIES?.[pB]?.aggroStance ??
+        BALANCE.AGGRO_STANCE_BY_SPECIES[pB] ??
+        'hostile';
+      if (stA === 'pacifist_apex' && stB === 'pacifist_apex') {
+        aggroStance = 'pacifist_apex';
+      } else if (stA === 'territorial' || stB === 'territorial') {
+        aggroStance = baseAggro < 0.58 ? 'territorial' : 'hostile';
+      } else {
+        aggroStance = 'hostile';
+      }
+    } else {
+      baseGestation = baseGestation ?? 15;
+      baseAggro = baseAggro ?? 0.75;
+    }
+  }
+
+  const matProfile = getMaturationProfile(speciesId, mutations);
+  const gestationTime = Number(
+    clamp(genes?.gestationTime ?? baseGestation, 4, 180).toFixed(1)
+  );
+  const aggressiveness = Number(
+    clamp(genes?.aggressiveness ?? baseAggro, 0.05, 1.0).toFixed(3)
+  );
+  const isPacifistApex = aggroStance === 'pacifist_apex';
+
+  const effectiveAggroRadiusMultiplier = isPacifistApex
+    ? 0.0
+    : aggroStance === 'territorial'
+      ? Number((0.45 + 0.55 * aggressiveness).toFixed(3))
+      : Number((0.75 + 0.35 * aggressiveness).toFixed(3));
+
+  const repopEntry = BALANCE.REPOPULATION_BY_SPECIES[speciesId] || {
+    cooldown: spCfg?.repopulationCooldown ?? 14,
+    habitatLabel: spCfg?.repopulationHabitatLabel ?? 'les terres sauvages',
+    messageFR:
+      spCfg?.repopulationMessageFR ??
+      'De nouveaux individus sauvages émergent de leur habitat caché !',
+  };
+
+  return {
+    speciesId,
+    gestationTime,
+    maturationTime: matProfile.maturationTime,
+    aggressiveness,
+    aggroStance,
+    isPacifistApex,
+    effectiveAggroRadiusMultiplier,
+    repopulationCooldown: spCfg?.repopulationCooldown ?? repopEntry.cooldown,
+    repopulationHabitatLabel:
+      spCfg?.repopulationHabitatLabel ?? repopEntry.habitatLabel,
+    repopulationMessageFR:
+      spCfg?.repopulationMessageFR ?? repopEntry.messageFR,
+    wrathDurationSec: BALANCE.SPECIES_WRATH.DURATION_SEC,
+    wrathSpeedMultiplier: BALANCE.SPECIES_WRATH.SPEED_MULTIPLIER,
+  };
+}
+
+/**
  * Calcule le profil complet de maturation juvénile (`baby` -> `adult`) pour une espèce
  * (pure ou hybride) et ses mutations éventuelles.
  *
@@ -164,6 +438,9 @@ function sampleRng(rng = Math.random) {
  *   isAdult: false,
  *   canReproduce: false,
  *   maturationTime: number,
+ *   gestationTime: number,
+ *   baseAggressiveness: number,
+ *   aggroStance: string,
  *   babyScale: number,
  *   adultScale: number,
  *   babyStatMult: number,
@@ -173,15 +450,48 @@ function sampleRng(rng = Math.random) {
  */
 export function getMaturationProfile(speciesId = 'goblin', mutations = []) {
   const durationTable = BALANCE.MATURATION_BY_SPECIES;
-  let baseDuration = durationTable[speciesId];
+  const spCfg = CONFIG?.SPECIES?.[speciesId];
+  let baseDuration = spCfg?.baseMaturationTime ?? durationTable[speciesId];
+  let baseGestation =
+    spCfg?.baseGestationTime ?? BALANCE.GESTATION_BY_SPECIES[speciesId] ?? 15;
+  let baseAggressiveness =
+    spCfg?.baseAggressiveness ?? BALANCE.AGGRESSIVENESS_BY_SPECIES[speciesId] ?? 0.75;
+  let aggroStance =
+    spCfg?.aggroStance ?? BALANCE.AGGRO_STANCE_BY_SPECIES[speciesId] ?? 'hostile';
 
   // Si c'est un hybride (ex. 'orc_troll' ou 'vulture_dragon'), moyenne les durées des espèces parentes
   if (typeof baseDuration !== 'number') {
     if (typeof speciesId === 'string' && speciesId.includes('_')) {
       const parts = speciesId.split('_');
-      const dA = durationTable[parts[0]] ?? (CONFIG.ECO?.MATURATION_TIME || 20);
-      const dB = durationTable[parts[1]] ?? (CONFIG.ECO?.MATURATION_TIME || 20);
+      const dA =
+        CONFIG?.SPECIES?.[parts[0]]?.baseMaturationTime ??
+        durationTable[parts[0]] ??
+        (CONFIG.ECO?.MATURATION_TIME || 20);
+      const dB =
+        CONFIG?.SPECIES?.[parts[1]]?.baseMaturationTime ??
+        durationTable[parts[1]] ??
+        (CONFIG.ECO?.MATURATION_TIME || 20);
       baseDuration = (dA + dB) * 0.5;
+
+      const gA =
+        CONFIG?.SPECIES?.[parts[0]]?.baseGestationTime ??
+        BALANCE.GESTATION_BY_SPECIES[parts[0]] ??
+        15;
+      const gB =
+        CONFIG?.SPECIES?.[parts[1]]?.baseGestationTime ??
+        BALANCE.GESTATION_BY_SPECIES[parts[1]] ??
+        15;
+      baseGestation = (gA + gB) * 0.5;
+
+      const aA =
+        CONFIG?.SPECIES?.[parts[0]]?.baseAggressiveness ??
+        BALANCE.AGGRESSIVENESS_BY_SPECIES[parts[0]] ??
+        0.7;
+      const aB =
+        CONFIG?.SPECIES?.[parts[1]]?.baseAggressiveness ??
+        BALANCE.AGGRESSIVENESS_BY_SPECIES[parts[1]] ??
+        0.7;
+      baseAggressiveness = (aA + aB) * 0.5;
     } else {
       baseDuration = CONFIG.ECO?.MATURATION_TIME || 20;
     }
@@ -194,12 +504,16 @@ export function getMaturationProfile(speciesId = 'goblin', mutations = []) {
     }
   }
 
-  const maturationTime = Number(clamp(baseDuration + mutationOffset, 12, 46).toFixed(1));
+  const maturationTime = Number(clamp(baseDuration + mutationOffset, 10, 68).toFixed(1));
+  const gestationTime = Number(clamp(baseGestation, 6, 120).toFixed(1));
   const ecoTickInterval = CONFIG.ECO?.TICK_INTERVAL || 12;
 
   // Fenêtre de réaction effective avant le premier Eco-Tick suivant la maturité adulte
   const ticksUntilAdult = Math.ceil(maturationTime / ecoTickInterval);
-  const estimatedPlayerInterceptWindowSec = Math.max(maturationTime, ticksUntilAdult * ecoTickInterval);
+  const estimatedPlayerInterceptWindowSec = Math.max(
+    maturationTime + gestationTime * 0.35,
+    ticksUntilAdult * ecoTickInterval
+  );
 
   return {
     speciesId,
@@ -207,11 +521,14 @@ export function getMaturationProfile(speciesId = 'goblin', mutations = []) {
     isAdult: false,
     canReproduce: false,
     maturationTime,
+    gestationTime,
+    baseAggressiveness: Number(baseAggressiveness.toFixed(3)),
+    aggroStance,
     babyScale: BALANCE.JUVENILE_TRAITS.INITIAL_SCALE,
     adultScale: BALANCE.JUVENILE_TRAITS.ADULT_SCALE,
     babyStatMult: BALANCE.JUVENILE_TRAITS.STAT_MULTIPLIER,
     babyMetabolismMult: BALANCE.JUVENILE_TRAITS.METABOLISM_MULTIPLIER,
-    estimatedPlayerInterceptWindowSec,
+    estimatedPlayerInterceptWindowSec: Number(estimatedPlayerInterceptWindowSec.toFixed(1)),
   };
 }
 
@@ -293,6 +610,12 @@ function resolveBaselineForFitness(speciesId = 'goblin') {
         baseSpeed: (spA.baseSpeed + spB.baseSpeed) * 0.5,
         baseDamage: (spA.baseDamage + spB.baseDamage) * 0.5,
         baseSize: (spA.baseSize + spB.baseSize) * 0.5,
+        baseGestationTime:
+          ((spA.baseGestationTime || 15) + (spB.baseGestationTime || 15)) * 0.5,
+        baseMaturationTime:
+          ((spA.baseMaturationTime || 20) + (spB.baseMaturationTime || 20)) * 0.5,
+        baseAggressiveness:
+          ((spA.baseAggressiveness || 0.7) + (spB.baseAggressiveness || 0.7)) * 0.5,
         metabolism: (spA.metabolism + spB.metabolism) * 0.5,
         fertility: ((spA.fertility || 1.0) + (spB.fertility || 1.0)) * 0.5,
         aggroRadius: (spA.aggroRadius + spB.aggroRadius) * 0.5,
@@ -307,6 +630,9 @@ function resolveBaselineForFitness(speciesId = 'goblin') {
     baseSpeed: 8.8,
     baseDamage: 8,
     baseSize: 0.78,
+    baseGestationTime: 9,
+    baseMaturationTime: 12,
+    baseAggressiveness: 0.75,
     metabolism: 3.2,
     fertility: 1.25,
     aggroRadius: 16,
@@ -317,7 +643,7 @@ function resolveBaselineForFitness(speciesId = 'goblin') {
 /**
  * Calcule le score de Fitness Darwinien détaillé d'un génome à partir :
  * 1. Des **stats génétiques normalisées** (`strength`, `maxHp`, `speed`, `size`, `fertility`, `aggroRadius`)
- *    par rapport au standard de l'espèce.
+ *    par rapport au standard de l'espèce, modulées par la rapidité de gestation (`refGestation / gestationTime`).
  * 2. De l'**efficience métabolique** (`refMetabolism / genes.metabolism`), qui tempère les mutations
  *    trop gourmandes en biomasse et évalue le risque de famine locale (`starvationRiskIndex`).
  * 3. Du **bonus d'adaptation au biome** (`currentBiome === preferredBiome`).
@@ -328,7 +654,7 @@ function resolveBaselineForFitness(speciesId = 'goblin') {
  * aussi bien comme objet détaillé (`res.total`, `res.statsScore`, `res.mutationsScore`) que dans
  * des expressions numériques directes (`+computeDetailedFitness(...)`).
  *
- * @param {object} [genes={}] - Gènes exprimés (`strength`, `maxHp`, `speed`, `size`, `fertility`, `metabolism`, `aggroRadius`).
+ * @param {object} [genes={}] - Gènes exprimés (`strength`, `maxHp`, `speed`, `size`, `gestationTime`, `aggressiveness`, `fertility`, `metabolism`, `aggroRadius`).
  * @param {string[]} [mutations=[]] - Liste des identifiants de mutations actives.
  * @param {string} [speciesId='goblin'] - Identifiant de l'espèce de la créature.
  * @param {string|null} [currentBiome=null] - Biome actuel où se trouve la créature (`'forest'`, `'volcanic'`, etc.).
@@ -341,7 +667,7 @@ function resolveBaselineForFitness(speciesId = 'goblin') {
  *   hybridBonus: number,
  *   metabolicEfficiency: number,
  *   starvationRiskIndex: number,
- *   traitRatios: { strength: number, maxHp: number, speed: number, size: number, fertility: number, aggroRadius: number },
+ *   traitRatios: { strength: number, maxHp: number, speed: number, size: number, fertility: number, aggroRadius: number, gestationEfficiency: number, aggressiveness: number },
  *   valueOf: () => number
  * }} Détail complet du score de fitness darwinien.
  */
@@ -361,13 +687,24 @@ export function computeDetailedFitness(
   const refFert = baseline.fertility || 1.0;
   const refAggro = baseline.aggroRadius || 20;
   const refMetab = baseline.metabolism || 4.0;
+  const refGestation =
+    baseline.baseGestationTime || BALANCE.GESTATION_BY_SPECIES[speciesId] || 15;
+  const refAggressiveness =
+    baseline.baseAggressiveness || BALANCE.AGGRESSIVENESS_BY_SPECIES[speciesId] || 0.75;
 
-  const strRatio = clamp((genes.strength ?? refStr) / refStr, 0.35, 3.5);
-  const hpRatio = clamp((genes.maxHp ?? refHp) / refHp, 0.35, 3.5);
-  const spdRatio = clamp((genes.speed ?? refSpd) / refSpd, 0.35, 2.8);
-  const sizeRatio = clamp((genes.size ?? refSize) / refSize, 0.4, 2.8);
-  const fertRatio = clamp((genes.fertility ?? refFert) / refFert, 0.35, 2.4);
-  const aggroRatio = clamp((genes.aggroRadius ?? refAggro) / refAggro, 0.5, 2.2);
+  const strRatio = clamp((genes.strength ?? refStr) / refStr, 0.35, 4.5);
+  const hpRatio = clamp((genes.maxHp ?? refHp) / refHp, 0.35, 4.5);
+  const spdRatio = clamp((genes.speed ?? refSpd) / refSpd, 0.35, 3.5);
+  const sizeRatio = clamp((genes.size ?? refSize) / refSize, 0.35, 3.5);
+  const actualGestation = Math.max(3, genes.gestationTime ?? refGestation);
+  const gestationEfficiency = clamp(refGestation / actualGestation, 0.5, 1.8);
+  const fertRatio = clamp(
+    ((genes.fertility ?? refFert) / refFert) * Math.pow(gestationEfficiency, 0.35),
+    0.35,
+    3.2
+  );
+  const aggroRatio = clamp((genes.aggroRadius ?? refAggro) / refAggro, 0.4, 2.8);
+  const aggressivenessVal = clamp(genes.aggressiveness ?? refAggressiveness, 0.05, 1.0);
 
   const rawPolygenicOutput =
     strRatio * weights.strength +
@@ -438,6 +775,8 @@ export function computeDetailedFitness(
       size: Number(sizeRatio.toFixed(2)),
       fertility: Number(fertRatio.toFixed(2)),
       aggroRadius: Number(aggroRatio.toFixed(2)),
+      gestationEfficiency: Number(gestationEfficiency.toFixed(2)),
+      aggressiveness: Number(aggressivenessVal.toFixed(2)),
     },
     valueOf() {
       return total;

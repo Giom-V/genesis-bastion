@@ -214,3 +214,36 @@ La classe `DynamicQuestSystem` génère et suit en temps réel des opérations s
   - **Phase 1 (Renseignement Éclaireurs)** : *« Ordonnez à vos Éclaireurs de [🔍 Traquer : Pyro / Feu] pour localiser tous les porteurs sur l'île (`Repérés : X / Y`). »*
   - **Phase 2 (Extermination & Purge Juvénile)** : *« Éliminez tous les porteurs repérés (`Restants : Y → 0`, dont les Bébés avant qu'ils ne deviennent adultes !). »*
   - **Récompense d'Opération** : `+45 Bois, +35 Cristal, +30 Biomasse, +120 XP` (déclenchant un Level-Up immédiat) et génération automatique de la prochaine opération dès qu'une nouvelle mutation apparaît sur l'île !
+
+---
+
+## 11. Biologie Différenciée par Espèce, Croisement à Expansion de Spectre & Souveraineté Draconique
+
+Définis dans [`src/config.js`](file:///usr/local/google/home/giom/.gemini/jetski/scratch/genesis-bastion/src/config.js) et [`src/ecosystem/BalanceAndPacing.js`](file:///usr/local/google/home/giom/.gemini/jetski/scratch/genesis-bastion/src/ecosystem/BalanceAndPacing.js) (`BALANCE`, `sampleScopeExpandingGene`, `getSpeciesReproductiveAndAggroProfile`), les 7 clades/espèces obéissent à des lois biologiques et comportementales profondément asymétriques :
+
+### 11.1. Cycles de Gestation, Maturation, Agressivité & Repeuplement par Espèce
+
+| Espèce (`id`) | Gestation (`baseGestationTime`) | Maturation Bébé → Adulte (`baseMaturationTime`) | Agressivité (`baseAggressiveness`) & Posture (`aggroStance`) | Repeuplement Sauvage (`repopulationCooldown` / Habitat caché) |
+| :--- | :---: | :---: | :--- | :--- |
+| **Gobelin** (`goblin`) | `9s` | `12s` | `0.75` — **`hostile`** (Chasseur de meute et assaillant du Bastion) | `8s` — *« Des Gobelins sauvages émergent de leurs terriers forestiers ! »* |
+| **Loup** (`wolf`) | `13s` | `15s` | `0.82` — **`hostile`** (Traqueur rapide des forêts denses) | `12s` — *« Des Loups sauvages quittent leurs tanières sylvestres ! »* |
+| **Vautour** (`vulture`) | `15s` | `17s` | `0.38` — **`territorial`** (Charognard des crêtes ; n'attaque qu'à proximité ou affamé) | `12s` — *« Des Vautours descendent en piqué depuis les nids des falaises ! »* |
+| **Orc** (`orc`) | `18s` | `22s` | `0.88` — **`hostile`** (Guerrier tribal ultra-agressif des plaines) | `16s` — *« Une patrouille d’Orcs sauvages surgit des campements enfouis ! »* |
+| **Lion** (`lion`) | `24s` | `26s` | `0.70` — **`hostile`** (Prédateur dominant des plaines dorées) | `16s` — *« Un couple de Lions sauvages regagne son territoire dans les plaines ! »* |
+| **Troll** (`troll`) | `30s` | `34s` | `0.48` — **`territorial`** (Colosse gardien des hautes terres ; redoutable si affamé ou provoqué) | `16s` — *« Des Trolls anciens sortent des cavernes profondes des hautes terres ! »* |
+| **Dragon** (`dragon`) | **`65s`** | **`50s`** | **`0.08` — `pacifist_apex`** (**Souverain Paisible** : `680 PV`, `58 Dégâts`, `8.2 Vit.`, `2.05x Taille`, `180 XP`) | `28s` — *« Un couple de Dragons ancestraux se pose sur la caldeira volcanique ! »* |
+
+### 11.2. Repeuplement Sauvage Permanent (Immunité d'Extinction des 7 Espèces Souches)
+- **Zéro extinction définitive des espèces de base** : L'objectif du joueur est d'éradiquer des **lignées mutantes dangereuses** (ex. *Trolls de Feu*, *Loups Cryo-Ailés*), jamais de vider l'île de sa faune sauvage.
+- Dès que la population vivante d'une des 7 espèces de base passe sous **`REPOPULATION_MIN_THRESHOLD = 2`** individus (0 ou 1 survivant), le chronomètre de repeuplement de l'espèce (`repopulationCooldown`, de `8s` pour les Gobelins à `28s` pour les Dragons) s'enclenche et fait émerger **2 adultes sauvages Gen-1 sains (sans mutation)** depuis leur habitat caché en bordure de leur biome de prédilection (`les terriers forestiers`, `les nids des falaises escarpées`, `les crêtes volcaniques inaccessibles`).
+
+### 11.3. Croisement Génétique à Expansion de Spectre (`sampleScopeExpandingGene`)
+Au lieu d'une moyenne arithmétique qui comprimerait les statistiques vers la médiane au fil des générations, chaque gène quantitatif (`maxHp`, `strength`, `speed`, `size`, `gestationTime`, `aggressiveness`, `fertility`, `metabolism`, `aggroRadius`) suit une loi d'héritage darwinien à **expansion de spectre** :
+$$\text{ValeurBrute} \sim \mathcal{U}\big(\min(G_{\text{Père}}, G_{\text{Mère}}),\; \max(G_{\text{Père}}, G_{\text{Mère}})\big)$$
+$$\text{GèneEnfant} = \text{clamp}\Big(\text{ValeurBrute} \times \mathcal{U}(0.90,\; 1.10),\; 0.35 \times G_{\text{Base}},\; 4.50 \times G_{\text{Base}}\Big)$$
+- **Conséquence émergente** : Même si le Père et la Mère possèdent exactement `10` de Force, leur enfant peut naître dans l'intervalle `[9.0, 11.0]`. Si deux descendants à `11.0` et `10.5` se reproduisent ensuite, la génération suivante explore `[9.45, 12.10]`, élargissant continuellement la variance génétique soumise à la sélection naturelle de Conway !
+
+### 11.4. Gène d'Agressivité, Dragons Souverains Paisibles & Courroux Draconique (`SPECIES_WRATH`)
+- **Posture `pacifist_apex` des Dragons** : Les Dragons sont des titans majestueux (`680 PV`, `58 Dégâts`, gestation lente de `65s`, maturation de `50s`) dotés d'un gène d'agressivité de base très faible (`0.08`). Tant que le joueur ne les attaque pas directement, **ils survolent paisiblement la caldeira volcanique** sans jamais agresser le Héros, les Éclaireurs ou le Bastion (un anneau doré paisible et le badge **`🕊️ Souverain Paisible (Ne pas provoquer)`** les distinguent).
+- **Protection anti-bavure de l'Auto-Tir** : En mode **Auto-Tir (Vampire Survivors)** comme pour les Tours de Guet et Gardes PNJ, le ciblage automatique **ignore les créatures `pacifist_apex` non provoquées** afin que le joueur ne déclenche jamais la colère des Dragons par accident en passant près du volcan.
+- **Courroux Draconique Collectif (`SPECIES_WRATH_DURATION = 90s`)** : Si le joueur choisit délibérément de frapper un Dragon (au clic gauche `[LMB]` ou avec un sort manuel `[1]–[4]`, par exemple pour éliminer un Dragon porteur d'une mutation critique ou récolter ses `180 XP`), **tous les Dragons vivants de l'île entrent en Courroux Draconique pendant 90 secondes** (`⚡ COURROUX DRACONIQUE !`), gagnent `+25%` de vitesse de vol et convergent ensemble sur le Héros et le Bastion !
