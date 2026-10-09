@@ -64,10 +64,10 @@ export const ONBOARDING_ACTS = [
       'Bienvenue au Sanctuaire du Bastion. L’île est calme pour l’instant. Déplacez-vous jusqu’au fanal doré près du feu de camp et testez le zoom de votre caméra tactique.',
     whyItMatters:
       'Le feu de camp central régénère vos PV lorsque vous êtes proche du Bastion. La caméra 3/4 plongeante vous permet de lire le terrain et d’anticiper les menaces.',
-    keys: ['Z / Q / S / D', 'W / A / S / D', 'Molette Souris', 'Q / E'],
+    keys: ['Z / Q / S / D', 'W / A / S / D', 'Molette Souris', 'R / F'],
     keyBadges: [
       { keys: ['Z', 'Q', 'S', 'D'], altKeys: ['W', 'A', 'S', 'D'], label: 'Se déplacer' },
-      { keys: ['Molette'], altKeys: ['Clic Droit'], label: 'Zoomer & Orienter la vue' },
+      { keys: ['Molette'], altKeys: ['Clic Droit', 'R / F'], label: 'Zoomer & Orienter la vue' },
     ],
     objectiveLabel: 'Rejoindre le fanal doré devant le Bastion (0, 12)',
     progressLabelTemplate: 'Progression : {current}/{target} objectif atteint',

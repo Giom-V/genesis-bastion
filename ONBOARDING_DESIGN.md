@@ -36,7 +36,7 @@ L'implémentation de référence se trouve dans [`src/ecosystem/OnboardingSteps.
 
 | Acte | Minutage | Titre & Objectif Joueur | Touches Enseignées | Entités Mises en Scène (`spawnSpec`) | Panneaux HUD Déverrouillés (`unlockedHud`) |
 | :---: | :---: | :--- | :---: | :--- | :--- |
-| **Acte 1** | `0:00 – 1:00` | **Réveil au Bastion & Repères**<br>Marcher jusqu'au fanal doré `(0, 12)` et tester le zoom caméra. | `[Z][Q][S][D]` / `[WASD]`<br>`[Molette]` / `[Q][E]` | Fanal doré `(0, 12)`<br>`0` monstre, `0` PNJ | *Aucun panneau complexe*<br>(Barre PV Héros + Bannière Tutoriel uniquement) |
+| **Acte 1** | `0:00 – 1:00` | **Réveil au Bastion & Repères**<br>Marcher jusqu'au fanal doré `(0, 12)` et tester le zoom caméra. | `[Z][Q][S][D]` / `[WASD]`<br>`[Molette]` / `[R][F]` / `[Clic Droit]` | Fanal doré `(0, 12)`<br>`0` monstre, `0` PNJ | *Aucun panneau complexe*<br>(Barre PV Héros + Bannière Tutoriel uniquement) |
 | **Acte 2** | `1:00 – 2:30` | **Combat, Esquive & 1er Don Roguelike**<br>2A. Tuer le Gobelin Égaré<br>2B. Esquiver `[Shift]` et tuer l'Orc<br>2C. Choisir sa 1re Amélioration (Niv. 2) | `[Clic Gauche]` / `[Espace]`<br>`[Shift]` / `[Clic Droit]` | `1 Gobelin Égaré` à `14m`<br>`1 Orc Maraudeur` à `16m`<br>*(XP calibrée -> Level 2)* | *Aucun panneau supplémentaire*<br>Ouverture ponctuelle de la **Modale Roguelike Level-Up** |
 | **Acte 3** | `2:30 – 4:00` | **1er Sauvetage PNJ & Récolte**<br>3A. Vaincre le Loup et libérer la Cage #1 `[E]`<br>3B. Récolter un Arbre ou Cristal `[E]` | `[E]` (Interagir / Libérer / Récolter) | `Cage #1` à `28m` Sud-Est `(20, 20)` + `1 Loup` gardien | 🔓 **Panneau Gauche : Bastion & Survivants** (`leftBastionPanel: true`) |
 | **Acte 4** | `4:00 – 5:15` | **Construire la Tour de Guet**<br>4A. Construire `Tour de Guet` (`[1]` ou clic)<br>4B. Repousser les 2 Gobelins Pilleurs | `Clic UI` / `[1]` | `2 Gobelins Pilleurs` attaquant le Bastion après construction | 🔓 **Section Bâtiments du Bastion** (`leftBuildSection: true`) |
@@ -52,7 +52,7 @@ L'implémentation de référence se trouve dans [`src/ecosystem/OnboardingSteps.
 * **Mise en scène** : Le héros s'éveille près du feu de camp central `(0, 4)`. L'océan scintille au loin, mais l'île est paisible. Un anneau lumineux doré pulse à `(0, 12)`.
 * **Guidage 3D** : Une **flèche directionnelle dorée** aux pieds du héros pointe vers `(0, 12)`.
 * **Texte de la Bannière** :
-  > *« Bienvenue au Sanctuaire du Bastion. L’île est calme pour l’instant. Déplacez-vous jusqu’au fanal doré près du feu de camp avec **[Z][Q][S][D]** (ou **[W][A][S][D]**) et testez le zoom de votre caméra tactique avec la **[Molette]**. »*
+  > *« Bienvenue au Sanctuaire du Bastion. L’île est calme pour l’instant. Déplacez-vous jusqu’au fanal doré près du feu de camp avec **[Z][Q][S][D]** (ou **[W][A][S][D]**) et testez le zoom et la rotation de votre caméra tactique avec la **[Molette]** et **[R]/[F]** (ou **[Clic Droit]**). »*
 * **Condition de validation** : Le joueur entre dans un rayon de $4\text{m}$ autour de `(0, 12)`.
 
 ### Acte 2 — Apprendre à Combattre, Esquiver & Choisir sa 1re Amélioration (1:00 – 2:30)
@@ -64,7 +64,7 @@ L'implémentation de référence se trouve dans [`src/ecosystem/OnboardingSteps.
   - Une fois le Gobelin vaincu, un **Orc Maraudeur** ($70\text{ PV}$) surgit à `(13, -9)`.
   - Le joueur effectue un **Dash (`[Shift]` ou `[Clic Droit]`)** et terrasse l'Orc.
 * **Sous-étape 2C (Récompense Roguelike en Pause Totale & 1re Maîtrise Adaptative)** :
-  - Dès le 1er Gobelin éliminé, le joueur voit apparaître sa première maîtrise adaptative : **`⚔️ Maîtrise : Fléau des Gobelins (Rang 1 : +12% Dégâts)`** !
+  - Dès le 1er Gobelin éliminé, le joueur voit apparaître sa première maîtrise adaptative : **`⚔️ Maîtrise : Fléau des Gobelins (Rang 1 : +1% Dégâts)`** !
   - L'XP combinée du Gobelin ($45\text{ XP}$) et de l'Orc ($80\text{ XP}$) fait passer le héros au **Niveau 2** !
   - La **Modale d'Amélioration Roguelike** s'ouvre et **met automatiquement le jeu en PAUSE TOTALE (`⏸️ JEU EN PAUSE`)** : le joueur prend tout son temps pour lire et choisir son premier nouveau Sort 3D (ex. *Nova Pyroclastique*, *Arc Foudroyant*, *Javelot Cryogénique*) ou passif.
 
