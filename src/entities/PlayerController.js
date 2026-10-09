@@ -628,10 +628,15 @@ export class PlayerController {
     }
 
     const stats = entry?.stats || getAbilityStatsAtLevel(abilityId, level);
-    const enemies =
+    const rawEnemies =
       enemyManager && typeof enemyManager.getEnemies === 'function'
         ? enemyManager.getEnemies().filter((e) => e && e.hp > 0)
         : [];
+
+    // Automatic spells (!isManualTrigger) never target unprovoked peaceful sovereign Dragons
+    const enemies = isManualTrigger
+      ? rawEnemies
+      : rawEnemies.filter((e) => !(e.aggroStance === 'pacifist_apex' && !e.enraged));
 
     // Sort living enemies by distance to the Hero
     const sortedByDist = enemies
@@ -643,7 +648,7 @@ export class PlayerController {
 
     const nearestEntry = sortedByDist[0] || null;
 
-    // In Vampire Survivors auto-cast mode, only fire when at least 1 enemy is within range
+    // In Vampire Survivors auto-cast mode, only fire when at least 1 hostile enemy is within range
     if (!isManualTrigger && !ignoreCooldown) {
       const triggerRange = abilityId === 'spinning_blades' ? stats.range + 1.5 : stats.range + 1.0;
       if (!nearestEntry || nearestEntry.dist > triggerRange) {
@@ -1017,7 +1022,7 @@ export class PlayerController {
       this.orbitalAngle = (this.orbitalAngle + dt * spinSpeed) % (Math.PI * 2);
       this.orbitalBladesGroup.rotation.y = this.orbitalAngle;
 
-      // Continuous contact slicing against enemies inside the orbital ring
+      // Continuous contact slicing against hostile enemies inside the orbital ring
       const enemies =
         enemyManager && typeof enemyManager.getEnemies === 'function'
           ? enemyManager.getEnemies()
@@ -1027,6 +1032,8 @@ export class PlayerController {
 
       for (const enemy of [...enemies]) {
         if (!enemy || enemy.hp <= 0) continue;
+        // Passive orbital blades never slice unprovoked peaceful sovereign Dragons
+        if (enemy.aggroStance === 'pacifist_apex' && !enemy.enraged) continue;
         if (this._orbitalHitTimers.has(enemy.id)) continue;
         const d = dist2D(this.x, this.z, enemy.x, enemy.z);
         if (d <= orbitRange) {
@@ -1291,9 +1298,10 @@ export class PlayerController {
    *
    * @param {Object} enemyManager - EnemyManager instance.
    * @param {Object} [bastionAndNpcs] - BastionAndNPCs instance.
+   * @param {boolean} [isAutoMelee=false] - When true (Vampire Survivors auto-melee), skips unprovoked peaceful Dragons.
    * @returns {number} Number of enemies hit.
    */
-  performCleaveAttack(enemyManager, bastionAndNpcs) {
+  performCleaveAttack(enemyManager, bastionAndNpcs, isAutoMelee = false) {
     if (this.cleaveCooldown > 0) return 0;
 
     this.cleaveCooldown = CONFIG.PLAYER?.CLEAVE_COOLDOWN || 0.4;
@@ -1308,12 +1316,17 @@ export class PlayerController {
 
     if (!enemyManager || typeof enemyManager.getEnemies !== 'function') return 0;
 
-    const enemies = enemyManager.getEnemies();
+    const rawEnemies = enemyManager.getEnemies();
+    const enemies = isAutoMelee
+      ? rawEnemies.filter((e) => !(e?.aggroStance === 'pacifist_apex' && !e?.enraged))
+      : rawEnemies;
 
-    // Auto-orient toward nearest enemy within cleaveRange if one is right next to the player
+    // Auto-orient toward nearest hostile enemy within cleaveRange if one is right next to the player
     let closestInRange = null;
     let closestDist = this.cleaveRange + 0.6;
     for (const enemy of enemies) {
+      if (!enemy || enemy.hp <= 0) continue;
+      if (enemy.aggroStance === 'pacifist_apex' && !enemy.enraged && enemies.length > 1) continue;
       const d = dist2D(this.x, this.z, enemy.x, enemy.z);
       if (d < closestDist) {
         closestDist = d;
@@ -1331,6 +1344,7 @@ export class PlayerController {
     // Copy list in case enemies are removed on death
     const candidates = [...enemies];
     for (const enemy of candidates) {
+      if (!enemy || enemy.hp <= 0) continue;
       const dx = enemy.x - this.x;
       const dz = enemy.z - this.z;
       const dist = Math.hypot(dx, dz);
@@ -1637,12 +1651,22 @@ export class PlayerController {
     const enemies =
       enemyManager && typeof enemyManager.getEnemies === 'function' ? enemyManager.getEnemies() : [];
 
-    // 1. Find nearest enemy & check if within Cleave Range
+    // 1. Find nearest hostile enemy & check for nearby unprovoked peaceful Sovereign Dragon
     let nearestEnemy = null;
     let nearestEnemyDist = Infinity;
+    let peacefulDragon = null;
+    let peacefulDragonDist = Infinity;
+
     for (const e of enemies) {
       if (!e || e.hp <= 0) continue;
       const d = dist2D(this.x, this.z, e.x, e.z);
+      if (e.aggroStance === 'pacifist_apex' && !e.enraged) {
+        if (d < peacefulDragonDist) {
+          peacefulDragonDist = d;
+          peacefulDragon = e;
+        }
+        continue;
+      }
       if (d < nearestEnemyDist) {
         nearestEnemyDist = d;
         nearestEnemy = e;
@@ -1716,7 +1740,24 @@ export class PlayerController {
       }
     }
 
-    // Priority B: Enemy within Cleave Attack reach (7.5m)
+    // Priority A2: Unprovoked Peaceful Sovereign Dragon Warning within 14m!
+    if (!this.nearestPrompt && peacefulDragon && peacefulDragonDist <= 14.0) {
+      this.nearestPrompt = {
+        type: 'warning_dragon',
+        keyHint: '⚠️ PACIFIQUE',
+        label:
+          "⚠️ [DRAGON SOUVERAIN — PACIFIQUE] Ne pas attaquer ou toute l'espèce rasera votre Bastion !",
+        worldPos: new THREE.Vector3(
+          peacefulDragon.x,
+          (peacefulDragon.y || 2) + 3.2,
+          peacefulDragon.z
+        ),
+        entity: peacefulDragon,
+        dist: peacefulDragonDist,
+      };
+    }
+
+    // Priority B: Hostile Enemy within Cleave Attack reach (7.5m)
     if (!this.nearestPrompt && nearestEnemy && nearestEnemyDist <= this.cleaveRange + 2.5) {
       const inReach = nearestEnemyDist <= this.cleaveRange + 0.4;
       const isAuto = this.combatMode === 'vampire_survivors';
@@ -1898,14 +1939,18 @@ export class PlayerController {
     // 3. Handle Cleave Attack (Manual OR Vampire Survivors Auto-Melee) & Interact Requests
     if (this._attackRequested) {
       this._attackRequested = false;
-      this.performCleaveAttack(enemyManager, bastionAndNpcs);
+      this.performCleaveAttack(enemyManager, bastionAndNpcs, false);
     } else if (this.combatMode === 'vampire_survivors' && this.cleaveCooldown <= 0 && enemyManager) {
       const enemies = typeof enemyManager.getEnemies === 'function' ? enemyManager.getEnemies() : [];
-      const hasEnemyInReach = enemies.some(
-        (e) => e && e.hp > 0 && dist2D(this.x, this.z, e.x, e.z) <= this.cleaveRange + 0.35
+      const hasHostileEnemyInReach = enemies.some(
+        (e) =>
+          e &&
+          e.hp > 0 &&
+          !(e.aggroStance === 'pacifist_apex' && !e.enraged) &&
+          dist2D(this.x, this.z, e.x, e.z) <= this.cleaveRange + 0.35
       );
-      if (hasEnemyInReach) {
-        this.performCleaveAttack(enemyManager, bastionAndNpcs);
+      if (hasHostileEnemyInReach) {
+        this.performCleaveAttack(enemyManager, bastionAndNpcs, true);
       }
     }
 

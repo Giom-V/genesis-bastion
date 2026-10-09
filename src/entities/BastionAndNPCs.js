@@ -1553,13 +1553,15 @@ export class BastionAndNPCs {
       }
     }
 
-    // 3. Sanctuary Hearth Lv3 Solar Burn Aura against enemies inside `passiveAuraRange`
+    // 3. Sanctuary Hearth Lv3 Solar Burn Aura against hostile enemies inside `passiveAuraRange`
     if (this.auraBurnDps > 0 && enemies.length > 0) {
       this.hearthAuraTickTimer += dt;
       if (this.hearthAuraTickTimer >= 1.0) {
         this.hearthAuraTickTimer -= 1.0;
         for (const e of enemies) {
-          if (e && e.hp > 0 && dist2D(0, 0, e.x, e.z) <= this.passiveAuraRange) {
+          if (!e || e.hp <= 0) continue;
+          if (e.aggroStance === 'pacifist_apex' && !e.enraged) continue;
+          if (dist2D(0, 0, e.x, e.z) <= this.passiveAuraRange) {
             if (typeof e.applyBurn === 'function') {
               e.applyBurn(this.auraBurnDps, 2.0);
             }
@@ -1585,7 +1587,13 @@ export class BastionAndNPCs {
         tower.cooldown = Math.max(0, tower.cooldown - dt);
         if (tower.cooldown <= 0 && enemies.length > 0) {
           const inRange = enemies
-            .filter((e) => e && e.hp > 0 && dist2D(tower.x, tower.z, e.x, e.z) <= tStats.range)
+            .filter(
+              (e) =>
+                e &&
+                e.hp > 0 &&
+                !(e.aggroStance === 'pacifist_apex' && !e.enraged) &&
+                dist2D(tower.x, tower.z, e.x, e.z) <= tStats.range
+            )
             .sort(
               (a, b) =>
                 dist2D(tower.x, tower.z, a.x, a.z) - dist2D(tower.x, tower.z, b.x, b.z)
@@ -1703,12 +1711,14 @@ export class BastionAndNPCs {
   }
 
   /**
-   * Guard AI: patrols the Bastion perimeter (`12..22` units) and fires bolts at approaching enemies.
+   * Guard AI: patrols the Bastion perimeter (`12..22` units) and fires bolts at approaching hostile enemies.
    */
   _updateGuardAI(npc, dt, enemies) {
     let nearestEnemy = null;
     let nearestDist = 30;
     for (const e of enemies) {
+      if (!e || e.hp <= 0) continue;
+      if (e.aggroStance === 'pacifist_apex' && !e.enraged) continue;
       const d = dist2D(npc.x, npc.z, e.x, e.z);
       if (d < nearestDist) {
         nearestDist = d;
@@ -1799,7 +1809,8 @@ export class BastionAndNPCs {
       if (!enemy || enemy.hp <= 0) continue;
       const d = dist2D(scout.x, scout.z, enemy.x, enemy.z);
 
-      if (d <= fleeRadius) {
+      // Scouts only flee from hostile/territorial enemies or enraged Dragons
+      if (d <= fleeRadius && !(enemy.aggroStance === 'pacifist_apex' && !enemy.enraged)) {
         nearbyThreats.push(enemy);
       }
 

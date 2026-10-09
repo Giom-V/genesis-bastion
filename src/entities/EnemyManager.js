@@ -61,6 +61,30 @@ export class EnemyManager {
     this.onLineageEradicated = null;
     /** @type {Function|null} Optional callback `(enemy, xpGained)` when any enemy is killed */
     this.onEnemyKilled = null;
+    /** @type {Function|null} Optional callback `(speciesId, triggerEnemy, enragedMembers)` when a peaceful apex species is provoked */
+    this.onSpeciesWrathTriggered = null;
+    /** @type {Function|null} Optional callback `(speciesId, spawnedPair, messageFR)` when a depleted base species repopulates */
+    this.onSpeciesRepopulated = null;
+
+    /**
+     * Tracks collective species wrath state (e.g. `'dragon'` when a peaceful Sovereign Dragon is attacked).
+     * @type {Map<string, { active: boolean, timer: number, duration: number }>}
+     */
+    this.speciesWrath = new Map();
+
+    /**
+     * Per-species repopulation timers in seconds when a foundational species drops below `< 2` individuals.
+     * @type {Record<string, number>}
+     */
+    this.repopulationTimers = {
+      goblin: 0,
+      orc: 0,
+      troll: 0,
+      wolf: 0,
+      lion: 0,
+      vulture: 0,
+      dragon: 0,
+    };
 
     /** @type {boolean} Whether the 7-Act Guided Onboarding tutorial mode is active */
     this.tutorialMode = false;
@@ -114,6 +138,237 @@ export class EnemyManager {
       }
     }
     this.projectiles = [];
+    this.speciesWrath.clear();
+  }
+
+  /**
+   * Returns true if a given species (such as `'dragon'`) is currently in collective wrath state.
+   * @param {string} [speciesId='dragon']
+   * @returns {boolean}
+   */
+  isSpeciesProvoked(speciesId = 'dragon') {
+    const entry = this.speciesWrath.get(speciesId);
+    return Boolean(entry && entry.active && entry.timer > 0);
+  }
+
+  /**
+   * Returns true if an enemy is an unprovoked peaceful apex sovereign (e.g. `'dragon'`)
+   * that should NOT be targeted by automatic attacks or Bastion turrets.
+   * @param {Object} enemy
+   * @returns {boolean}
+   */
+  isPeacefulTowardsPlayer(enemy) {
+    if (!enemy) return false;
+    const spId = enemy.genome?.speciesId || 'goblin';
+    if (this.isSpeciesProvoked(spId)) return false;
+    return enemy.aggroStance === 'pacifist_apex' && !enemy.enraged;
+  }
+
+  /**
+   * Triggers Collective Species Wrath (`COURROUX DRACONIQUE !`) when the player attacks an
+   * unprovoked peaceful Sovereign Dragon (`'pacifist_apex'`). Every living member of that species
+   * across the island transitions to `enraged = true`, `aggressiveness = 1.0`, `aggroStance = 'hostile'`,
+   * `state = 'wrath_raid'`, gains a `1.25x` speed boost, and charges to raze the Player and Bastion!
+   *
+   * @param {string} [speciesId='dragon']
+   * @param {Object|null} [triggerEnemy=null]
+   * @returns {Array<Object>} Array of enraged species members.
+   */
+  provokeSpecies(speciesId = 'dragon', triggerEnemy = null) {
+    const duration = CONFIG.ECO?.SPECIES_WRATH_DURATION || 90;
+    const alreadyActive = this.isSpeciesProvoked(speciesId);
+    this.speciesWrath.set(speciesId, {
+      active: true,
+      timer: duration,
+      duration,
+    });
+
+    // Ensure at least 2 living members of the species exist so the collective wrath wave is felt!
+    const existingMembers = this.enemies.filter(
+      (e) =>
+        e &&
+        e.hp > 0 &&
+        (e.genome?.speciesId === speciesId ||
+          (Array.isArray(e.genome?.hybridParents) && e.genome.hybridParents.includes(speciesId)))
+    );
+
+    if (existingMembers.length < 2 && speciesId === 'dragon') {
+      const needed = 2 - existingMembers.length;
+      for (let i = 0; i < needed; i++) {
+        const angle = 1.45 + i * 0.28;
+        const dist = 82 + i * 6;
+        const rx = Math.cos(angle) * dist;
+        const rz = Math.sin(angle) * dist;
+        const gen = this._createSafeGenome('dragon');
+        const reinf = this.spawnEnemy(rx, rz, gen, [], {
+          lifeStage: 'adult',
+          isAdult: true,
+        });
+        existingMembers.push(reinf);
+      }
+    }
+
+    const enragedMembers = [];
+    for (const member of this.enemies) {
+      if (!member || member.hp <= 0) continue;
+      const matchesSpecies =
+        member.genome?.speciesId === speciesId ||
+        (Array.isArray(member.genome?.hybridParents) &&
+          member.genome.hybridParents.includes(speciesId));
+      if (!matchesSpecies) continue;
+
+      member.enraged = true;
+      member.aggressiveness = 1.0;
+      member.aggroStance = 'hostile';
+      member.state = 'wrath_raid';
+      member.aggroBastionForced = true;
+      if (!member._wrathSpeedApplied) {
+        member._wrathSpeedApplied = true;
+        member.speed = Number((member.speed * 1.25).toFixed(2));
+      }
+      enragedMembers.push(member);
+    }
+
+    if (!alreadyActive) {
+      const spName = CONFIG.SPECIES?.[speciesId]?.name || speciesId;
+      logger.alert(
+        `🐉 COURROUX DRACONIQUE ! Vous avez attaqué un ${spName} Souverain : toute l'espèce (${enragedMembers.length}x ${spName}s) converge pour raser votre Bastion !`,
+        {
+          speciesId,
+          enragedCount: enragedMembers.length,
+          triggerEnemyId: triggerEnemy?.id || null,
+          duration,
+        }
+      );
+
+      if (typeof this.onSpeciesWrathTriggered === 'function') {
+        this.onSpeciesWrathTriggered(speciesId, triggerEnemy, enragedMembers);
+      }
+    }
+
+    return enragedMembers;
+  }
+
+  /**
+   * Returns a dictionary of living counts for each of the 7 foundational species.
+   * @returns {Record<string, number>}
+   */
+  getSpeciesLivingCounts() {
+    const counts = {
+      goblin: 0,
+      orc: 0,
+      troll: 0,
+      wolf: 0,
+      lion: 0,
+      vulture: 0,
+      dragon: 0,
+    };
+    for (const e of this.enemies) {
+      if (!e || e.hp <= 0) continue;
+      const spId = e.genome?.speciesId;
+      if (spId && Object.prototype.hasOwnProperty.call(counts, spId) && !e.genome?.isHybrid) {
+        counts[spId] += 1;
+      }
+    }
+    return counts;
+  }
+
+  /**
+   * Checks foundational species counts (`goblin`, `orc`, `troll`, `wolf`, `lion`, `vulture`, `dragon`)
+   * and repopulates any base species whose living count drops below `< 2` from hidden burrows,
+   * deep caves, or mountain crags (`> 52m` from the Bastion).
+   * Note: Mutant lineages CAN be permanently eradicated; only wild Gen-1 base species repopulate!
+   *
+   * @param {number} [dt=0] - Elapsed seconds to advance repopulation timers.
+   * @param {boolean} [forceImmediate=false] - When true, bypasses the cooldown timer and repopulates immediately.
+   * @returns {Array<Object>} Newly spawned wild Gen-1 creatures across all repopulated species.
+   */
+  checkAndRepopulateSpecies(dt = 0, forceImmediate = false) {
+    if ((this.tutorialMode || this.ecoPaused) && !forceImmediate) {
+      return [];
+    }
+
+    const minThreshold = CONFIG.ECO?.REPOPULATION_MIN_THRESHOLD || 2;
+    const maxWorldPop = CONFIG.ECO?.MAX_WORLD_POPULATION || 130;
+    const counts = this.getSpeciesLivingCounts();
+    const baseSpeciesIds = ['goblin', 'orc', 'troll', 'wolf', 'lion', 'vulture', 'dragon'];
+
+    // Preferred biome angles & radial distances (> 52m from Bastion at (0,0))
+    const habitatAnchors = {
+      goblin: { angle: 0.4, dist: 58 },
+      orc: { angle: 1.0, dist: 64 },
+      troll: { angle: 0.75, dist: 74 },
+      wolf: { angle: 2.15, dist: 60 },
+      lion: { angle: 2.8, dist: 68 },
+      vulture: { angle: 4.85, dist: 76 },
+      dragon: { angle: 1.55, dist: 86 },
+    };
+
+    const allSpawned = [];
+
+    for (const spId of baseSpeciesIds) {
+      const living = counts[spId] || 0;
+      if (living >= minThreshold) {
+        this.repopulationTimers[spId] = 0;
+        continue;
+      }
+
+      const spDef = CONFIG.SPECIES?.[spId] || CONFIG.SPECIES.goblin;
+      const cooldown = spDef.repopulationCooldown || (spId === 'dragon' ? 28 : 14);
+      this.repopulationTimers[spId] = (this.repopulationTimers[spId] || 0) + dt;
+
+      if (!forceImmediate && this.repopulationTimers[spId] < cooldown) {
+        continue;
+      }
+
+      if (this.enemies.length >= maxWorldPop) {
+        continue;
+      }
+
+      this.repopulationTimers[spId] = 0;
+      const anchor = habitatAnchors[spId] || { angle: Math.random() * Math.PI * 2, dist: 64 };
+      const baseAngle = anchor.angle + (Math.random() - 0.5) * 0.45;
+      const baseDist = Math.max(54, anchor.dist + (Math.random() - 0.5) * 8);
+      const cx = Math.cos(baseAngle) * baseDist;
+      const cz = Math.sin(baseAngle) * baseDist;
+
+      const pair = [];
+      for (let i = 0; i < 2; i++) {
+        const a = i * Math.PI + (Math.random() - 0.5) * 0.5;
+        const r = 3.2 + Math.random() * 2.5;
+        const sx = cx + Math.cos(a) * r;
+        const sz = cz + Math.sin(a) * r;
+        // Always spawn unmutated wild Gen-1 adults
+        const wildGenome = this._createSafeGenome(spId);
+        wildGenome.mutations = [];
+        if (typeof wildGenome.syncMutations === 'function') {
+          wildGenome.syncMutations();
+        }
+        const spawned = this.spawnEnemy(sx, sz, wildGenome, [], {
+          lifeStage: 'adult',
+          isAdult: true,
+          isPatientZero: false,
+        });
+        pair.push(spawned);
+        allSpawned.push(spawned);
+      }
+
+      const msgFR =
+        spDef.repopulationMessageFR ||
+        `Repeuplement sauvage : 2x ${spDef.name}s émergent de ${spDef.repopulationHabitatLabel || 'leurs repaires sauvages'} !`;
+      logger.evolution(`🌿 ${msgFR}`, {
+        speciesId: spId,
+        spawnedCount: pair.length,
+        x: Math.round(cx),
+        z: Math.round(cz),
+      });
+
+      if (typeof this.onSpeciesRepopulated === 'function') {
+        this.onSpeciesRepopulated(spId, pair, msgFR);
+      }
+    }
+
+    return allSpawned;
   }
 
   /**
@@ -133,11 +388,14 @@ export class EnemyManager {
       hybridParents: [sp.id, sp.id],
       generation: 1,
       lineageId: `${sp.id}_gen1`,
+      aggroStance: sp.aggroStance || (sp.id === 'dragon' ? 'pacifist_apex' : 'hostile'),
       genes: {
         size: sp.baseSize,
         speed: sp.baseSpeed,
         strength: sp.baseDamage,
         maxHp: sp.baseHp,
+        gestationTime: sp.baseGestationTime || 18,
+        aggressiveness: sp.baseAggressiveness ?? 0.7,
         fertility: sp.fertility || 1.0,
         metabolism: sp.metabolism || 4.0,
         aggroRadius: sp.aggroRadius || 18,
@@ -156,11 +414,21 @@ export class EnemyManager {
     const mutDef = CONFIG.MUTATIONS?.[mutationId];
     if (!mutDef || !genome) return;
 
+    if (typeof genome.addMutation === 'function') {
+      genome.addMutation(mutationId);
+      return;
+    }
+
     if (!Array.isArray(genome.mutations)) {
       genome.mutations = [];
     }
     if (!genome.mutations.includes(mutationId)) {
       genome.mutations.push(mutationId);
+    }
+
+    if (typeof genome.syncMutations === 'function') {
+      genome.syncMutations();
+      return;
     }
 
     const mults = mutDef.statMultipliers || {};
@@ -273,28 +541,55 @@ export class EnemyManager {
    * @returns {number}
    */
   _getMaturationTime(speciesId) {
+    const spDef = CONFIG.SPECIES?.[speciesId];
+    if (spDef && typeof spDef.baseMaturationTime === 'number') {
+      return spDef.baseMaturationTime;
+    }
     const speciesTimes = {
-      goblin: 16,
+      goblin: 12,
+      wolf: 15,
+      vulture: 17,
       orc: 22,
-      troll: 26,
-      wolf: 18,
-      lion: 24,
-      vulture: 20,
-      dragon: 34,
+      lion: 26,
+      troll: 34,
+      dragon: 50,
     };
     return speciesTimes[speciesId] || CONFIG.ECO?.MATURATION_TIME || 20;
   }
 
   /**
+   * Computes species-tuned adult gestation duration in seconds between reproductions.
+   * @param {string} speciesId
+   * @returns {number}
+   */
+  _getGestationTime(speciesId) {
+    const spDef = CONFIG.SPECIES?.[speciesId];
+    if (spDef && typeof spDef.baseGestationTime === 'number') {
+      return spDef.baseGestationTime;
+    }
+    const gestationTimes = {
+      goblin: 9,
+      wolf: 13,
+      vulture: 15,
+      orc: 18,
+      lion: 24,
+      troll: 30,
+      dragon: 65,
+    };
+    return gestationTimes[speciesId] || 18;
+  }
+
+  /**
    * Spawns a single enemy creature in the world with articulated genome-driven 3D morphology.
    * Supports both Adult (`lifeStage: 'adult'`, `isAdult: true`) and Juvenile Baby
-   * (`lifeStage: 'baby'`, `isAdult: false`, `0.5x` 3D scale, `0.55x` HP/damage, cannot reproduce).
+   * (`lifeStage: 'baby'`, `isAdult: false`, `0.5x` 3D scale, `0.55x` HP/damage, cannot reproduce),
+   * individual `gestationTime` & `reproTimer`, and species `aggressiveness` & `aggroStance`.
    *
    * @param {number} x - World X position.
    * @param {number} z - World Z position.
    * @param {Object} genome - Creature Genome object.
    * @param {Array<string|number>} [parentIds=[]] - Parent IDs if born from crossover.
-   * @param {Object} [options={}] - Additional spawn flags (`isPatientZero`, `spottedByScout`, `lifeStage`, `isAdult`, `age`).
+   * @param {Object} [options={}] - Additional spawn flags (`isPatientZero`, `spottedByScout`, `lifeStage`, `isAdult`, `age`, `gestationTime`, `reproTimer`, `aggressiveness`, `aggroStance`).
    * @returns {Object} Spawned enemy entity.
    */
   spawnEnemy(x, z, genome, parentIds = [], options = {}) {
@@ -335,6 +630,36 @@ export class EnemyManager {
     const maturationTime = options.maturationTime || this._getMaturationTime(safeGenome.speciesId);
     const age = typeof options.age === 'number' ? options.age : isAdult ? maturationTime : 0;
 
+    // Individual gestation duration & reproduction timer
+    const gestationTime = Number(
+      (
+        options.gestationTime ||
+        genes.gestationTime ||
+        this._getGestationTime(safeGenome.speciesId)
+      ).toFixed(2)
+    );
+    const reproTimer =
+      typeof options.reproTimer === 'number'
+        ? options.reproTimer
+        : isAdult
+          ? Number((gestationTime * (0.25 + Math.random() * 0.45)).toFixed(2))
+          : 0;
+
+    // Aggressiveness gene & stance ('hostile' | 'territorial' | 'pacifist_apex')
+    const speciesWrathActive = this.isSpeciesProvoked(safeGenome.speciesId);
+    const enraged = Boolean(options.enraged || speciesWrathActive);
+    const aggressiveness = enraged
+      ? 1.0
+      : typeof options.aggressiveness === 'number'
+        ? options.aggressiveness
+        : Number((genes.aggressiveness ?? spDef.baseAggressiveness ?? 0.7).toFixed(3));
+    const aggroStance = enraged
+      ? 'hostile'
+      : options.aggroStance ||
+        safeGenome.aggroStance ||
+        spDef.aggroStance ||
+        (safeGenome.speciesId === 'dragon' ? 'pacifist_apex' : 'hostile');
+
     const adultMaxHp = Math.round(genes.maxHp || spDef.baseHp || 60);
     const adultDamage = +(genes.strength || spDef.baseDamage || 10).toFixed(1);
     const babyStatMult = CONFIG.ECO?.BABY_STAT_MULT || 0.55;
@@ -345,7 +670,11 @@ export class EnemyManager {
 
     const maxHp = typeof options.hpOverride === 'number' ? options.hpOverride : baseCalculatedMaxHp;
     const damage = typeof options.damageOverride === 'number' ? options.damageOverride : baseCalculatedDamage;
-    const speed = typeof options.speedOverride === 'number' ? options.speedOverride : baseCalculatedSpeed;
+    const speed = typeof options.speedOverride === 'number'
+      ? options.speedOverride
+      : enraged
+        ? +(baseCalculatedSpeed * 1.25).toFixed(2)
+        : baseCalculatedSpeed;
 
     let mesh = null;
     if (this.scene) {
@@ -381,17 +710,23 @@ export class EnemyManager {
       isAdult,
       age,
       maturationTime,
+      gestationTime,
+      reproTimer,
+      aggressiveness,
+      aggroStance,
+      enraged,
+      _wrathSpeedApplied: enraged,
       starving: false,
       lonely: false,
       spottedByScout: Boolean(options.spottedByScout),
       isPatientZero,
       tutorialTag: options.tutorialTag || null,
       xpRewardOverride: typeof options.xpRewardOverride === 'number' ? options.xpRewardOverride : null,
-      aggroBastionForced: Boolean(options.aggroBastionForced),
+      aggroBastionForced: Boolean(options.aggroBastionForced || enraged),
       freezeMaturationAt80: Boolean(options.freezeMaturationAt80),
       mesh,
       position: mesh ? mesh.position : new THREE.Vector3(x, y, z),
-      state: 'patrol',
+      state: enraged ? 'wrath_raid' : 'patrol',
       targetId: null,
       attackCooldown: 0,
       hitFlash: 0,
@@ -793,6 +1128,11 @@ export class EnemyManager {
       }
     }
 
+    // Check wild species repopulation across manual / periodic Eco-Ticks
+    if (!this.tutorialMode) {
+      this.checkAndRepopulateSpecies(unelapsed > 1.0 ? unelapsed : this.ecoTickInterval, false);
+    }
+
     this.ecoTickTimer = 0;
     this.timeUntilNextTick = this.ecoTickInterval;
     this.ecoTickProgress = 0;
@@ -888,8 +1228,119 @@ export class EnemyManager {
   }
 
   /**
-   * Updates all enemies, eco-tick timers, juvenile-to-adult maturation, starvation damage,
-   * pack movement, combat attacks, and projectiles every frame.
+   * Attempts an immediate individual gestation birth for fast-breeding species (e.g. Goblins at `9s`
+   * gestation) when `parentA.reproTimer >= parentA.gestationTime` in real time and a compatible
+   * adult mate in Conway's optimal density window (`2..6` neighbors) is nearby.
+   *
+   * @param {Object} parentA
+   * @returns {Object|null} Spawned baby entity or `null`.
+   * @private
+   */
+  _tryIndividualGestationBirth(parentA) {
+    if (!parentA || !parentA.isAdult || parentA.starving || parentA.lonely) return null;
+    const maxPop = CONFIG.ECO?.MAX_WORLD_POPULATION || 130;
+    if (this.enemies.length >= maxPop) return null;
+
+    const neighborRadius = CONFIG.ECO?.NEIGHBOR_RADIUS || 22;
+    const minDensity = CONFIG.ECO?.MIN_DENSITY || 2;
+    const maxDensity = CONFIG.ECO?.MAX_DENSITY || 6;
+
+    let neighborCount = 0;
+    let bestMate = null;
+    let bestFitness = -Infinity;
+
+    for (const other of this.enemies) {
+      if (!other || other.id === parentA.id || other.hp <= 0) continue;
+      const d = dist2D(parentA.x, parentA.z, other.x, other.z);
+      if (d <= neighborRadius) {
+        neighborCount++;
+        const otherReady =
+          other.isAdult &&
+          !other.starving &&
+          (other.reproTimer || 0) >= (other.gestationTime || 18) * 0.82;
+        const sameOrSister =
+          other.genome?.speciesId === parentA.genome?.speciesId ||
+          (CONFIG.PHYLOGENY_DIST?.[parentA.genome?.speciesId]?.[other.genome?.speciesId] ?? 1) <=
+            (CONFIG.ECO?.HYBRID_MAX_DIST || 0.45);
+        if (otherReady && sameOrSister) {
+          const fit = other.genome?.fitnessScore || 1.0;
+          if (fit > bestFitness) {
+            bestFitness = fit;
+            bestMate = other;
+          }
+        }
+      }
+    }
+
+    if (neighborCount < minDensity || neighborCount > maxDensity || !bestMate) {
+      return null;
+    }
+
+    // Check cell biomass if ecoSim grid is available
+    if (this.ecoSim && typeof this.ecoSim.getCellAt === 'function') {
+      const cell = this.ecoSim.getCellAt(parentA.x, parentA.z);
+      if (cell && cell.biomass < 18) return null;
+      if (cell) {
+        cell.biomass = Math.max(10, cell.biomass - (CONFIG.ECO?.BIRTH_BIOMASS_COST || 22));
+      }
+    }
+
+    parentA.reproTimer = 0;
+    parentA._reproTimerAtLastEcoTick = 0;
+    bestMate.reproTimer = 0;
+    bestMate._reproTimerAtLastEcoTick = 0;
+
+    let childGenome;
+    let isPZ = false;
+    if (Genome && typeof Genome.crossover === 'function') {
+      const cross = Genome.crossover(parentA.genome, bestMate.genome);
+      childGenome = cross.genome;
+      isPZ = Boolean(cross.newMutationId && !this.seenMutations.has(cross.newMutationId));
+    } else {
+      childGenome = this._createSafeGenome(parentA.genome?.speciesId || 'goblin');
+    }
+
+    const angle = Math.random() * Math.PI * 2;
+    const dist = 2.5 + Math.random() * 2.5;
+    const bx = (parentA.x + bestMate.x) * 0.5 + Math.cos(angle) * dist;
+    const bz = (parentA.z + bestMate.z) * 0.5 + Math.sin(angle) * dist;
+
+    const hasMut = Array.isArray(childGenome.mutations) && childGenome.mutations.length > 0;
+    const isHyb = Boolean(childGenome.isHybrid);
+    const parentSpotted =
+      Boolean(this.bastionRef?.autoSpotNewbornMutants && (hasMut || isHyb)) ||
+      parentA.spottedByScout ||
+      bestMate.spottedByScout;
+
+    const child = this.spawnEnemy(bx, bz, childGenome, [parentA.id, bestMate.id], {
+      isPatientZero: isPZ,
+      spottedByScout: parentSpotted,
+      lifeStage: 'baby',
+      isAdult: false,
+      age: 0,
+    });
+
+    if (this.vfx && typeof this.vfx.spawnBirthEffect === 'function') {
+      const mutHex = hasMut
+        ? CONFIG.MUTATIONS?.[childGenome.mutations[0]]?.colorHex || 0xff4500
+        : isHyb
+          ? 0x48dbfb
+          : 0x44ff88;
+      this.vfx.spawnBirthEffect(
+        new THREE.Vector3(child.x, child.y + 0.5, child.z),
+        hasMut,
+        isHyb,
+        mutHex
+      );
+    }
+
+    return child;
+  }
+
+  /**
+   * Updates all enemies, eco-tick timers, individual gestation timers, wild species repopulation,
+   * juvenile-to-adult maturation, starvation damage, peaceful/enraged Dragon AI, pack movement,
+   * combat attacks, and projectiles every frame.
    *
    * @param {number} dt - Frame delta time in seconds.
    * @param {number} elapsedTime - Total elapsed game time in seconds.
@@ -908,11 +1359,40 @@ export class EnemyManager {
       this.bastionRef = bastionAndNpcs;
     }
 
-    // 1. Automatic Genetic Eco-Tick Timer (paused during Acts 1–6 of the guided tutorial)
+    // 0. Tick Collective Species Wrath Timers (e.g. 'dragon')
+    for (const [spId, wrathState] of this.speciesWrath.entries()) {
+      if (wrathState && wrathState.active) {
+        wrathState.timer = Math.max(0, wrathState.timer - dt);
+        if (wrathState.timer <= 0) {
+          wrathState.active = false;
+          for (const e of this.enemies) {
+            if (e && e.genome?.speciesId === spId) {
+              e.enraged = false;
+              e.aggroBastionForced = false;
+              e.aggroStance = CONFIG.SPECIES?.[spId]?.aggroStance || 'pacifist_apex';
+              e.aggressiveness =
+                e.genome?.genes?.aggressiveness ??
+                CONFIG.SPECIES?.[spId]?.baseAggressiveness ??
+                0.08;
+              e.state = 'patrol';
+            }
+          }
+          logger.info(
+            'ECO',
+            `Le Courroux Draconique s'apaise : les ${CONFIG.SPECIES?.[spId]?.name || spId}s survivants regagnent la caldeira.`
+          );
+        }
+      }
+    }
+
+    // 1. Automatic Genetic Eco-Tick Timer & Wild Species Repopulation (paused during Acts 1–6 of the guided tutorial)
     if (!this.ecoPaused) {
       this.ecoTickTimer += dt;
       this.timeUntilNextTick = Math.max(0, this.ecoTickInterval - this.ecoTickTimer);
       this.ecoTickProgress = clamp(this.ecoTickTimer / this.ecoTickInterval, 0, 1);
+
+      // Continuous Wild Species Repopulation when any base species drops < 2
+      this.checkAndRepopulateSpecies(dt, false);
 
       if (this.ecoTickTimer >= this.ecoTickInterval) {
         this.triggerEcoTick();
@@ -955,6 +1435,16 @@ export class EnemyManager {
         this._matureEnemyToAdult(enemy);
       }
 
+      // Advance individual adult gestation timer (`reproTimer`)
+      if (enemy.isAdult && !enemy.starving) {
+        enemy.reproTimer = (enemy.reproTimer || 0) + dt;
+        const gestReq = enemy.gestationTime || 18;
+        // Fast breeders (e.g. Goblins at 9s gestation < 12s Eco-Tick) can give birth continuously in real time
+        if (!this.ecoPaused && gestReq < this.ecoTickInterval && enemy.reproTimer >= gestReq) {
+          this._tryIndividualGestationBirth(enemy);
+        }
+      }
+
       // Tick Burn & Poison DoT status effects
       const hadBurn = (enemy.burnTimer || 0) > 0;
       const hadPoison = (enemy.poisonTimer || 0) > 0;
@@ -993,8 +1483,9 @@ export class EnemyManager {
         enemy.stunTimer = Math.max(0, enemy.stunTimer - dt);
       }
 
-      // Starvation HP drain & migration pressure
-      if (enemy.starving) {
+      // Starvation HP drain & migration pressure (unprovoked peaceful Sovereign Dragons have ancient volcanic reserves)
+      const isPeacefulApex = this.isPeacefulTowardsPlayer(enemy);
+      if (enemy.starving && !isPeacefulApex) {
         const hasCryo = Array.isArray(enemy.genome?.mutations) && enemy.genome.mutations.includes('cryo_blood');
         const drain = starvationDps * (hasCryo ? 0.55 : 1.0) * dt;
         enemy.hp -= drain;
@@ -1013,54 +1504,88 @@ export class EnemyManager {
         enemy.hp = Math.min(enemy.maxHp, enemy.hp + 1.5 * dt);
       }
 
-      const aggroRadius = enemy.genome?.genes?.aggroRadius || 19;
+      const rawAggroRadius = enemy.genome?.genes?.aggroRadius || 19;
+      const isTerritorialUnprovoked =
+        enemy.aggroStance === 'territorial' &&
+        !enemy.provokedByAttack &&
+        !enemy.aggroBastionForced &&
+        !enemy.enraged;
+      const effectiveAggroRadius = isPeacefulApex
+        ? 0
+        : isTerritorialUnprovoked
+          ? rawAggroRadius * (0.52 + 0.45 * (enemy.aggressiveness ?? 0.48))
+          : rawAggroRadius * (0.85 + 0.3 * (enemy.aggressiveness ?? 0.75));
+
       let targetX = null;
       let targetZ = null;
       let targetType = null;
       let targetEntity = null;
       let nearestDist = Infinity;
 
-      // Check Player distance
-      if (player && player.hp > 0) {
-        const dPlayer = dist2D(enemy.x, enemy.z, player.x, player.z);
-        if (dPlayer <= aggroRadius) {
-          nearestDist = dPlayer;
-          targetX = player.x;
-          targetZ = player.z;
-          targetType = 'player';
-          targetEntity = player;
-        }
-      }
+      if (!isPeacefulApex) {
+        // Enraged Wrath Raid (e.g. provoked Sovereign Dragons): charge Player if within 36m, otherwise raze the Bastion ("notre villa")!
+        if (enemy.enraged || enemy.state === 'wrath_raid') {
+          const dPlayer = player && player.hp > 0 ? dist2D(enemy.x, enemy.z, player.x, player.z) : Infinity;
+          const distToBastion = Math.hypot(enemy.x, enemy.z);
+          if (dPlayer <= 36 && dPlayer <= distToBastion + 8) {
+            nearestDist = dPlayer;
+            targetX = player.x;
+            targetZ = player.z;
+            targetType = 'player';
+            targetEntity = player;
+          } else {
+            targetX = 0;
+            targetZ = 0;
+            targetType = 'bastion';
+            nearestDist = Math.max(0, distToBastion - bastionRadius);
+          }
+        } else {
+          // Normal Hostile / Territorial Aggro Check against Player
+          if (player && player.hp > 0) {
+            const dPlayer = dist2D(enemy.x, enemy.z, player.x, player.z);
+            if (dPlayer <= effectiveAggroRadius) {
+              nearestDist = dPlayer;
+              targetX = player.x;
+              targetZ = player.z;
+              targetType = 'player';
+              targetEntity = player;
+            }
+          }
 
-      // Check nearby NPCs (Guards / Harvesters / Scouts)
-      if (bastionAndNpcs && Array.isArray(bastionAndNpcs.npcs)) {
-        for (const npc of bastionAndNpcs.npcs) {
-          if (npc.hp <= 0) continue;
-          const dNpc = dist2D(enemy.x, enemy.z, npc.x, npc.z);
-          if (dNpc <= aggroRadius * 0.85 && dNpc < nearestDist) {
-            nearestDist = dNpc;
-            targetX = npc.x;
-            targetZ = npc.z;
-            targetType = 'npc';
-            targetEntity = npc;
+          // Check nearby NPCs (Guards / Harvesters / Scouts)
+          if (bastionAndNpcs && Array.isArray(bastionAndNpcs.npcs)) {
+            for (const npc of bastionAndNpcs.npcs) {
+              if (npc.hp <= 0) continue;
+              const dNpc = dist2D(enemy.x, enemy.z, npc.x, npc.z);
+              if (dNpc <= effectiveAggroRadius * 0.85 && dNpc < nearestDist) {
+                nearestDist = dNpc;
+                targetX = npc.x;
+                targetZ = npc.z;
+                targetType = 'npc';
+                targetEntity = npc;
+              }
+            }
+          }
+
+          // Starving enemies or forced Act 4 Raiders migrate/charge toward the Bastion
+          const distToBastion = Math.hypot(enemy.x, enemy.z);
+          if (
+            !targetType &&
+            (enemy.aggroBastionForced ||
+              (!isTerritorialUnprovoked && enemy.starving) ||
+              distToBastion < effectiveAggroRadius + bastionRadius)
+          ) {
+            if (enemy.aggroBastionForced || distToBastion < effectiveAggroRadius + bastionRadius) {
+              targetX = 0;
+              targetZ = 0;
+              targetType = 'bastion';
+              nearestDist = Math.max(0, distToBastion - bastionRadius);
+            }
           }
         }
       }
 
-      // Starving enemies or forced Act 4 Raiders migrate/charge toward the Bastion
       const distToBastion = Math.hypot(enemy.x, enemy.z);
-      if (
-        !targetType &&
-        (enemy.aggroBastionForced || enemy.starving || distToBastion < aggroRadius + bastionRadius)
-      ) {
-        if (enemy.aggroBastionForced || distToBastion < aggroRadius + bastionRadius) {
-          targetX = 0;
-          targetZ = 0;
-          targetType = 'bastion';
-          nearestDist = Math.max(0, distToBastion - bastionRadius);
-        }
-      }
-
       const slowMult = (enemy.slowTimer || 0) > 0 ? clamp(enemy.slowFactor || 0.5, 0.2, 1.0) : 1.0;
       let moveSpeed = enemy.speed * slowMult;
       let isAttacking = false;
@@ -1070,12 +1595,12 @@ export class EnemyManager {
         enemy.vx *= 0.25;
         enemy.vz *= 0.25;
       } else if (targetType) {
-        enemy.state = 'chase';
+        enemy.state = enemy.enraged ? 'wrath_raid' : 'chase';
         const attackRange = targetType === 'bastion' ? bastionRadius + 2.5 : 2.6;
         const hasPyro =
           Array.isArray(enemy.genome?.mutations) && enemy.genome.mutations.includes('pyro_gland');
         const isDragon = enemy.genome?.speciesId === 'dragon';
-        const rangedRange = hasPyro || isDragon ? 11.5 : attackRange;
+        const rangedRange = hasPyro || isDragon ? 12.5 : attackRange;
 
         if (nearestDist <= attackRange) {
           // Melee strike
@@ -1092,7 +1617,7 @@ export class EnemyManager {
           // Ranged Pyroclastic Fireball!
           enemy.state = 'attack';
           isAttacking = true;
-          enemy.attackCooldown = 2.2;
+          enemy.attackCooldown = isDragon && enemy.enraged ? 1.55 : 2.2;
           this._spawnFireball(enemy, targetX, targetZ);
         } else {
           // Chase target
@@ -1102,12 +1627,22 @@ export class EnemyManager {
         }
       } else {
         // Patrol / Pack Cohesion / Famine Migration
-        enemy.state = enemy.starving ? 'migrate' : 'patrol';
+        enemy.state = enemy.starving && !isPeacefulApex ? 'migrate' : 'patrol';
         enemy.wanderTimer -= dt;
         if (enemy.wanderTimer <= 0) {
           enemy.wanderTimer = 2.0 + Math.random() * 3.5;
 
-          if (enemy.starving) {
+          if (isPeacefulApex) {
+            // Peaceful Sovereign Dragons glide majestically around their volcanic home territory (> 55m from Bastion)
+            const dHome = dist2D(enemy.x, enemy.z, enemy.homeX, enemy.homeZ);
+            if (dHome > 20 || distToBastion < 55) {
+              enemy.wanderAngle =
+                Math.atan2(enemy.homeZ - enemy.z, enemy.homeX - enemy.x) +
+                (Math.random() - 0.5) * 0.4;
+            } else {
+              enemy.wanderAngle += (Math.random() - 0.5) * 1.1;
+            }
+          } else if (enemy.starving) {
             // Migrate inward toward richer central plains
             const inwardAngle = Math.atan2(-enemy.z, -enemy.x) + (Math.random() - 0.5) * 0.9;
             enemy.wanderAngle = inwardAngle;
@@ -1130,12 +1665,12 @@ export class EnemyManager {
           }
         }
 
-        const patrolSpeed = moveSpeed * (enemy.starving ? 0.72 : 0.42);
+        const patrolSpeed = moveSpeed * (enemy.starving && !isPeacefulApex ? 0.72 : 0.42);
         enemy.vx = Math.cos(enemy.wanderAngle) * patrolSpeed;
         enemy.vz = Math.sin(enemy.wanderAngle) * patrolSpeed;
 
         // Keep wild patrolling creatures outside the Bastion sanctuary ring unless aggroed
-        if (distToBastion < bastionRadius + 6) {
+        if (distToBastion < bastionRadius + (isPeacefulApex ? 38 : 6)) {
           const pushAngle = Math.atan2(enemy.z, enemy.x);
           enemy.vx = Math.cos(pushAngle) * moveSpeed * 0.6;
           enemy.vz = Math.sin(pushAngle) * moveSpeed * 0.6;
@@ -1346,8 +1881,9 @@ export class EnemyManager {
 
   /**
    * Applies combat damage and optional knockback to an enemy.
-   * Checks for complete eradication of a mutant lineage when a carrier dies, and
-   * notifies the Player's Adaptive Mastery System on kill.
+   * If the damaged enemy is an unprovoked peaceful Sovereign Dragon (`aggroStance === 'pacifist_apex'`),
+   * immediately triggers `provokeSpecies('dragon', enemy)` so the entire Dragon species charges the
+   * Player and Bastion! Also checks for complete eradication of a mutant lineage when a carrier dies.
    *
    * @param {string|Object} enemyIdOrObj - Enemy ID string or enemy object.
    * @param {number} amount - Damage amount.
@@ -1363,6 +1899,19 @@ export class EnemyManager {
     }
 
     const enemy = this.enemies[idx];
+
+    // Provoke Collective Dragon Wrath if an unprovoked peaceful apex sovereign is attacked!
+    if (
+      enemy.aggroStance === 'pacifist_apex' &&
+      !enemy.enraged &&
+      !this.isSpeciesProvoked(enemy.genome?.speciesId || 'dragon')
+    ) {
+      this.provokeSpecies(enemy.genome?.speciesId || 'dragon', enemy);
+    } else if (enemy.aggroStance === 'territorial') {
+      enemy.provokedByAttack = true;
+      enemy.aggressiveness = Math.max(enemy.aggressiveness || 0.5, 0.92);
+    }
+
     enemy.hp -= amount;
     enemy.hitFlash = 1.0;
 
