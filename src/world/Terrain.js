@@ -86,6 +86,7 @@ const WATER_FRAGMENT_SHADER = /* glsl */ `
   uniform float uTime;
   uniform vec3 uSunDir;
   uniform sampler2D uHeightTex;
+  uniform sampler2D uCausticsTex;
   uniform float uWorldSize;
   uniform float uWaterLevel;
 
@@ -110,14 +111,16 @@ const WATER_FRAGMENT_SHADER = /* glsl */ `
     return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
   }
 
-  // Procedural dual-layer aquatic caustics pattern
+  // Procedural + textured dual-layer aquatic caustics pattern
   float causticsPattern(vec2 xz, float time) {
-    vec2 uv1 = xz * 0.34 + vec2(time * 0.18, -time * 0.14);
-    vec2 uv2 = xz * 0.41 + vec2(-time * 0.15, time * 0.21);
-    float n1 = abs(vNoise(uv1) - 0.5) * 2.0;
-    float n2 = abs(vNoise(uv2) - 0.5) * 2.0;
-    float c = pow(1.0 - min(n1, n2), 3.5);
-    return c;
+    vec2 uv1 = xz * 0.065 + vec2(time * 0.025, -time * 0.018);
+    vec2 uv2 = xz * 0.082 + vec2(-time * 0.021, time * 0.028);
+    float t1 = texture2D(uCausticsTex, uv1).r;
+    float t2 = texture2D(uCausticsTex, uv2).g;
+    float n1 = abs(vNoise(xz * 0.32 + vec2(time * 0.16, -time * 0.12)) - 0.5) * 2.0;
+    float n2 = abs(vNoise(xz * 0.39 + vec2(-time * 0.14, time * 0.19)) - 0.5) * 2.0;
+    float procC = pow(1.0 - min(n1, n2), 3.0);
+    return clamp(procC * 0.65 + (t1 * t2) * 0.85, 0.0, 1.0);
   }
 
   void main() {
@@ -135,50 +138,50 @@ const WATER_FRAGMENT_SHADER = /* glsl */ `
     // Fine normal perturbation for capillary surface ripples
     float r1 = vNoise(vWorldPos.xz * 0.85 + vec2(uTime * 0.7, uTime * 0.5));
     float r2 = vNoise(vWorldPos.xz * 1.90 - vec2(uTime * 0.9, -uTime * 0.6));
-    vec3 N = normalize(vNormal + vec3((r1 - 0.5) * 0.14, 0.0, (r2 - 0.5) * 0.14));
+    vec3 N = normalize(vNormal + vec3((r1 - 0.5) * 0.12, 0.0, (r2 - 0.5) * 0.12));
 
     vec3 V = normalize(cameraPosition - vWorldPos);
     vec3 L = normalize(uSunDir);
 
-    // Depth-based water color absorption (Tidewater turquoise shallows -> deep sapphire abyss)
-    vec3 shallowColor = vec3(0.14, 0.68, 0.72);
-    vec3 midColor = vec3(0.05, 0.34, 0.54);
-    vec3 deepColor = vec3(0.02, 0.12, 0.25);
+    // Stylized Crystal Lagoon palette (Tunic / Link's Awakening tropical turquoise -> sapphire)
+    vec3 crystalLagoon = vec3(0.24, 0.86, 0.88); // #3ddbd9 shallow turquoise halo
+    vec3 midLagoon = vec3(0.086, 0.54, 0.678);   // #168aad tropical lagoon
+    vec3 deepSapphire = vec3(0.04, 0.24, 0.44);  // #0a3d70 deep ocean
 
-    float shallowFactor = exp(-depth * 0.55);
-    float deepFactor = clamp(depth / 5.2, 0.0, 1.0);
-    vec3 waterCol = mix(midColor, shallowColor, shallowFactor);
-    waterCol = mix(waterCol, deepColor, deepFactor);
+    float shallowFactor = exp(-depth * 0.62);
+    float deepFactor = clamp(depth / 4.8, 0.0, 1.0);
+    vec3 waterCol = mix(midLagoon, crystalLagoon, shallowFactor);
+    waterCol = mix(waterCol, deepSapphire, deepFactor);
 
-    // Seabed caustics shimmer in shallow water
+    // Bright stylized caustics network in shallow & mid lagoon waters
     float caustics = causticsPattern(vWorldPos.xz, uTime);
-    float causticsMask = shallowFactor * (1.0 - smoothstep(3.2, 5.0, depth)) * max(0.15, L.y);
-    waterCol += vec3(0.32, 0.85, 0.92) * caustics * causticsMask * 0.55;
+    float causticsMask = (0.35 + 0.65 * shallowFactor) * (1.0 - smoothstep(3.8, 6.2, depth));
+    waterCol += vec3(0.45, 0.95, 1.0) * caustics * causticsMask * 0.62;
 
-    // Fresnel sky reflection
+    // Warm Golden-Hour Fresnel sky reflection
     float NoV = clamp(dot(N, V), 0.0, 1.0);
-    float fresnel = 0.04 + 0.96 * pow(1.0 - NoV, 4.2);
-    vec3 skyReflect = mix(vec3(0.06, 0.14, 0.26), vec3(0.48, 0.74, 0.94), clamp(L.y + 0.25, 0.0, 1.0));
-    waterCol = mix(waterCol, skyReflect, fresnel * 0.58);
+    float fresnel = 0.06 + 0.94 * pow(1.0 - NoV, 3.8);
+    vec3 skyReflect = mix(vec3(0.18, 0.48, 0.72), vec3(0.88, 0.94, 0.99), clamp(L.y + 0.35, 0.0, 1.0));
+    waterCol = mix(waterCol, skyReflect, fresnel * 0.42);
 
-    // Sun specular glitter on wave crests
+    // Golden-Hour sun specular sparkles on wave crests
     vec3 H = normalize(L + V);
-    float spec = pow(max(0.0, dot(N, H)), 140.0) * max(0.0, L.y);
-    waterCol += vec3(1.5, 1.35, 1.05) * spec * 0.85;
+    float spec = pow(max(0.0, dot(N, H)), 120.0) * max(0.15, L.y);
+    waterCol += vec3(1.0, 0.95, 0.82) * spec * 0.95;
 
-    // Animated shoreline foam bands where depth is small
-    float foamNoise = vNoise(vWorldPos.xz * 0.65 + vec2(uTime * 0.4, -uTime * 0.3));
-    float shoreWave = sin(depth * 5.8 - uTime * 3.2 + foamNoise * 2.5);
-    float primaryShoreFoam = smoothstep(0.55, 0.0, depth) * 0.95;
-    float secondaryBandFoam = smoothstep(1.65, 0.25, depth) * smoothstep(0.35, 0.85, shoreWave) * 0.72;
-    float crestFoam = smoothstep(0.22, 0.36, vWorldPos.y - uWaterLevel) * foamNoise * 0.45;
+    // Stylized multi-ring shoreline white foam where waves lap the coral beach
+    float foamNoise = vNoise(vWorldPos.xz * 0.55 + vec2(uTime * 0.35, -uTime * 0.28));
+    float shoreWave = sin(depth * 6.4 - uTime * 3.4 + foamNoise * 2.2);
+    float primaryShoreFoam = smoothstep(0.68, 0.0, depth) * 0.98;
+    float secondaryBandFoam = smoothstep(2.1, 0.22, depth) * smoothstep(0.28, 0.78, shoreWave) * 0.82;
+    float crestFoam = smoothstep(0.20, 0.34, vWorldPos.y - uWaterLevel) * smoothstep(0.45, 0.8, foamNoise) * 0.45;
     float totalFoam = clamp(max(primaryShoreFoam, secondaryBandFoam) + crestFoam, 0.0, 1.0);
 
-    vec3 foamColor = vec3(0.92, 0.97, 1.0) * max(0.35, clamp(L.y + 0.45, 0.35, 1.1));
+    vec3 foamColor = vec3(0.98, 0.99, 1.0);
     waterCol = mix(waterCol, foamColor, totalFoam);
 
-    // Soft alpha feathering at the very edge of wet sand
-    float alpha = clamp(smoothstep(0.0, 0.14, depth) * 0.92 + totalFoam * 0.5, 0.0, 0.96);
+    // Crisp shoreline alpha feathering onto warm beach sand
+    float alpha = clamp(smoothstep(0.0, 0.10, depth) * 0.94 + totalFoam * 0.65, 0.0, 0.97);
 
     gl_FragColor = vec4(waterCol, alpha);
   }
@@ -476,9 +479,153 @@ export class Terrain {
   }
 
   /**
-   * Generates the `240x240` (`160x160` segments) island terrain mesh with multi-biome
-   * vertex colors, cliff slope shading, Bastion stone cobble sanctuary ring, and
-   * volcanic ember veins.
+   * Generates seamless `512x512` tileable procedural ground detail (`map`) and relief (`bumpMap`)
+   * textures (`RepeatWrapping` `32x32`, `anisotropy = 4`) so the terrain surface has crisp
+   * stylized grass blades, clover/wildflower flecks, fine sand ripples, and carved stone relief
+   * instead of flat Gouraud-shaded polygons. Falls back to `DataTexture` in headless Node.js.
+   *
+   * @returns {{ detailMap: THREE.Texture, bumpMap: THREE.Texture }}
+   * @private
+   */
+  _createStylizedGroundTextures() {
+    const size = 512;
+    const hasCanvas = typeof document !== 'undefined' && typeof document.createElement === 'function';
+
+    if (hasCanvas) {
+      const detailCanvas = document.createElement('canvas');
+      detailCanvas.width = size;
+      detailCanvas.height = size;
+      const dCtx = detailCanvas.getContext('2d');
+
+      const bumpCanvas = document.createElement('canvas');
+      bumpCanvas.width = size;
+      bumpCanvas.height = size;
+      const bCtx = bumpCanvas.getContext('2d');
+
+      if (dCtx && bCtx) {
+        // Warm high-key neutral base so vertex colors stay bright & luminous
+        dCtx.fillStyle = '#f3f5ec';
+        dCtx.fillRect(0, 0, size, size);
+
+        bCtx.fillStyle = '#808080';
+        bCtx.fillRect(0, 0, size, size);
+
+        const rng = new SeededRNG(1502026);
+
+        // 1. Soft organic dapple patches (sunlit turf & soil warmth)
+        for (let i = 0; i < 420; i++) {
+          const x = rng.range(0, size);
+          const y = rng.range(0, size);
+          const r = rng.range(10, 32);
+          const isLight = rng.chance(0.55);
+          dCtx.fillStyle = isLight ? 'rgba(255, 254, 240, 0.14)' : 'rgba(210, 224, 200, 0.14)';
+          bCtx.fillStyle = isLight ? 'rgba(165, 165, 165, 0.12)' : 'rgba(105, 105, 105, 0.12)';
+          // Tile-wrap across edges for seamless repetition
+          for (const ox of [-size, 0, size]) {
+            for (const oy of [-size, 0, size]) {
+              if (x + ox + r < 0 || x + ox - r > size || y + oy + r < 0 || y + oy - r > size) continue;
+              dCtx.beginPath();
+              dCtx.arc(x + ox, y + oy, r, 0, Math.PI * 2);
+              dCtx.fill();
+              bCtx.beginPath();
+              bCtx.arc(x + ox, y + oy, r, 0, Math.PI * 2);
+              bCtx.fill();
+            }
+          }
+        }
+
+        // 2. Stylized hand-painted grass blade strokes & pebble micro-relief
+        for (let i = 0; i < 2400; i++) {
+          const x = rng.range(0, size);
+          const y = rng.range(0, size);
+          const w = rng.range(2.0, 4.5);
+          const h = rng.range(5.0, 11.5);
+          const bright = rng.chance(0.58);
+          dCtx.fillStyle = bright ? 'rgba(255, 255, 245, 0.24)' : 'rgba(195, 212, 188, 0.22)';
+          bCtx.fillStyle = bright ? 'rgba(215, 215, 215, 0.26)' : 'rgba(65, 65, 65, 0.22)';
+          dCtx.fillRect(x, y, w, h);
+          bCtx.fillRect(x, y, w, h);
+          if (x + w > size) {
+            dCtx.fillRect(x - size, y, w, h);
+            bCtx.fillRect(x - size, y, w, h);
+          }
+          if (y + h > size) {
+            dCtx.fillRect(x, y - size, w, h);
+            bCtx.fillRect(x, y - size, w, h);
+          }
+        }
+
+        // 3. Subtle sunlit clover / pebble highlights
+        for (let i = 0; i < 650; i++) {
+          const x = rng.range(0, size);
+          const y = rng.range(0, size);
+          const rad = rng.range(1.5, 3.6);
+          dCtx.fillStyle = rng.chance(0.7) ? 'rgba(255, 252, 232, 0.32)' : 'rgba(182, 196, 176, 0.28)';
+          bCtx.fillStyle = 'rgba(235, 235, 235, 0.35)';
+          dCtx.beginPath();
+          dCtx.arc(x, y, rad, 0, Math.PI * 2);
+          dCtx.fill();
+          bCtx.beginPath();
+          bCtx.arc(x, y, rad, 0, Math.PI * 2);
+          bCtx.fill();
+        }
+
+        const detailMap = new THREE.CanvasTexture(detailCanvas);
+        detailMap.wrapS = THREE.RepeatWrapping;
+        detailMap.wrapT = THREE.RepeatWrapping;
+        detailMap.repeat.set(32, 32);
+        detailMap.anisotropy = 4;
+        detailMap.colorSpace = THREE.SRGBColorSpace;
+        detailMap.needsUpdate = true;
+
+        const bumpMap = new THREE.CanvasTexture(bumpCanvas);
+        bumpMap.wrapS = THREE.RepeatWrapping;
+        bumpMap.wrapT = THREE.RepeatWrapping;
+        bumpMap.repeat.set(32, 32);
+        bumpMap.anisotropy = 4;
+        bumpMap.needsUpdate = true;
+
+        return { detailMap, bumpMap };
+      }
+    }
+
+    // Headless Node.js fallback (64x64 DataTexture)
+    const fallbackRes = 64;
+    const dData = new Uint8Array(fallbackRes * fallbackRes * 4);
+    const bData = new Uint8Array(fallbackRes * fallbackRes * 4);
+    for (let i = 0; i < fallbackRes * fallbackRes; i++) {
+      const v = 238 + ((i * 17) % 16);
+      dData[i * 4] = v;
+      dData[i * 4 + 1] = v;
+      dData[i * 4 + 2] = v - 4;
+      dData[i * 4 + 3] = 255;
+
+      const bv = 120 + ((i * 29) % 32);
+      bData[i * 4] = bv;
+      bData[i * 4 + 1] = bv;
+      bData[i * 4 + 2] = bv;
+      bData[i * 4 + 3] = 255;
+    }
+    const detailMap = new THREE.DataTexture(dData, fallbackRes, fallbackRes, THREE.RGBAFormat);
+    detailMap.wrapS = THREE.RepeatWrapping;
+    detailMap.wrapT = THREE.RepeatWrapping;
+    detailMap.repeat.set(32, 32);
+    detailMap.needsUpdate = true;
+
+    const bumpMap = new THREE.DataTexture(bData, fallbackRes, fallbackRes, THREE.RGBAFormat);
+    bumpMap.wrapS = THREE.RepeatWrapping;
+    bumpMap.wrapT = THREE.RepeatWrapping;
+    bumpMap.repeat.set(32, 32);
+    bumpMap.needsUpdate = true;
+
+    return { detailMap, bumpMap };
+  }
+
+  /**
+   * Generates the `240x240` (`96x96` segments) island terrain mesh with a luminous
+   * Stylized Fantasy palette (`Tunic` / `Zelda: Link's Awakening` / `Death's Door`),
+   * `512x512` tileable detail & bump textures (`RepeatWrapping` `32x32`), and a carved
+   * golden-limestone Sanctuary courtyard (`r < 22m`) with concentric cobblestone rings.
    * @private
    */
   _buildIslandMesh() {
@@ -500,21 +647,23 @@ export class Terrain {
     geo.computeVertexNormals();
     const normAttr = geo.attributes.normal;
 
-    // Biome palette colors
-    const colWetSand = new THREE.Color(0x8c7656);
-    const colDrySand = new THREE.Color(0xdcc694);
-    const colPlains = new THREE.Color(0x4f8f43);
-    const colLushGrass = new THREE.Color(0x63a64b);
-    const colForest = new THREE.Color(0x285c34);
-    const colHighlands = new THREE.Color(0x676b70);
-    const colCliffRock = new THREE.Color(0x4b4e54);
-    const colVolcanicRock = new THREE.Color(0x231f24);
-    const colMagmaVein = new THREE.Color(0xd93814);
-    const colBastionStone = new THREE.Color(0x7c786e);
+    // Stylized Fantasy Biome Palette (Tunic / Link's Awakening / Death's Door)
+    const colWetSand = new THREE.Color(0xd8bf8c);         // Warm golden wet sand
+    const colDrySand = new THREE.Color(0xf4e2b8);         // Sunlit coral-cream beach sand (#f4e2b8)
+    const colMeadowBright = new THREE.Color(0x58b868);    // Vibrant sunlit meadow grass (#58b868)
+    const colMeadowRich = new THREE.Color(0x3e9654);      // Rich emerald meadow grass (#3e9654)
+    const colForest = new THREE.Color(0x2b6e4e);          // Deep emerald-teal ancient forest (#2b6e4e)
+    const colHighlands = new THREE.Color(0x73645e);       // Warm volcanic slate-terracotta (#73645e)
+    const colCliffRock = new THREE.Color(0x635550);       // Warm sculpted cliff stone
+    const colVolcanicRock = new THREE.Color(0x3d3235);    // Dark caldera basalt
+    const colMagmaVein = new THREE.Color(0xff5e1a);       // Glowing magma veins
+    const colSanctuaryStone = new THREE.Color(0xe8d8b4);  // Carved golden-limestone courtyard
+    const colSanctuaryRing = new THREE.Color(0xc4b086);   // Concentric cobblestone mortar ring
+    const colSanctuaryRune = new THREE.Color(0x64d8cb);   // Subtle runic turquoise inlay
 
     const tempColor = new THREE.Color();
 
-    // Second pass: compute rich vertex colors blending biome, elevation, slope, and micro-noise
+    // Second pass: compute harmonious stylized vertex colors
     for (let i = 0; i < vertexCount; i++) {
       const vx = posAttr.getX(i);
       const vy = posAttr.getY(i);
@@ -523,48 +672,53 @@ export class Terrain {
       const slope = 1.0 - clamp(ny, 0.0, 1.0);
       const r = Math.hypot(vx, vz);
 
-      const micro = noise2D(vx * 0.14, vz * 0.14) * 0.08;
+      const micro = noise2D(vx * 0.11, vz * 0.11) * 0.08;
       const biome = this.getBiomeAt(vx, vz);
       const { mask: volcanicMask } = this._getVolcanicField(vx, vz);
 
-      if (vy < 0.75) {
-        const wetFactor = this._smoothstep(this.waterLevel - 0.5, 0.65, vy);
+      if (vy < 0.82) {
+        const wetFactor = this._smoothstep(this.waterLevel - 0.35, 0.72, vy);
         tempColor.copy(colWetSand).lerp(colDrySand, wetFactor);
       } else if (biome === 'forest') {
-        tempColor.copy(colForest).lerp(colPlains, clamp(micro * 2.5 + 0.2, 0.0, 0.5));
+        tempColor.copy(colForest).lerp(colMeadowRich, clamp(0.32 + micro * 2.5, 0.0, 0.58));
       } else if (biome === 'highlands') {
-        tempColor.copy(colPlains).lerp(colHighlands, this._smoothstep(4.0, 7.2, vy));
+        tempColor.copy(colMeadowRich).lerp(colHighlands, this._smoothstep(3.8, 7.0, vy));
       } else {
-        tempColor.copy(colPlains).lerp(colLushGrass, clamp(0.5 + micro * 4.0, 0.0, 1.0));
+        tempColor.copy(colMeadowRich).lerp(colMeadowBright, clamp(0.55 + micro * 3.8, 0.0, 1.0));
       }
 
-      // Smooth coastal beach-to-grass transition
-      if (vy >= 0.55 && vy < 1.35) {
-        const grassBlend = this._smoothstep(0.55, 1.35, vy);
+      // Smooth sunlit beach-to-meadow transition
+      if (vy >= 0.62 && vy < 1.55) {
+        const grassBlend = this._smoothstep(0.62, 1.55, vy);
         tempColor.lerp(colDrySand, 1.0 - grassBlend);
       }
 
-      // Steep slopes expose rocky cliff strata
-      const cliffBlend = this._smoothstep(0.20, 0.46, slope);
+      // Sculpted warm cliff strata on steeper slopes
+      const cliffBlend = this._smoothstep(0.22, 0.48, slope);
       tempColor.lerp(colCliffRock, cliffBlend);
 
-      // Volcanic basalt & glowing magma fissures in NE/NW caldera
+      // Volcanic slate-terracotta & warm magma veins in NE/NW caldera
       if (volcanicMask > 0.05) {
-        tempColor.lerp(colVolcanicRock, clamp(volcanicMask * 1.15, 0.0, 1.0));
+        tempColor.lerp(colVolcanicRock, clamp(volcanicMask * 0.92, 0.0, 0.88));
         const fissureNoise = Math.abs(noise2D(vx * 0.18, vz * 0.18));
-        if (volcanicMask > 0.45 && fissureNoise < 0.11 && vy > 1.2) {
+        if (volcanicMask > 0.42 && fissureNoise < 0.11 && vy > 1.2) {
           const glowStrength = (1.0 - fissureNoise / 0.11) * volcanicMask;
-          tempColor.lerp(colMagmaVein, glowStrength * 0.85);
+          tempColor.lerp(colMagmaVein, glowStrength * 0.88);
         }
       }
 
-      // Central Bastion Sanctuary stone courtyard & golden ring path
-      if (r < this.bastionRadius + 2.5) {
-        const sanctuaryBlend = 1.0 - this._smoothstep(this.bastionRadius - 2.5, this.bastionRadius + 2.5, r);
-        tempColor.lerp(colBastionStone, sanctuaryBlend * 0.72);
+      // Carved Golden-Limestone Sanctuary Courtyard at the center (r < 22m) with concentric cobblestone rings
+      if (r < 22.0) {
+        const sanctuaryBlend = 1.0 - this._smoothstep(15.5, 22.0, r);
+        const cobbleWave = 0.5 + 0.5 * Math.cos(r * 2.15);
+        const stoneCol = colSanctuaryStone.clone().lerp(colSanctuaryRing, cobbleWave * 0.38);
+        if (Math.abs(r - 13.8) < 1.1 || Math.abs(r - 7.2) < 0.85) {
+          stoneCol.lerp(colSanctuaryRune, 0.35);
+        }
+        tempColor.lerp(stoneCol, sanctuaryBlend * 0.88);
       }
 
-      tempColor.offsetHSL(0, 0, micro * 0.35);
+      tempColor.offsetHSL(0, 0, micro * 0.22);
       colors[i * 3] = clamp(tempColor.r, 0, 1);
       colors[i * 3 + 1] = clamp(tempColor.g, 0, 1);
       colors[i * 3 + 2] = clamp(tempColor.b, 0, 1);
@@ -572,10 +726,17 @@ export class Terrain {
 
     geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
 
+    const { detailMap, bumpMap } = this._createStylizedGroundTextures();
+    this.groundDetailMap = detailMap;
+    this.groundBumpMap = bumpMap;
+
     this.terrainMaterial = new THREE.MeshStandardMaterial({
       vertexColors: true,
-      roughness: 0.85,
-      metalness: 0.05,
+      map: detailMap,
+      bumpMap: bumpMap,
+      bumpScale: 0.28,
+      roughness: 0.78,
+      metalness: 0.04,
       flatShading: false,
     });
 
@@ -622,12 +783,69 @@ export class Terrain {
   }
 
   /**
+   * Creates a tileable `256x256` Water Caustics & Specular Ripples texture (`RepeatWrapping` `24x24`).
+   *
+   * @returns {THREE.Texture}
+   * @private
+   */
+  _createWaterCausticsTexture() {
+    const size = 256;
+    const hasCanvas = typeof document !== 'undefined' && typeof document.createElement === 'function';
+    if (hasCanvas) {
+      const canvas = document.createElement('canvas');
+      canvas.width = size;
+      canvas.height = size;
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.fillStyle = '#168aad';
+        ctx.fillRect(0, 0, size, size);
+        const rng = new SeededRNG(8882026);
+        ctx.strokeStyle = 'rgba(215, 252, 255, 0.34)';
+        ctx.lineWidth = 2.2;
+        for (let i = 0; i < 95; i++) {
+          const x = rng.range(0, size);
+          const y = rng.range(0, size);
+          const r = rng.range(14, 38);
+          for (const ox of [-size, 0, size]) {
+            for (const oy of [-size, 0, size]) {
+              ctx.beginPath();
+              ctx.arc(x + ox, y + oy, r, 0, Math.PI * 2);
+              ctx.stroke();
+            }
+          }
+        }
+        const tex = new THREE.CanvasTexture(canvas);
+        tex.wrapS = THREE.RepeatWrapping;
+        tex.wrapT = THREE.RepeatWrapping;
+        tex.repeat.set(24, 24);
+        tex.needsUpdate = true;
+        return tex;
+      }
+    }
+    const data = new Uint8Array(64 * 64 * 4);
+    for (let i = 0; i < 64 * 64; i++) {
+      const c = 140 + ((i * 37) % 110);
+      data[i * 4] = c;
+      data[i * 4 + 1] = c;
+      data[i * 4 + 2] = 255;
+      data[i * 4 + 3] = 255;
+    }
+    const tex = new THREE.DataTexture(data, 64, 64, THREE.RGBAFormat);
+    tex.wrapS = THREE.RepeatWrapping;
+    tex.wrapT = THREE.RepeatWrapping;
+    tex.repeat.set(24, 24);
+    tex.needsUpdate = true;
+    return tex;
+  }
+
+  /**
    * Builds the animated Ocean Water Plane (`THREE.ShaderMaterial`) with Gerstner waves,
-   * shoreline foam, Fresnel sky reflections, and shallow seabed caustics.
+   * tileable caustics texture, and a Shoreline White Foam Ring & Shallow Turquoise Lagoon Halo.
    * @private
    */
   _buildOceanPlane() {
     const heightTex = this._createHeightDataTexture();
+    this.waterCausticsTex = this._createWaterCausticsTexture();
     const waterGeo = new THREE.PlaneGeometry(680, 680, 56, 56);
     waterGeo.rotateX(-Math.PI / 2);
 
@@ -638,6 +856,7 @@ export class Terrain {
         uTime: { value: 0 },
         uSunDir: { value: new THREE.Vector3(0.45, 0.72, 0.52).normalize() },
         uHeightTex: { value: heightTex },
+        uCausticsTex: { value: this.waterCausticsTex },
         uWorldSize: { value: this.size },
         uWaterLevel: { value: this.waterLevel },
       },
@@ -649,6 +868,21 @@ export class Terrain {
     this.waterMesh.position.y = this.waterLevel;
     this.waterMesh.renderOrder = 1;
     this.scene.add(this.waterMesh);
+
+    // Shoreline Shallow Turquoise Lagoon Halo & White Foam Ring around the island coast
+    const haloGeo = new THREE.RingGeometry(this.size * 0.35, this.size * 0.49, 64, 2);
+    haloGeo.rotateX(-Math.PI / 2);
+    this.shorelineHaloMat = new THREE.MeshBasicMaterial({
+      color: 0x64f0f5,
+      transparent: true,
+      opacity: 0.24,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    });
+    this.shorelineLagoonHalo = new THREE.Mesh(haloGeo, this.shorelineHaloMat);
+    this.shorelineLagoonHalo.position.y = this.waterLevel + 0.08;
+    this.shorelineLagoonHalo.renderOrder = 0;
+    this.scene.add(this.shorelineLagoonHalo);
   }
 
   /**
@@ -739,9 +973,9 @@ export class Terrain {
       this.grassInstanced.setMatrixAt(placedGrass, dummy.matrix);
 
       if (biome === 'forest') {
-        colorHelper.setHex(0x2e6e38).offsetHSL(rng.range(-0.03, 0.03), 0, rng.range(-0.05, 0.06));
+        colorHelper.setHex(0x2b7a52).offsetHSL(rng.range(-0.03, 0.03), 0.05, rng.range(-0.04, 0.06));
       } else {
-        colorHelper.setHex(0x5da146).offsetHSL(rng.range(-0.04, 0.05), 0, rng.range(-0.05, 0.08));
+        colorHelper.setHex(0x58b868).offsetHSL(rng.range(-0.04, 0.05), 0.06, rng.range(-0.04, 0.08));
       }
       this.grassInstanced.setColorAt(placedGrass, colorHelper);
       placedGrass++;
@@ -758,15 +992,15 @@ export class Terrain {
     const trunkGeo = new THREE.CylinderGeometry(0.22, 0.36, 1.8, 6);
     trunkGeo.translate(0, 0.9, 0);
     const trunkMat = new THREE.MeshStandardMaterial({
-      color: 0x5c3e26,
-      roughness: 0.9,
+      color: 0x6b482e,
+      roughness: 0.85,
     });
 
     const canopyGeo = new THREE.ConeGeometry(1.45, 3.4, 7);
     canopyGeo.translate(0, 3.0, 0);
     const canopyMat = new THREE.MeshStandardMaterial({
       color: 0xffffff,
-      roughness: 0.76,
+      roughness: 0.72,
     });
     this._applyWindShader(canopyMat, 0.16, 1.4);
 
@@ -802,11 +1036,11 @@ export class Terrain {
       this.treeCanopyInstanced.setMatrixAt(placedTrees, dummy.matrix);
 
       if (biome === 'forest') {
-        colorHelper.setHex(0x235932).offsetHSL(rng.range(-0.03, 0.04), 0.05, rng.range(-0.04, 0.06));
+        colorHelper.setHex(0x2b7552).offsetHSL(rng.range(-0.03, 0.04), 0.06, rng.range(-0.04, 0.06));
       } else if (biome === 'highlands') {
-        colorHelper.setHex(0x2f5446).offsetHSL(rng.range(-0.02, 0.02), 0, rng.range(-0.04, 0.04));
+        colorHelper.setHex(0x3a6e5c).offsetHSL(rng.range(-0.02, 0.02), 0.04, rng.range(-0.04, 0.04));
       } else {
-        colorHelper.setHex(0x417d38).offsetHSL(rng.range(-0.04, 0.06), 0, rng.range(-0.03, 0.06));
+        colorHelper.setHex(0x4aa85b).offsetHSL(rng.range(-0.04, 0.06), 0.05, rng.range(-0.03, 0.06));
       }
       this.treeCanopyInstanced.setColorAt(placedTrees, colorHelper);
 
@@ -841,8 +1075,8 @@ export class Terrain {
     rockGeo.translate(0, 0.45, 0);
     const rockMat = new THREE.MeshStandardMaterial({
       color: 0xffffff,
-      roughness: 0.88,
-      metalness: 0.12,
+      roughness: 0.82,
+      metalness: 0.08,
       flatShading: true,
     });
 
@@ -874,9 +1108,9 @@ export class Terrain {
       this.rockInstanced.setMatrixAt(placedRocks, dummy.matrix);
 
       if (biome === 'volcanic') {
-        colorHelper.setHex(0x2b2429).offsetHSL(0, 0, rng.range(-0.04, 0.04));
+        colorHelper.setHex(0x45383c).offsetHSL(0, 0, rng.range(-0.04, 0.04));
       } else {
-        colorHelper.setHex(0x6e737b).offsetHSL(0, 0, rng.range(-0.08, 0.08));
+        colorHelper.setHex(0x8c8178).offsetHSL(0, 0, rng.range(-0.06, 0.06));
       }
       this.rockInstanced.setColorAt(placedRocks, colorHelper);
       placedRocks++;
@@ -1007,6 +1241,17 @@ export class Terrain {
       if (sunDirection) {
         this.waterMaterial.uniforms.uSunDir.value.copy(sunDirection);
       }
+    }
+
+    if (this.waterCausticsTex) {
+      this.waterCausticsTex.offset.x = (t * 0.018) % 1.0;
+      this.waterCausticsTex.offset.y = (t * 0.014) % 1.0;
+    }
+
+    if (this.shorelineLagoonHalo && this.shorelineHaloMat) {
+      const wavePulse = 1.0 + Math.sin(t * 2.1) * 0.015;
+      this.shorelineLagoonHalo.scale.set(wavePulse, wavePulse, 1.0);
+      this.shorelineHaloMat.opacity = 0.22 + Math.sin(t * 2.1) * 0.06;
     }
 
     for (let i = 0; i < this._windUniformsList.length; i++) {
