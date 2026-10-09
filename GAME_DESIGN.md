@@ -247,3 +247,32 @@ $$\text{GèneEnfant} = \text{clamp}\Big(\text{ValeurBrute} \times \mathcal{U}(0.
 - **Posture `pacifist_apex` des Dragons** : Les Dragons sont des titans majestueux (`680 PV`, `58 Dégâts`, gestation lente de `65s`, maturation de `50s`) dotés d'un gène d'agressivité de base très faible (`0.08`). Tant que le joueur ne les attaque pas directement, **ils survolent paisiblement la caldeira volcanique** sans jamais agresser le Héros, les Éclaireurs ou le Bastion (un anneau doré paisible et le badge **`🕊️ Souverain Paisible (Ne pas provoquer)`** les distinguent).
 - **Protection anti-bavure de l'Auto-Tir** : En mode **Auto-Tir (Vampire Survivors)** comme pour les Tours de Guet et Gardes PNJ, le ciblage automatique **ignore les créatures `pacifist_apex` non provoquées** afin que le joueur ne déclenche jamais la colère des Dragons par accident en passant près du volcan.
 - **Courroux Draconique Collectif (`SPECIES_WRATH_DURATION = 90s`)** : Si le joueur choisit délibérément de frapper un Dragon (au clic gauche `[LMB]` ou avec un sort manuel `[1]–[4]`, par exemple pour éliminer un Dragon porteur d'une mutation critique ou récolter ses `180 XP`), **tous les Dragons vivants de l'île entrent en Courroux Draconique pendant 90 secondes** (`⚡ COURROUX DRACONIQUE !`), gagnent `+25%` de vitesse de vol et convergent ensemble sur le Héros et le Bastion !
+
+---
+
+## 12. Émergence Progressive des Espèces Invasives & Écosystème Herbivore (`Gibier` & `🍖 Rations`)
+
+Définis dans [`src/config.js`](file:///usr/local/google/home/giom/.gemini/jetski/scratch/genesis-bastion/src/config.js) (`CLADES.abyssal`, `CLADES.herbivore`, `SPECIES.{shark,giant_mole,rabbit,deer}`, `MUTATIONS.amphibious_lungs`) et [`src/ecosystem/BalanceAndPacing.js`](file:///usr/local/google/home/giom/.gemini/jetski/scratch/genesis-bastion/src/ecosystem/BalanceAndPacing.js) (`BALANCE.PROGRESSIVE_EMERGENCE`, `BALANCE.PREY_FOOD_ECONOMY`, `evaluatePreyAndFoodEconomy`), l'écosystème de **Genesis Bastion** évolue dans le temps et impose au joueur une responsabilité écologique directe :
+
+### 12.1. Les 4 Nouvelles Espèces (Émergents Abyssaux/Souterrains & Gibier Herbivore)
+
+| Espèce (`id`) | Clade & Émergence | Stats de Base (`PV` / `Dégâts` / `Vit.`) | Gestation / Maturation | Comportement & Rôle Écologique |
+| :--- | :--- | :---: | :---: | :--- |
+| **🦈 Requin Marcheur** (`shark`) | **Abyssal** — Nage en mer (`r = 88..105m`) à `0:00`, **débarque sur la plage à `40s`** | `135 PV` • `22 Dég.` • `7.8 Vit.` | `22s` / `24s` | Développe la mutation **`amphibious_lungs` (*Pattes & Branchies Amphibies*)**, déploie 4 pattes musclées sur le sable et envahit les terres ! S'hybride avec le Loup (*Squale-Garou*) et le Troll. |
+| **🕳️ Taupe Géante** (`giant_mole`) | **Souterrain** — Absente à `0:00`, **jaillit du sous-sol à `65s`** | `150 PV` • `21 Dég.` • `6.4 Vit.` | `20s` / `22s` | Surgit des galeries souterraines dans une éruption de roche (`spawnBurrowEruption`). S'hybride avec le Troll (*Taupe-Colosse*) et l'Orc. |
+| **🐇 Lapin des Plaines** (`rabbit`) | **Herbivore (Gibier)** — Prairies (`autoRepopulate: false`) | `26 PV` • `0 Dég.` • `9.8 Vit.` | `7.5s` / `9.5s` | **`prey_pacifist`** : Fuit à `11m`, enrichit la biomasse (`+6/tick`), donne **`+18 🍖 Rations`** et `+12 PV` si chassé. |
+| **🦌 Biche Sylvestre** (`deer`) | **Herbivore (Gibier)** — Clairières (`autoRepopulate: false`) | `54 PV` • `0 Dég.` • `10.5 Vit.` | `15s` / `17s` | **`prey_pacifist`** : Fuit à `11m`, enrichit la biomasse (`+8/tick`), donne **`+35 🍖 Rations`** et `+25 PV` si chassée. S'hybride avec le Lapin (*Cerf-Lièvre Véloce*). |
+
+### 12.2. Économie des Rations (`🍖 Rations`), Équilibre Trophique & Danger Collatéral des Sorts
+1. **Rations du Bastion (`player.resources.food`, départ `60 / 150`, consommation `-1.2 Rations/s`)** :
+   - **Bonus Rassasié (`Rations ≥ 25`)** : Le Héros bénéficie de **`+3.0 PV/s` de régénération** et **`+10%` de vitesse de déplacement**.
+   - **Famine au Bastion (`Rations = 0`)** : La régénération s'arrête et la vitesse baisse de `-8%` tant que le joueur n'a pas prélevé **1 Biche (`+35 🍖`) ou 1 Lapin (`+18 🍖`)** par une chasse raisonnée.
+2. **Fertilisation de la Biomasse & Apaisement des Carnivores** :
+   - Chaque Biche (`+8`) et Lapin (`+6`) vivant enrichit la biomasse de sa cellule à chaque Eco-Tick et nourrit naturellement les prédateurs sauvages (Loups, Lions, Requins Marcheurs), les empêchant de tomber en famine (`starving`) et de se ruer sur le Bastion.
+3. **Danger Collatéral des Sorts AoE & Extinction Irréversible sans Réintroduction (`autoRepopulate: false`)** :
+   - Contrairement aux monstres cachés qui réapparaissent gratuitement depuis leurs terriers, **les Biches et les Lapins ne réapparaissent JAMAIS gratuitement si leur population tombe sous `< 2` individus !**
+   - Si le joueur lance imprudemment des sorts de zone dévastateurs (*Nova Pyroclastique*, *Météore d'Ambre*, *Éclair en Chaîne*, *Lames Tornades*) au milieu d'une harde et extermine le gibier :
+     - **Alerte Écologique immédiate** : *« ⚠️ ALERTE ÉCOLOGIQUE : Troupeau de Biches/Lapins décimé par vos sorts ! Plus de gibier pour vous nourrir — les prédateurs affamés fondent sur le Bastion ! »*
+     - **Frénésie de Famine des Carnivores** : Privés de proies naturelles, tous les carnivores sauvages entrent en famine et convergent vers le Bastion.
+     - **Réintroduction au Bio-Laboratoire (`25 🌿 Biomasse`)** : Seul le bouton **`🌿 Réintroduire Gibier (25 Biomasse)`** permet de repeupler `3 Biches + 4 Lapins` pour restaurer l'équilibre trophique.
+

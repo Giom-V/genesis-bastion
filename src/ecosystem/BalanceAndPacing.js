@@ -52,10 +52,14 @@ export const BALANCE = {
    *   d'intercepter un colosse ou un Dragon mutant avant sa maturité.
    */
   MATURATION_BY_SPECIES: {
+    rabbit: 9.5,
     goblin: 12,
     wolf: 15,
     vulture: 17,
+    deer: 17,
     orc: 22,
+    giant_mole: 22,
+    shark: 24,
     lion: 26,
     troll: 34,
     dragon: 50,
@@ -66,49 +70,66 @@ export const BALANCE = {
    * pour chaque parent adulte (`reproductionCooldown = genes.gestationTime`).
    */
   GESTATION_BY_SPECIES: {
+    rabbit: 7.5,
     goblin: 9,
     wolf: 13,
     vulture: 15,
+    deer: 15,
     orc: 18,
+    giant_mole: 20,
+    shark: 22,
     lion: 24,
     troll: 30,
     dragon: 65,
   },
 
   /**
-   * Gène d'agressivité de base (`0.05` à `1.00`) et posture comportementale (`aggroStance`) par espèce :
+   * Gène d'agressivité de base (`0.00` à `1.00`) et posture comportementale (`aggroStance`) par espèce :
    * - `'hostile'` : chasse activement le joueur et assiège le Bastion.
    * - `'territorial'` : patrouille son biome avec rayon d'aggro réduit (`aggroRadius * (0.45 + 0.55 * aggressiveness)`)
    *   sauf en cas de famine (`starving`) ou d'attaque directe.
    * - `'pacifist_apex'` : les Dragons sont des souverains paisibles (`0.08`) qui n'attaquent jamais
    *   en premier, mais déclenchent le Courroux Draconique (`90s`) de toute leur espèce s'ils sont attaqués.
+   * - `'prey_pacifist'` : Biches (`deer`) et Lapins (`rabbit`) paisibles (`0.00`) qui broutent,
+   *   enrichissent la biomasse et fuient les prédateurs ou le joueur.
    */
   AGGRESSIVENESS_BY_SPECIES: {
     orc: 0.88,
+    shark: 0.86,
     wolf: 0.82,
+    giant_mole: 0.76,
     goblin: 0.75,
     lion: 0.70,
     troll: 0.48,
     vulture: 0.38,
     dragon: 0.08,
+    deer: 0.0,
+    rabbit: 0.0,
   },
 
   AGGRO_STANCE_BY_SPECIES: {
     orc: 'hostile',
+    shark: 'hostile',
     wolf: 'hostile',
+    giant_mole: 'hostile',
     goblin: 'hostile',
     lion: 'hostile',
     troll: 'territorial',
     vulture: 'territorial',
     dragon: 'pacifist_apex',
+    deer: 'prey_pacifist',
+    rabbit: 'prey_pacifist',
   },
 
   /**
-   * Paramètres de repeuplement sauvage depuis les habitats cachés (terriers, tanières, falaises, crêtes)
-   * garantissant qu'aucune des 7 espèces de base ne s'éteint définitivement (`< 2` individus vivants).
+   * Paramètres de repeuplement sauvage depuis les habitats cachés (terriers, tanières, falaises, crêtes).
+   * Note critique : les herbivores (`deer` et `rabbit`) ont `autoRepopulate: false` ! Si le joueur
+   * extermine un troupeau avec ses sorts de zone (`< 2` individus), l'espèce s'éteint jusqu'à
+   * une réintroduction manuelle payante (`25 Biomasse`) au Bio-Laboratoire.
    */
   REPOPULATION_BY_SPECIES: {
     goblin: {
+      autoRepopulate: true,
       cooldown: 8,
       minThreshold: 2,
       spawnCount: 2,
@@ -116,6 +137,7 @@ export const BALANCE = {
       messageFR: 'Des Gobelins sauvages émergent de leurs terriers forestiers !',
     },
     wolf: {
+      autoRepopulate: true,
       cooldown: 12,
       minThreshold: 2,
       spawnCount: 2,
@@ -123,6 +145,7 @@ export const BALANCE = {
       messageFR: 'Des Loups sauvages quittent leurs tanières sylvestres !',
     },
     vulture: {
+      autoRepopulate: true,
       cooldown: 12,
       minThreshold: 2,
       spawnCount: 2,
@@ -130,6 +153,7 @@ export const BALANCE = {
       messageFR: 'Des Vautours descendent en piqué depuis les nids des falaises !',
     },
     orc: {
+      autoRepopulate: true,
       cooldown: 16,
       minThreshold: 2,
       spawnCount: 2,
@@ -137,6 +161,7 @@ export const BALANCE = {
       messageFR: 'Une patrouille d’Orcs sauvages surgit des campements enfouis !',
     },
     lion: {
+      autoRepopulate: true,
       cooldown: 16,
       minThreshold: 2,
       spawnCount: 2,
@@ -144,6 +169,7 @@ export const BALANCE = {
       messageFR: 'Un couple de Lions sauvages regagne son territoire dans les plaines !',
     },
     troll: {
+      autoRepopulate: true,
       cooldown: 16,
       minThreshold: 2,
       spawnCount: 2,
@@ -151,12 +177,82 @@ export const BALANCE = {
       messageFR: 'Des Trolls anciens sortent des cavernes profondes des hautes terres !',
     },
     dragon: {
+      autoRepopulate: true,
       cooldown: 28,
       minThreshold: 2,
       spawnCount: 2,
       habitatLabel: 'les crêtes volcaniques inaccessibles',
       messageFR: 'Un couple de Dragons ancestraux se pose sur la caldeira volcanique !',
     },
+    shark: {
+      autoRepopulate: true,
+      cooldown: 20,
+      minThreshold: 2,
+      spawnCount: 2,
+      habitatLabel: 'les récifs abyssaux du large',
+      messageFR: 'Un banc de Requins Marcheurs débarque des récifs abyssaux sur la plage !',
+    },
+    giant_mole: {
+      autoRepopulate: true,
+      cooldown: 18,
+      minThreshold: 2,
+      spawnCount: 2,
+      habitatLabel: 'les galeries souterraines profondes',
+      messageFR: 'Des Taupes Géantes Fouisseuses jaillissent des galeries souterraines !',
+    },
+    rabbit: {
+      autoRepopulate: false,
+      cooldown: 0,
+      minThreshold: 2,
+      spawnCount: 0,
+      habitatLabel: 'les prairies fleuries (Non-auto : réintroduction requise si éteint)',
+      messageFR: 'Des Lapins des Plaines ont été réintroduits dans les prairies !',
+    },
+    deer: {
+      autoRepopulate: false,
+      cooldown: 0,
+      minThreshold: 2,
+      spawnCount: 0,
+      habitatLabel: 'les clairières sylvestres (Non-auto : réintroduction requise si éteint)',
+      messageFR: 'Une harde de Biches Sylvestres a été réintroduite dans la forêt !',
+    },
+  },
+
+  /**
+   * Paramètres d'émergence progressive des nouvelles espèces invasives (Mer -> Plage, Souterrain)
+   * et d'économie écologique du Gibier (`deer` / `rabbit` + `🍖 Rations`).
+   */
+  PROGRESSIVE_EMERGENCE: {
+    SHARK_OCEAN_MIN_RADIUS: 88,
+    SHARK_OCEAN_MAX_RADIUS: 105,
+    SHARK_BEACH_LANDING_RADIUS: 76,
+    SHARK_INITIAL_OCEAN_COUNT: 4,
+    SHARK_LANDING_TIME_SEC: CONFIG.ECO?.SHARK_LANDING_TIME_SEC ?? 40,
+    SHARK_WAVE_INTERVAL_SEC: CONFIG.ECO?.SHARK_WAVE_INTERVAL_SEC ?? 35,
+    MOLE_ERUPTION_TIME_SEC: CONFIG.ECO?.MOLE_ERUPTION_TIME_SEC ?? 65,
+    MOLE_WAVE_INTERVAL_SEC: CONFIG.ECO?.MOLE_WAVE_INTERVAL_SEC ?? 42,
+    MOLE_ERUPTION_COUNT: 3,
+  },
+
+  PREY_FOOD_ECONOMY: {
+    INITIAL_DEER_COUNT: 5,
+    INITIAL_RABBIT_COUNT: 6,
+    INITIAL_FOOD: CONFIG.ECO?.INITIAL_FOOD ?? 60,
+    MAX_FOOD: CONFIG.ECO?.MAX_FOOD ?? 150,
+    FOOD_DECAY_PER_SEC: CONFIG.ECO?.FOOD_DECAY_PER_SEC ?? 1.2,
+    WELL_FED_THRESHOLD: CONFIG.ECO?.WELL_FED_THRESHOLD ?? 25,
+    WELL_FED_REGEN_BONUS: 3.0,
+    WELL_FED_SPEED_MULT: 1.10,
+    REINTRODUCE_BIOMASS_COST: CONFIG.ECO?.PREY_REINTRODUCE_BIOMASS_COST ?? 25,
+    REINTRODUCE_DEER_COUNT: 3,
+    REINTRODUCE_RABBIT_COUNT: 4,
+    DEER_FOOD_YIELD: 35,
+    DEER_HEAL_YIELD: 25,
+    DEER_BIOMASS_ENRICHMENT: 8,
+    RABBIT_FOOD_YIELD: 18,
+    RABBIT_HEAL_YIELD: 12,
+    RABBIT_BIOMASS_ENRICHMENT: 6,
+    PREY_FLEE_RADIUS: 11,
   },
 
   /**
@@ -194,6 +290,7 @@ export const BALANCE = {
     cryo_blood: 2.5,
     winged_leap: -2.0,
     titan_growth: 5.0,
+    amphibious_lungs: -1.5,
   },
 
   /**
@@ -307,7 +404,7 @@ export function sampleScopeExpandingGene(
  * Résout le profil reproductif, comportemental (agressivité / posture) et de repeuplement sauvage
  * d'une espèce (pure ou hybride).
  *
- * @param {string} [speciesId='goblin'] - Identifiant de l'espèce (`'goblin'`, `'dragon'`, `'orc_troll'`, etc.).
+ * @param {string} [speciesId='goblin'] - Identifiant de l'espèce (`'goblin'`, `'dragon'`, `'shark'`, `'deer'`, etc.).
  * @param {object} [genes={}] - Gènes individuels éventuels (`gestationTime`, `aggressiveness`).
  * @param {string[]} [mutations=[]] - Mutations actives éventuelles.
  * @returns {{
@@ -315,8 +412,16 @@ export function sampleScopeExpandingGene(
  *   gestationTime: number,
  *   maturationTime: number,
  *   aggressiveness: number,
- *   aggroStance: 'hostile' | 'territorial' | 'pacifist_apex',
+ *   aggroStance: 'hostile' | 'territorial' | 'pacifist_apex' | 'prey_pacifist',
  *   isPacifistApex: boolean,
+ *   isHerbivorePrey: boolean,
+ *   autoRepopulate: boolean,
+ *   foodYield: number,
+ *   healYield: number,
+ *   biomassEnrichmentPerTick: number,
+ *   fleeRadius: number,
+ *   emergenceType: string | null,
+ *   emergenceTimeSec: number,
  *   effectiveAggroRadiusMultiplier: number,
  *   repopulationCooldown: number,
  *   repopulationHabitatLabel: string,
@@ -339,7 +444,7 @@ export function getSpeciesReproductiveAndAggroProfile(
     spCfg?.aggroStance ?? BALANCE.AGGRO_STANCE_BY_SPECIES[speciesId] ?? 'hostile';
 
   if (typeof baseGestation !== 'number' || typeof baseAggro !== 'number') {
-    if (typeof speciesId === 'string' && speciesId.includes('_')) {
+    if (typeof speciesId === 'string' && speciesId.includes('_') && !spCfg) {
       const [pA, pB] = speciesId.split('_');
       const gA =
         CONFIG?.SPECIES?.[pA]?.baseGestationTime ??
@@ -369,7 +474,9 @@ export function getSpeciesReproductiveAndAggroProfile(
         CONFIG?.SPECIES?.[pB]?.aggroStance ??
         BALANCE.AGGRO_STANCE_BY_SPECIES[pB] ??
         'hostile';
-      if (stA === 'pacifist_apex' && stB === 'pacifist_apex') {
+      if (stA === 'prey_pacifist' && stB === 'prey_pacifist') {
+        aggroStance = 'prey_pacifist';
+      } else if (stA === 'pacifist_apex' && stB === 'pacifist_apex') {
         aggroStance = 'pacifist_apex';
       } else if (stA === 'territorial' || stB === 'territorial') {
         aggroStance = baseAggro < 0.58 ? 'territorial' : 'hostile';
@@ -386,18 +493,24 @@ export function getSpeciesReproductiveAndAggroProfile(
   const gestationTime = Number(
     clamp(genes?.gestationTime ?? baseGestation, 4, 180).toFixed(1)
   );
-  const aggressiveness = Number(
-    clamp(genes?.aggressiveness ?? baseAggro, 0.05, 1.0).toFixed(3)
-  );
+  const isHerbivorePrey =
+    Boolean(spCfg?.isHerbivorePrey) ||
+    spCfg?.clade === 'herbivore' ||
+    aggroStance === 'prey_pacifist';
+  const aggressiveness = isHerbivorePrey
+    ? 0.0
+    : Number(clamp(genes?.aggressiveness ?? baseAggro, 0.02, 1.0).toFixed(3));
   const isPacifistApex = aggroStance === 'pacifist_apex';
 
-  const effectiveAggroRadiusMultiplier = isPacifistApex
-    ? 0.0
-    : aggroStance === 'territorial'
-      ? Number((0.45 + 0.55 * aggressiveness).toFixed(3))
-      : Number((0.75 + 0.35 * aggressiveness).toFixed(3));
+  const effectiveAggroRadiusMultiplier =
+    isPacifistApex || isHerbivorePrey
+      ? 0.0
+      : aggroStance === 'territorial'
+        ? Number((0.45 + 0.55 * aggressiveness).toFixed(3))
+        : Number((0.75 + 0.35 * aggressiveness).toFixed(3));
 
   const repopEntry = BALANCE.REPOPULATION_BY_SPECIES[speciesId] || {
+    autoRepopulate: !isHerbivorePrey,
     cooldown: spCfg?.repopulationCooldown ?? 14,
     habitatLabel: spCfg?.repopulationHabitatLabel ?? 'les terres sauvages',
     messageFR:
@@ -412,6 +525,16 @@ export function getSpeciesReproductiveAndAggroProfile(
     aggressiveness,
     aggroStance,
     isPacifistApex,
+    isHerbivorePrey,
+    autoRepopulate:
+      spCfg?.autoRepopulate ?? repopEntry.autoRepopulate ?? !isHerbivorePrey,
+    foodYield: spCfg?.foodYield ?? (isHerbivorePrey ? 22 : 0),
+    healYield: spCfg?.healYield ?? (isHerbivorePrey ? 15 : 0),
+    biomassEnrichmentPerTick:
+      spCfg?.biomassEnrichmentPerTick ?? (isHerbivorePrey ? 6 : 0),
+    fleeRadius: spCfg?.fleeRadius ?? (isHerbivorePrey ? 11 : 0),
+    emergenceType: spCfg?.emergenceType ?? null,
+    emergenceTimeSec: spCfg?.emergenceTimeSec ?? 0,
     effectiveAggroRadiusMultiplier,
     repopulationCooldown: spCfg?.repopulationCooldown ?? repopEntry.cooldown,
     repopulationHabitatLabel:
@@ -420,6 +543,77 @@ export function getSpeciesReproductiveAndAggroProfile(
       spCfg?.repopulationMessageFR ?? repopEntry.messageFR,
     wrathDurationSec: BALANCE.SPECIES_WRATH.DURATION_SEC,
     wrathSpeedMultiplier: BALANCE.SPECIES_WRATH.SPEED_MULTIPLIER,
+  };
+}
+
+/**
+ * Évalue l'état écologique des troupeaux d'herbivores (`deer`, `rabbit`) et des réserves
+ * de Rations (`food`) du Bastion.
+ *
+ * @param {Array<object>} [enemies=[]] - Liste des créatures vivantes.
+ * @param {number} [foodAmount=60] - Quantité actuelle de Rations (`player.resources.food`).
+ * @returns {{
+ *   deerCount: number,
+ *   rabbitCount: number,
+ *   totalHerbivores: number,
+ *   isDeerExtinct: boolean,
+ *   isRabbitExtinct: boolean,
+ *   isPreyCrisis: boolean,
+ *   foodAmount: number,
+ *   maxFood: number,
+ *   isWellFed: boolean,
+ *   isStarvingCamp: boolean,
+ *   regenBonusPerSec: number,
+ *   speedMultiplier: number,
+ *   statusLabelFR: string
+ * }} Bilan trophique et alimentaire temps réel.
+ */
+export function evaluatePreyAndFoodEconomy(enemies = [], foodAmount = 60) {
+  let deerCount = 0;
+  let rabbitCount = 0;
+  let otherHerbivores = 0;
+
+  if (Array.isArray(enemies)) {
+    for (const e of enemies) {
+      if (!e || e.dead || e.hp <= 0) continue;
+      if (e.speciesId === 'deer') deerCount += 1;
+      else if (e.speciesId === 'rabbit') rabbitCount += 1;
+      else if (e.clade === 'herbivore' || e.isHerbivorePrey) otherHerbivores += 1;
+    }
+  }
+
+  const totalHerbivores = deerCount + rabbitCount + otherHerbivores;
+  const isDeerExtinct = deerCount < 2;
+  const isRabbitExtinct = rabbitCount < 2;
+  const isPreyCrisis = totalHerbivores < 2 || (isDeerExtinct && isRabbitExtinct);
+
+  const econ = BALANCE.PREY_FOOD_ECONOMY;
+  const clampedFood = clamp(foodAmount ?? econ.INITIAL_FOOD, 0, econ.MAX_FOOD);
+  const isWellFed = clampedFood >= econ.WELL_FED_THRESHOLD;
+  const isStarvingCamp = clampedFood <= 0.5;
+
+  const statusLabelFR = isPreyCrisis
+    ? '⚠️ EFFONDREMENT DU GIBIER (Réintroduire 25 Biomasse)'
+    : isStarvingCamp
+      ? '⚠️ FAMINE AU BASTION (Chassez 1 Biche/Lapin)'
+      : isWellFed
+        ? `🍖 Rassasié (+${econ.WELL_FED_REGEN_BONUS} PV/s, +10% Vit.)`
+        : '🍖 Réserves Basses';
+
+  return {
+    deerCount,
+    rabbitCount,
+    totalHerbivores,
+    isDeerExtinct,
+    isRabbitExtinct,
+    isPreyCrisis,
+    foodAmount: Number(clampedFood.toFixed(1)),
+    maxFood: econ.MAX_FOOD,
+    isWellFed,
+    isStarvingCamp,
+    regenBonusPerSec: isWellFed ? econ.WELL_FED_REGEN_BONUS : 0,
+    speedMultiplier: isWellFed ? econ.WELL_FED_SPEED_MULT : isStarvingCamp ? 0.92 : 1.0,
+    statusLabelFR,
   };
 }
 
@@ -459,9 +653,9 @@ export function getMaturationProfile(speciesId = 'goblin', mutations = []) {
   let aggroStance =
     spCfg?.aggroStance ?? BALANCE.AGGRO_STANCE_BY_SPECIES[speciesId] ?? 'hostile';
 
-  // Si c'est un hybride (ex. 'orc_troll' ou 'vulture_dragon'), moyenne les durées des espèces parentes
+  // Si c'est un hybride (ex. 'orc_troll' ou 'shark_wolf'), moyenne les durées des espèces parentes
   if (typeof baseDuration !== 'number') {
-    if (typeof speciesId === 'string' && speciesId.includes('_')) {
+    if (typeof speciesId === 'string' && speciesId.includes('_') && !spCfg) {
       const parts = speciesId.split('_');
       const dA =
         CONFIG?.SPECIES?.[parts[0]]?.baseMaturationTime ??
@@ -504,8 +698,8 @@ export function getMaturationProfile(speciesId = 'goblin', mutations = []) {
     }
   }
 
-  const maturationTime = Number(clamp(baseDuration + mutationOffset, 10, 68).toFixed(1));
-  const gestationTime = Number(clamp(baseGestation, 6, 120).toFixed(1));
+  const maturationTime = Number(clamp(baseDuration + mutationOffset, 6, 68).toFixed(1));
+  const gestationTime = Number(clamp(baseGestation, 5, 120).toFixed(1));
   const ecoTickInterval = CONFIG.ECO?.TICK_INTERVAL || 12;
 
   // Fenêtre de réaction effective avant le premier Eco-Tick suivant la maturité adulte
