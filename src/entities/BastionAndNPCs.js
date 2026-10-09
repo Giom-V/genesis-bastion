@@ -1560,7 +1560,7 @@ export class BastionAndNPCs {
         this.hearthAuraTickTimer -= 1.0;
         for (const e of enemies) {
           if (!e || e.hp <= 0) continue;
-          if (e.aggroStance === 'pacifist_apex' && !e.enraged) continue;
+          if (this._isNonHostileToDefenses(e)) continue;
           if (dist2D(0, 0, e.x, e.z) <= this.passiveAuraRange) {
             if (typeof e.applyBurn === 'function') {
               e.applyBurn(this.auraBurnDps, 2.0);
@@ -1591,7 +1591,7 @@ export class BastionAndNPCs {
               (e) =>
                 e &&
                 e.hp > 0 &&
-                !(e.aggroStance === 'pacifist_apex' && !e.enraged) &&
+                !this._isNonHostileToDefenses(e) &&
                 dist2D(tower.x, tower.z, e.x, e.z) <= tStats.range
             )
             .sort(
@@ -1680,6 +1680,25 @@ export class BastionAndNPCs {
   }
 
   /**
+   * Returns true if an entity is a peaceful herbivore (`deer`/`rabbit`, `prey_pacifist`),
+   * an unprovoked peaceful apex sovereign (`dragon`), or an offshore ocean shark (`isAquatic === true`),
+   * meaning Bastion Watchtowers, Guards, Hearth auras, and Scout threat checks should ignore it.
+   *
+   * @param {Object} e
+   * @returns {boolean}
+   * @private
+   */
+  _isNonHostileToDefenses(e) {
+    if (!e) return true;
+    if (e.aggroStance === 'prey_pacifist') return true;
+    const spId = e.genome?.speciesId;
+    if (spId === 'deer' || spId === 'rabbit' || e.genome?.clade === 'herbivore') return true;
+    if (e.aggroStance === 'pacifist_apex' && !e.enraged) return true;
+    if (e.isAquatic) return true;
+    return false;
+  }
+
+  /**
    * Harvester AI: gathers wood/crystal around the Bastion (`10..28` units) and repairs Bastion HP.
    */
   _updateHarvesterAI(npc, dt, player) {
@@ -1718,7 +1737,7 @@ export class BastionAndNPCs {
     let nearestDist = 30;
     for (const e of enemies) {
       if (!e || e.hp <= 0) continue;
-      if (e.aggroStance === 'pacifist_apex' && !e.enraged) continue;
+      if (this._isNonHostileToDefenses(e)) continue;
       const d = dist2D(npc.x, npc.z, e.x, e.z);
       if (d < nearestDist) {
         nearestDist = d;
@@ -1809,8 +1828,8 @@ export class BastionAndNPCs {
       if (!enemy || enemy.hp <= 0) continue;
       const d = dist2D(scout.x, scout.z, enemy.x, enemy.z);
 
-      // Scouts only flee from hostile/territorial enemies or enraged Dragons
-      if (d <= fleeRadius && !(enemy.aggroStance === 'pacifist_apex' && !enemy.enraged)) {
+      // Scouts only flee from hostile/territorial enemies or enraged Dragons (never from peaceful herbivores or offshore sharks)
+      if (d <= fleeRadius && !this._isNonHostileToDefenses(enemy)) {
         nearbyThreats.push(enemy);
       }
 

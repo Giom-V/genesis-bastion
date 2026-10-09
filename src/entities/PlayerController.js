@@ -84,12 +84,23 @@ export class PlayerController {
     this.kills = 0;
     /** @type {number} */
     this.mutantsSlain = 0;
-    /** @type {{ wood: number, crystal: number, biomass: number }} */
+    /** @type {{ wood: number, crystal: number, biomass: number, food: number }} */
     this.resources = {
       wood: 40,
       crystal: 20,
       biomass: 15,
+      food: 60,
     };
+    /** @type {number} Maximum Food / Rations storage cap */
+    this.maxFood = 150;
+    /** @type {boolean} True when food > 25 (+3 PV/s regen, +10% movement speed) */
+    this.isWellFed = true;
+    /** @type {boolean} True when food <= 0 (0 PV/s field regen, -10% movement speed) */
+    this.isStarvingFamine = false;
+    /** @type {number} Total herbivore prey (deer/rabbit) slain */
+    this.preySlain = 0;
+    /** @type {number} Total herbivore prey killed collaterally by 3D AoE spells */
+    this.collateralPreyKills = 0;
     /** @type {string[]} List of applied roguelike upgrade/ability IDs */
     this.upgrades = [];
     /** @type {number} Unspent level-up picks waiting for modal selection */
@@ -577,25 +588,26 @@ export class PlayerController {
    * @param {Object} enemy
    * @param {number} rawDamage
    * @param {{x: number, z: number, strength?: number}|null} [knockDir=null]
+   * @param {boolean} [isSpellDamage=false] - True when damage originates from a 3D spell or orbital blade.
    * @returns {{ killed: boolean, finalDmg: number, xpGained: number }}
    * @private
    */
-  _dealDamageToEnemy(enemyManager, enemy, rawDamage, knockDir = null) {
+  _dealDamageToEnemy(enemyManager, enemy, rawDamage, knockDir = null, isSpellDamage = false) {
     if (!enemyManager || !enemy || enemy.hp <= 0) {
       return { killed: false, finalDmg: 0, xpGained: 0 };
     }
     const finalDmg = this._computeFinalDamageAgainst(rawDamage, enemy);
-    const res = enemyManager.damageEnemy(enemy.id, finalDmg, knockDir);
+    const res = enemyManager.damageEnemy(enemy.id, finalDmg, knockDir, null, { isSpellDamage });
     this.hitsLanded++;
 
     if (typeof this.onDamageDealt === 'function') {
-      this.onDamageDealt(enemy, finalDmg, Boolean(res?.killed));
+      this.onDamageDealt(enemy, finalDmg, Boolean(res?.killed), isSpellDamage);
     }
 
     // Fallback in case enemyManager didn't have playerRef set yet
     if (res?.killed && !enemy._killRecorded) {
       enemy._killRecorded = true;
-      this.recordEnemyKill(enemy, res.xpGained || 20);
+      this.recordEnemyKill(enemy, res.xpGained || 20, isSpellDamage);
     }
 
     return {
@@ -634,6 +646,8 @@ export class PlayerController {
         : [];
 
     // Automatic spells (!isManualTrigger) never target unprovoked peaceful sovereign Dragons
+    // Note: Herbivore prey ('deer', 'rabbit') ARE included in `enemies` so careless AoE / multi-target
+    // spells can collaterally hit and kill them if cast near a grazing herd!
     const enemies = isManualTrigger
       ? rawEnemies
       : rawEnemies.filter((e) => !(e.aggroStance === 'pacifist_apex' && !e.enraged));
@@ -646,12 +660,19 @@ export class PlayerController {
       }))
       .sort((a, b) => a.dist - b.dist);
 
-    const nearestEntry = sortedByDist[0] || null;
+    const sortedHostilesByDist = sortedByDist.filter(
+      (item) =>
+        item.enemy.aggroStance !== 'prey_pacifist' &&
+        item.enemy.genome?.clade !== 'herbivore' &&
+        !item.enemy.isAquatic
+    );
+    const nearestEntry = sortedHostilesByDist[0] || sortedByDist[0] || null;
 
     // In Vampire Survivors auto-cast mode, only fire when at least 1 hostile enemy is within range
     if (!isManualTrigger && !ignoreCooldown) {
       const triggerRange = abilityId === 'spinning_blades' ? stats.range + 1.5 : stats.range + 1.0;
-      if (!nearestEntry || nearestEntry.dist > triggerRange) {
+      const nearestHostile = sortedHostilesByDist[0] || null;
+      if (!nearestHostile || nearestHostile.dist > triggerRange) {
         return false;
       }
     }
@@ -674,11 +695,17 @@ export class PlayerController {
           const dx = item.enemy.x - this.x;
           const dz = item.enemy.z - this.z;
           const inv = item.dist > 0.01 ? 1 / item.dist : 1;
-          this._dealDamageToEnemy(enemyManager, item.enemy, stats.damage * 1.25, {
-            x: dx * inv,
-            z: dz * inv,
-            strength: 1.6,
-          });
+          this._dealDamageToEnemy(
+            enemyManager,
+            item.enemy,
+            stats.damage * 1.25,
+            {
+              x: dx * inv,
+              z: dz * inv,
+              strength: 1.6,
+            },
+            true
+          );
           hitTargets.push(new THREE.Vector3(item.enemy.x, item.enemy.y, item.enemy.z));
         }
         if (this.vfx && typeof this.vfx.spawnAbilityVFX === 'function') {
@@ -697,11 +724,17 @@ export class PlayerController {
           const dx = item.enemy.x - this.x;
           const dz = item.enemy.z - this.z;
           const inv = item.dist > 0.01 ? 1 / item.dist : 1;
-          this._dealDamageToEnemy(enemyManager, item.enemy, stats.damage, {
-            x: dx * inv,
-            z: dz * inv,
-            strength: 2.2,
-          });
+          this._dealDamageToEnemy(
+            enemyManager,
+            item.enemy,
+            stats.damage,
+            {
+              x: dx * inv,
+              z: dz * inv,
+              strength: 2.2,
+            },
+            true
+          );
           if (typeof item.enemy.applyBurn === 'function') {
             item.enemy.applyBurn(stats.extra?.burnDps || 10, stats.extra?.burnDuration || 3.5);
           }
@@ -739,7 +772,13 @@ export class PlayerController {
 
           visitedIds.add(bestEnemy.id);
           hitTargets.push(new THREE.Vector3(bestEnemy.x, bestEnemy.y, bestEnemy.z));
-          this._dealDamageToEnemy(enemyManager, bestEnemy, stats.damage * Math.pow(0.92, b));
+          this._dealDamageToEnemy(
+            enemyManager,
+            bestEnemy,
+            stats.damage * Math.pow(0.92, b),
+            null,
+            true
+          );
           if (typeof bestEnemy.applyStun === 'function') {
             bestEnemy.applyStun(0.35);
           }
@@ -795,11 +834,17 @@ export class PlayerController {
             if (proj < -0.5 || proj > stats.range + 1.0) continue;
             const perpDist = Math.abs(rx * dirZ - rz * dirX);
             if (perpDist <= 1.85) {
-              this._dealDamageToEnemy(enemyManager, item.enemy, stats.damage, {
-                x: dirX,
-                z: dirZ,
-                strength: 1.5,
-              });
+              this._dealDamageToEnemy(
+                enemyManager,
+                item.enemy,
+                stats.damage,
+                {
+                  x: dirX,
+                  z: dirZ,
+                  strength: 1.5,
+                },
+                true
+              );
               if (typeof item.enemy.applySlow === 'function') {
                 item.enemy.applySlow(
                   stats.extra?.slowFactor || 0.5,
@@ -834,7 +879,7 @@ export class PlayerController {
           const dot = (dx * dirX + dz * dirZ) * inv;
           // Hit all enemies inside a generous 110° forward cone (or very close <= 3.2m)
           if (dot >= 0.35 || item.dist <= 3.2) {
-            this._dealDamageToEnemy(enemyManager, item.enemy, stats.damage);
+            this._dealDamageToEnemy(enemyManager, item.enemy, stats.damage, null, true);
             if (typeof item.enemy.applyPoison === 'function') {
               item.enemy.applyPoison(
                 stats.extra?.poisonDps || 10,
@@ -868,7 +913,9 @@ export class PlayerController {
         let bestScore = -Infinity;
         for (const item of inRange) {
           const e = item.enemy;
+          const isPrey = e.aggroStance === 'prey_pacifist' || e.genome?.clade === 'herbivore';
           const score =
+            (isPrey ? -80 : 0) +
             (e.isPatientZero ? 100 : 0) +
             (e.genome?.mutations?.length || 0) * 25 +
             (e.genome?.fitnessScore || 1.0) * 10 -
@@ -896,11 +943,17 @@ export class PlayerController {
             const dx = e.x - impactX;
             const dz = e.z - impactZ;
             const inv = dImpact > 0.01 ? 1 / dImpact : 1;
-            this._dealDamageToEnemy(enemyManager, e, stats.damage, {
-              x: dx * inv,
-              z: dz * inv,
-              strength: 2.8,
-            });
+            this._dealDamageToEnemy(
+              enemyManager,
+              e,
+              stats.damage,
+              {
+                x: dx * inv,
+                z: dz * inv,
+                strength: 2.8,
+              },
+              true
+            );
             if (typeof e.applyBurn === 'function') {
               e.applyBurn(12, 3.5);
             }
@@ -926,7 +979,7 @@ export class PlayerController {
         let totalDamageDealt = 0;
         for (const item of sortedByDist) {
           if (item.dist > stats.range || hitTargets.length >= maxTargets) break;
-          const res = this._dealDamageToEnemy(enemyManager, item.enemy, stats.damage);
+          const res = this._dealDamageToEnemy(enemyManager, item.enemy, stats.damage, null, true);
           totalDamageDealt += res.finalDmg;
           hitTargets.push(new THREE.Vector3(item.enemy.x, item.enemy.y, item.enemy.z));
         }
@@ -956,11 +1009,17 @@ export class PlayerController {
           const dx = item.enemy.x - this.x;
           const dz = item.enemy.z - this.z;
           const inv = item.dist > 0.01 ? 1 / item.dist : 1;
-          this._dealDamageToEnemy(enemyManager, item.enemy, stats.damage, {
-            x: dx * inv,
-            z: dz * inv,
-            strength: kbStrength * 0.65,
-          });
+          this._dealDamageToEnemy(
+            enemyManager,
+            item.enemy,
+            stats.damage,
+            {
+              x: dx * inv,
+              z: dz * inv,
+              strength: kbStrength * 0.65,
+            },
+            true
+          );
           if (typeof item.enemy.applyStun === 'function') {
             item.enemy.applyStun(stunDur);
           }
@@ -1022,7 +1081,7 @@ export class PlayerController {
       this.orbitalAngle = (this.orbitalAngle + dt * spinSpeed) % (Math.PI * 2);
       this.orbitalBladesGroup.rotation.y = this.orbitalAngle;
 
-      // Continuous contact slicing against hostile enemies inside the orbital ring
+      // Continuous contact slicing against enemies inside the orbital ring
       const enemies =
         enemyManager && typeof enemyManager.getEnemies === 'function'
           ? enemyManager.getEnemies()
@@ -1041,11 +1100,17 @@ export class PlayerController {
           const dx = enemy.x - this.x;
           const dz = enemy.z - this.z;
           const inv = d > 0.01 ? 1 / d : 1;
-          this._dealDamageToEnemy(enemyManager, enemy, sliceDamage, {
-            x: dx * inv,
-            z: dz * inv,
-            strength: 0.65,
-          });
+          this._dealDamageToEnemy(
+            enemyManager,
+            enemy,
+            sliceDamage,
+            {
+              x: dx * inv,
+              z: dz * inv,
+              strength: 0.65,
+            },
+            true
+          );
         }
       }
     }
@@ -1240,13 +1305,40 @@ export class PlayerController {
 
   /**
    * Records an enemy kill (from melee Cleave, 3D Spell, Orbital Blades, or DoT), awards XP &
-   * Biomass, advances `AdaptiveMasterySystem`, and updates active `DynamicQuestSystem` objectives.
+   * Biomass (or Food Rations + instant HP heal when hunting `deer` / `rabbit` prey), advances
+   * `AdaptiveMasterySystem`, and updates active `DynamicQuestSystem` objectives.
    *
    * @param {Object} enemy - Slain enemy entity.
    * @param {number} [xpGained=20] - XP reward.
+   * @param {boolean} [isSpellDamage=false] - True when killed by an AoE/projectile/ricochet spell.
    */
-  recordEnemyKill(enemy, xpGained = 20) {
+  recordEnemyKill(enemy, xpGained = 20, isSpellDamage = false) {
     if (!enemy) return;
+
+    const spId = enemy.genome?.speciesId || 'goblin';
+    const isPrey =
+      enemy.aggroStance === 'prey_pacifist' ||
+      enemy.genome?.clade === 'herbivore' ||
+      spId === 'deer' ||
+      spId === 'rabbit';
+
+    if (isPrey) {
+      this.preySlain = (this.preySlain || 0) + 1;
+      if (isSpellDamage) {
+        this.collateralPreyKills = (this.collateralPreyKills || 0) + 1;
+      }
+      if (!enemy._foodCredited) {
+        enemy._foodCredited = true;
+        const spDef = CONFIG.SPECIES?.[spId];
+        const foodGain = spDef?.foodYield || (spId === 'deer' ? 35 : 18);
+        const healGain = spDef?.healYield || (spId === 'deer' ? 25 : 12);
+        const maxFood = this.maxFood || CONFIG.PLAYER?.MAX_FOOD || 150;
+        this.resources.food = Math.min(maxFood, (this.resources.food ?? 60) + foodGain);
+        this.hp = Math.min(this.maxHp, this.hp + healGain);
+        this.isWellFed = this.resources.food > 25;
+        this.isStarvingFamine = this.resources.food <= 0;
+      }
+    }
 
     const isMutantOrHybrid =
       Boolean(enemy.genome?.isHybrid) ||
@@ -1262,7 +1354,7 @@ export class PlayerController {
       this.mutantsSlain++;
       this.resources.biomass += Math.round(6 * bonusMult);
     } else {
-      this.resources.biomass += 2;
+      this.resources.biomass += isPrey ? 1 : 2;
     }
 
     if (this.questSystem && typeof this.questSystem.recordEnemyKilled === 'function') {
@@ -1298,7 +1390,7 @@ export class PlayerController {
    *
    * @param {Object} enemyManager - EnemyManager instance.
    * @param {Object} [bastionAndNpcs] - BastionAndNPCs instance.
-   * @param {boolean} [isAutoMelee=false] - When true (Vampire Survivors auto-melee), skips unprovoked peaceful Dragons.
+   * @param {boolean} [isAutoMelee=false] - When true (Vampire Survivors auto-melee), skips unprovoked peaceful Dragons and skips peaceful herbivore prey unless food < 45.
    * @returns {number} Number of enemies hit.
    */
   performCleaveAttack(enemyManager, bastionAndNpcs, isAutoMelee = false) {
@@ -1317,9 +1409,15 @@ export class PlayerController {
     if (!enemyManager || typeof enemyManager.getEnemies !== 'function') return 0;
 
     const rawEnemies = enemyManager.getEnemies();
+    const shouldHuntPreyAuto = (this.resources?.food ?? 60) < 45;
     const enemies = isAutoMelee
-      ? rawEnemies.filter((e) => !(e?.aggroStance === 'pacifist_apex' && !e?.enraged))
-      : rawEnemies;
+      ? rawEnemies.filter(
+          (e) =>
+            !e?.isAquatic &&
+            !(e?.aggroStance === 'pacifist_apex' && !e?.enraged) &&
+            !(e?.aggroStance === 'prey_pacifist' && !shouldHuntPreyAuto)
+        )
+      : rawEnemies.filter((e) => !e?.isAquatic);
 
     // Auto-orient toward nearest hostile enemy within cleaveRange if one is right next to the player
     let closestInRange = null;
@@ -1356,7 +1454,7 @@ export class PlayerController {
 
         if (dot >= -0.45 || dist <= 2.8) {
           const knockDir = { x: dx * invDist, z: dz * invDist, strength: 1.45 };
-          this._dealDamageToEnemy(enemyManager, enemy, this.cleaveDamage, knockDir);
+          this._dealDamageToEnemy(enemyManager, enemy, this.cleaveDamage, knockDir, false);
           hitCount++;
         }
       }
@@ -1651,19 +1749,28 @@ export class PlayerController {
     const enemies =
       enemyManager && typeof enemyManager.getEnemies === 'function' ? enemyManager.getEnemies() : [];
 
-    // 1. Find nearest hostile enemy & check for nearby unprovoked peaceful Sovereign Dragon
+    // 1. Find nearest hostile enemy, nearest peaceful Sovereign Dragon, and nearest herbivore Prey
     let nearestEnemy = null;
     let nearestEnemyDist = Infinity;
     let peacefulDragon = null;
     let peacefulDragonDist = Infinity;
+    let nearestPrey = null;
+    let nearestPreyDist = Infinity;
 
     for (const e of enemies) {
-      if (!e || e.hp <= 0) continue;
+      if (!e || e.hp <= 0 || e.isAquatic) continue;
       const d = dist2D(this.x, this.z, e.x, e.z);
       if (e.aggroStance === 'pacifist_apex' && !e.enraged) {
         if (d < peacefulDragonDist) {
           peacefulDragonDist = d;
           peacefulDragon = e;
+        }
+        continue;
+      }
+      if (e.aggroStance === 'prey_pacifist' || e.genome?.clade === 'herbivore') {
+        if (d < nearestPreyDist) {
+          nearestPreyDist = d;
+          nearestPrey = e;
         }
         continue;
       }
@@ -1800,6 +1907,26 @@ export class PlayerController {
       }
     }
 
+    // Priority C2: Herbivore Prey (`deer` / `rabbit`) within 9.5m
+    if (!this.nearestPrompt && nearestPrey && nearestPreyDist <= 9.5) {
+      const spId = nearestPrey.genome?.speciesId || 'deer';
+      const spDef = CONFIG.SPECIES?.[spId];
+      const foodGain = spDef?.foodYield || (spId === 'deer' ? 35 : 18);
+      const healGain = spDef?.healYield || (spId === 'deer' ? 25 : 12);
+      this.nearestPrompt = {
+        type: 'hunt_prey',
+        keyHint: '🍖 CHASSE',
+        label: `[Clic Gauche] Chasser ${nearestPrey.genome?.speciesName || 'Proie'} (+${foodGain} Vivres 🍖, +${healGain} PV — Attention à l'extinction !)`,
+        worldPos: new THREE.Vector3(
+          nearestPrey.x,
+          (nearestPrey.y || 2) + 2.0,
+          nearestPrey.z
+        ),
+        entity: nearestPrey,
+        dist: nearestPreyDist,
+      };
+    }
+
     // Priority D: Resource Node within 7m
     if (
       !this.nearestPrompt &&
@@ -1825,6 +1952,7 @@ export class PlayerController {
   /**
    * Main per-frame update for player movement, cleave attack (manual or Vampire Survivors auto-melee),
    * 3D spell execution (auto-cast or `[1..4]` active slots), dash, passive Bastion healing,
+   * Food Rations (`resources.food`) metabolic drain + Well-Fed/Famine buffs,
    * automatic nearby cage rescue, tactical indicators, and 3D hero animation.
    *
    * @param {number} dt - Frame delta time in seconds.
@@ -1843,6 +1971,15 @@ export class PlayerController {
     this.cleaveCooldown = Math.max(0, this.cleaveCooldown - dt);
     this.dashCooldown = Math.max(0, this.dashCooldown - dt);
     this.interactCooldown = Math.max(0, this.interactCooldown - dt);
+
+    // 0. Metabolic Food Rations Drain & Well-Fed / Famine Status
+    const drainRate = CONFIG.PLAYER?.FOOD_DRAIN_PER_SEC || 0.85;
+    if (!enemyManager?.tutorialMode) {
+      this.resources.food = Math.max(0, Number(((this.resources.food ?? 60) - drainRate * dt).toFixed(2)));
+    }
+    this.isWellFed = (this.resources.food ?? 60) > 25;
+    this.isStarvingFamine = (this.resources.food ?? 60) <= 0;
+    const foodSpeedMult = this.isWellFed ? 1.1 : this.isStarvingFamine ? 0.9 : 1.0;
 
     // 1. Read WASD / ZQSD / Arrow movement input
     let inputX = 0;
@@ -1908,7 +2045,7 @@ export class PlayerController {
       this.vx = this.dashDirX * currentSpeed;
       this.vz = this.dashDirZ * currentSpeed;
     } else if (isMoving) {
-      currentSpeed = this.baseSpeed * this.speedMult * hearthSpeedBoost;
+      currentSpeed = this.baseSpeed * this.speedMult * hearthSpeedBoost * foodSpeedMult;
       this.vx = moveX * currentSpeed;
       this.vz = moveZ * currentSpeed;
     } else {
@@ -1942,11 +2079,14 @@ export class PlayerController {
       this.performCleaveAttack(enemyManager, bastionAndNpcs, false);
     } else if (this.combatMode === 'vampire_survivors' && this.cleaveCooldown <= 0 && enemyManager) {
       const enemies = typeof enemyManager.getEnemies === 'function' ? enemyManager.getEnemies() : [];
+      const shouldHuntPreyAuto = (this.resources?.food ?? 60) < 45;
       const hasHostileEnemyInReach = enemies.some(
         (e) =>
           e &&
           e.hp > 0 &&
+          !e.isAquatic &&
           !(e.aggroStance === 'pacifist_apex' && !e.enraged) &&
+          !(e.aggroStance === 'prey_pacifist' && !shouldHuntPreyAuto) &&
           dist2D(this.x, this.z, e.x, e.z) <= this.cleaveRange + 0.35
       );
       if (hasHostileEnemyInReach) {
@@ -1974,12 +2114,15 @@ export class PlayerController {
       }
     }
 
-    // 5. Passive HP Regeneration & Bastion Sanctuary Hearth Healing
+    // 5. Passive HP Regeneration & Bastion Sanctuary Hearth Healing (modulated by Well-Fed / Famine)
     const distToBastion = Math.hypot(this.x, this.z);
     const inBastion = distToBastion <= auraRange;
     const bastionHealRate = bastionAndNpcs?.heroHealRate || CONFIG.BASTION?.HEAL_RATE || 15;
-    const healRate = this.regenPerSec + (inBastion ? bastionHealRate : 0);
-    if (this.hp < this.maxHp) {
+    const fieldRegen = this.isStarvingFamine
+      ? 0
+      : this.regenPerSec + (this.isWellFed ? (CONFIG.PLAYER?.WELL_FED_REGEN_BONUS || 3.0) : 0);
+    const healRate = fieldRegen + (inBastion ? bastionHealRate : 0);
+    if (this.hp < this.maxHp && healRate > 0) {
       this.hp = Math.min(this.maxHp, this.hp + healRate * dt);
     }
 

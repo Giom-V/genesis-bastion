@@ -18,6 +18,7 @@ import {
   buildCreatureMesh,
   animateCreatureMesh,
   updateCreatureOverlay,
+  setSharkAmphibiousMode,
 } from './CreatureMeshBuilder.js';
 import { dist2D, clamp } from '../utils/math.js';
 import { logger } from '../utils/logger.js';
@@ -65,6 +66,25 @@ export class EnemyManager {
     this.onSpeciesWrathTriggered = null;
     /** @type {Function|null} Optional callback `(speciesId, spawnedPair, messageFR)` when a depleted base species repopulates */
     this.onSpeciesRepopulated = null;
+    /** @type {Function|null} Optional callback `(landedSharks)` when Ocean Sharks evolve legs and storm the beach */
+    this.onSharkBeachLanding = null;
+    /** @type {Function|null} Optional callback `(spawnedMoles)` when Giant Moles erupt from subterranean burrows */
+    this.onMoleSubterraneanEruption = null;
+    /** @type {Function|null} Optional callback `(enemy, summary, isSpellDamage)` when a `deer` or `rabbit` is killed */
+    this.onPreyKilled = null;
+    /** @type {Function|null} Optional callback `(summary, lastKilledPrey, isSpellDamage)` when prey herds become endangered or extinct */
+    this.onPreyEcologicalCrisis = null;
+
+    /** @type {number} Seconds elapsed in open survival mode for progressive species emergence */
+    this.survivalElapsedTime = 0;
+    /** @type {boolean} Whether Ocean Sharks have evolved amphibious legs and stormed the beaches */
+    this.sharksLanded = false;
+    /** @type {number} Timer for periodic amphibious shark beach landings after initial emergence */
+    this.sharkReinforceTimer = 0;
+    /** @type {boolean} Whether Giant Burrowing Moles have erupted from underground */
+    this.molesErupted = false;
+    /** @type {number} Timer for periodic subterranean mole eruptions after initial emergence */
+    this.moleReinforceTimer = 0;
 
     /**
      * Tracks collective species wrath state (e.g. `'dragon'` when a peaceful Sovereign Dragon is attacked).
@@ -74,6 +94,7 @@ export class EnemyManager {
 
     /**
      * Per-species repopulation timers in seconds when a foundational species drops below `< 2` individuals.
+     * Note: `deer` and `rabbit` have `autoRepopulate: false` and NEVER repopulate automatically!
      * @type {Record<string, number>}
      */
     this.repopulationTimers = {
@@ -84,6 +105,10 @@ export class EnemyManager {
       lion: 0,
       vulture: 0,
       dragon: 0,
+      shark: 0,
+      giant_mole: 0,
+      deer: 0,
+      rabbit: 0,
     };
 
     /** @type {boolean} Whether the 7-Act Guided Onboarding tutorial mode is active */
@@ -152,14 +177,25 @@ export class EnemyManager {
   }
 
   /**
-   * Returns true if an enemy is an unprovoked peaceful apex sovereign (e.g. `'dragon'`)
-   * that should NOT be targeted by automatic attacks or Bastion turrets.
+   * Returns true if an entity is non-hostile toward the player and Bastion defenses:
+   * - Unprovoked peaceful Sovereign Dragon (`'pacifist_apex'`)
+   * - Herbivore prey (`'prey_pacifist'` / `deer` / `rabbit`)
+   * - Offshore Ocean Shark (`isAquatic === true` before beach landing)
    * @param {Object} enemy
    * @returns {boolean}
    */
   isPeacefulTowardsPlayer(enemy) {
     if (!enemy) return false;
+    if (enemy.isAquatic) return true;
     const spId = enemy.genome?.speciesId || 'goblin';
+    if (
+      enemy.aggroStance === 'prey_pacifist' ||
+      enemy.genome?.clade === 'herbivore' ||
+      spId === 'deer' ||
+      spId === 'rabbit'
+    ) {
+      return true;
+    }
     if (this.isSpeciesProvoked(spId)) return false;
     return enemy.aggroStance === 'pacifist_apex' && !enemy.enraged;
   }
@@ -250,7 +286,8 @@ export class EnemyManager {
   }
 
   /**
-   * Returns a dictionary of living counts for each of the 7 foundational species.
+   * Returns a dictionary of living counts for all 11 species (`goblin`, `orc`, `troll`, `wolf`,
+   * `lion`, `vulture`, `dragon`, `shark`, `giant_mole`, `deer`, `rabbit`).
    * @returns {Record<string, number>}
    */
   getSpeciesLivingCounts() {
@@ -262,6 +299,10 @@ export class EnemyManager {
       lion: 0,
       vulture: 0,
       dragon: 0,
+      shark: 0,
+      giant_mole: 0,
+      deer: 0,
+      rabbit: 0,
     };
     for (const e of this.enemies) {
       if (!e || e.hp <= 0) continue;
@@ -274,10 +315,61 @@ export class EnemyManager {
   }
 
   /**
-   * Checks foundational species counts (`goblin`, `orc`, `troll`, `wolf`, `lion`, `vulture`, `dragon`)
-   * and repopulates any base species whose living count drops below `< 2` from hidden burrows,
-   * deep caves, or mountain crags (`> 52m` from the Bastion).
-   * Note: Mutant lineages CAN be permanently eradicated; only wild Gen-1 base species repopulate!
+   * Returns a real-time summary of the Herbivore Prey (`deer` & `rabbit`) and Emergent Species
+   * (`shark` & `giant_mole`) populations for HUD indicators and ecological crisis alerts.
+   *
+   * @returns {{
+   *   deer: number,
+   *   rabbit: number,
+   *   totalPrey: number,
+   *   sharkOcean: number,
+   *   sharkLanded: number,
+   *   giantMole: number,
+   *   isExtinct: boolean,
+   *   isEndangered: boolean
+   * }}
+   */
+  getPreyPopulationSummary() {
+    let deer = 0;
+    let rabbit = 0;
+    let sharkOcean = 0;
+    let sharkLanded = 0;
+    let giantMole = 0;
+
+    for (const e of this.enemies) {
+      if (!e || e.hp <= 0) continue;
+      const spId = e.genome?.speciesId;
+      if (spId === 'deer') {
+        deer++;
+      } else if (spId === 'rabbit') {
+        rabbit++;
+      } else if (spId === 'shark') {
+        if (e.isAquatic) sharkOcean++;
+        else sharkLanded++;
+      } else if (spId === 'giant_mole') {
+        giantMole++;
+      }
+    }
+
+    const totalPrey = deer + rabbit;
+    return {
+      deer,
+      rabbit,
+      totalPrey,
+      sharkOcean,
+      sharkLanded,
+      giantMole,
+      isExtinct: totalPrey === 0 || (deer === 0 && rabbit === 0),
+      isEndangered: totalPrey > 0 && (deer < 2 || rabbit < 2 || totalPrey <= 3),
+    };
+  }
+
+  /**
+   * Checks foundational hostile species counts (`goblin`, `orc`, `troll`, `wolf`, `lion`, `vulture`, `dragon`,
+   * plus `shark` after beach landing and `giant_mole` after burrow eruption) and repopulates any
+   * species with `autoRepopulate !== false` whose living count drops below `< 2`.
+   * CRITICAL: Herbivore prey (`deer` and `rabbit`) have `autoRepopulate: false` and NEVER repopulate
+   * automatically if overhunted below `< 2`!
    *
    * @param {number} [dt=0] - Elapsed seconds to advance repopulation timers.
    * @param {boolean} [forceImmediate=false] - When true, bypasses the cooldown timer and repopulates immediately.
@@ -292,6 +384,8 @@ export class EnemyManager {
     const maxWorldPop = CONFIG.ECO?.MAX_WORLD_POPULATION || 130;
     const counts = this.getSpeciesLivingCounts();
     const baseSpeciesIds = ['goblin', 'orc', 'troll', 'wolf', 'lion', 'vulture', 'dragon'];
+    if (this.sharksLanded) baseSpeciesIds.push('shark');
+    if (this.molesErupted) baseSpeciesIds.push('giant_mole');
 
     // Preferred biome angles & radial distances (> 52m from Bastion at (0,0))
     const habitatAnchors = {
@@ -302,18 +396,24 @@ export class EnemyManager {
       lion: { angle: 2.8, dist: 68 },
       vulture: { angle: 4.85, dist: 76 },
       dragon: { angle: 1.55, dist: 86 },
+      shark: { angle: 3.85, dist: 75 },
+      giant_mole: { angle: 5.2, dist: 62 },
     };
 
     const allSpawned = [];
 
     for (const spId of baseSpeciesIds) {
+      const spDef = CONFIG.SPECIES?.[spId] || CONFIG.SPECIES.goblin;
+      if (spDef.autoRepopulate === false || spId === 'deer' || spId === 'rabbit') {
+        continue;
+      }
+
       const living = counts[spId] || 0;
       if (living >= minThreshold) {
         this.repopulationTimers[spId] = 0;
         continue;
       }
 
-      const spDef = CONFIG.SPECIES?.[spId] || CONFIG.SPECIES.goblin;
       const cooldown = spDef.repopulationCooldown || (spId === 'dragon' ? 28 : 14);
       this.repopulationTimers[spId] = (this.repopulationTimers[spId] || 0) + dt;
 
@@ -338,17 +438,26 @@ export class EnemyManager {
         const r = 3.2 + Math.random() * 2.5;
         const sx = cx + Math.cos(a) * r;
         const sz = cz + Math.sin(a) * r;
-        // Always spawn unmutated wild Gen-1 adults
         const wildGenome = this._createSafeGenome(spId);
         wildGenome.mutations = [];
-        if (typeof wildGenome.syncMutations === 'function') {
+        if (spId === 'shark') {
+          this._applyMutationToGenome(wildGenome, 'amphibious_lungs');
+        } else if (typeof wildGenome.syncMutations === 'function') {
           wildGenome.syncMutations();
         }
         const spawned = this.spawnEnemy(sx, sz, wildGenome, [], {
           lifeStage: 'adult',
           isAdult: true,
           isPatientZero: false,
+          isAquatic: false,
+          hasLandLegs: true,
+          isAmphibiousLanded: spId === 'shark',
         });
+        if (spId === 'shark' && this.vfx?.spawnBeachLandingSplash) {
+          this.vfx.spawnBeachLandingSplash(new THREE.Vector3(spawned.x, spawned.y + 0.3, spawned.z));
+        } else if (spId === 'giant_mole' && this.vfx?.spawnBurrowEruption) {
+          this.vfx.spawnBurrowEruption(new THREE.Vector3(spawned.x, spawned.y + 0.2, spawned.z));
+        }
         pair.push(spawned);
         allSpawned.push(spawned);
       }
@@ -372,6 +481,208 @@ export class EnemyManager {
   }
 
   /**
+   * Triggers Progressive Emergence Event 1: **Amphibious Land-Shark Beach Landing** (`shark`).
+   * Offshore Ocean Sharks (`isAquatic === true`) evolve muscular amphibious legs (`amphibious_lungs`),
+   * leap out of the ocean surf onto the beaches (`radius ~ 74m`) with water splash VFX, and begin
+   * hunting on land and hybridizing with terrestrial predators (`Squale-Garou`, `Léviathan des Brisants`)!
+   *
+   * @returns {Array<Object>} Array of landed amphibious Shark entities.
+   */
+  triggerSharkBeachLanding() {
+    this.sharksLanded = true;
+    if (this.ecoSim && typeof this.ecoSim.recordSharkLanding === 'function') {
+      this.ecoSim.recordSharkLanding();
+    }
+
+    const landedSharks = [];
+
+    // 1. Transition any currently swimming offshore ocean sharks onto the shoreline
+    for (const enemy of this.enemies) {
+      if (!enemy || enemy.hp <= 0 || enemy.genome?.speciesId !== 'shark' || !enemy.isAquatic) {
+        continue;
+      }
+      enemy.isAquatic = false;
+      enemy.hasLandLegs = true;
+      enemy.isAmphibiousLanded = true;
+      this._applyMutationToGenome(enemy.genome, 'amphibious_lungs');
+      enemy.maxHp = Math.round(enemy.genome?.genes?.maxHp || enemy.maxHp);
+      enemy.hp = enemy.maxHp;
+      enemy.damage = +(enemy.genome?.genes?.strength || enemy.damage).toFixed(1);
+      enemy.speed = +(enemy.genome?.genes?.speed || enemy.speed).toFixed(2);
+
+      const angle = Math.atan2(enemy.z, enemy.x);
+      const shoreDist = 72 + (Math.random() - 0.5) * 5;
+      enemy.x = Math.cos(angle) * shoreDist;
+      enemy.z = Math.sin(angle) * shoreDist;
+      enemy.homeX = enemy.x;
+      enemy.homeZ = enemy.z;
+      enemy.y = this.terrain ? this.terrain.getHeightAt(enemy.x, enemy.z) : 1.0;
+
+      if (enemy.mesh) {
+        setSharkAmphibiousMode(enemy.mesh, true);
+        enemy.mesh.position.set(enemy.x, Math.max(enemy.y, CONFIG.WORLD.WATER_LEVEL + 0.15), enemy.z);
+      }
+      if (this.vfx && typeof this.vfx.spawnBeachLandingSplash === 'function') {
+        this.vfx.spawnBeachLandingSplash(new THREE.Vector3(enemy.x, enemy.y + 0.3, enemy.z));
+      }
+      landedSharks.push(enemy);
+    }
+
+    // 2. Ensure at least 3 Amphibious Land-Sharks storm the beach (clustered so they can reproduce)
+    if (landedSharks.length < 3) {
+      const needed = 3 - landedSharks.length;
+      const baseAngle = 3.85 + (Math.random() - 0.5) * 0.4;
+      const baseDist = 73;
+      const cx = Math.cos(baseAngle) * baseDist;
+      const cz = Math.sin(baseAngle) * baseDist;
+
+      for (let i = 0; i < needed; i++) {
+        const a = (i / needed) * Math.PI * 2;
+        const sx = cx + Math.cos(a) * 5.0;
+        const sz = cz + Math.sin(a) * 5.0;
+        const genome = this._createSafeGenome('shark');
+        this._applyMutationToGenome(genome, 'amphibious_lungs');
+        const shark = this.spawnEnemy(sx, sz, genome, [], {
+          lifeStage: 'adult',
+          isAdult: true,
+          isAquatic: false,
+          hasLandLegs: true,
+          isAmphibiousLanded: true,
+        });
+        if (this.vfx && typeof this.vfx.spawnBeachLandingSplash === 'function') {
+          this.vfx.spawnBeachLandingSplash(new THREE.Vector3(shark.x, shark.y + 0.3, shark.z));
+        }
+        landedSharks.push(shark);
+      }
+    }
+
+    logger.evolution(
+      `🦈 ÉMERGENCE ABYSSALE : ${landedSharks.length}x Requins Marcheurs des Abysses ont développé des pattes amphibies [Poumons Amphibies] et débarquent sur les plages !`,
+      { count: landedSharks.length }
+    );
+
+    if (typeof this.onSharkBeachLanding === 'function') {
+      this.onSharkBeachLanding(landedSharks);
+    }
+
+    return landedSharks;
+  }
+
+  /**
+   * Triggers Progressive Emergence Event 2: **Subterranean Giant Mole Eruption** (`giant_mole`).
+   * Armored Giant Moles (`Taupe Géante Fouisseuse`) burst from underground burrows (`54..72m` from
+   * the Bastion) with flying dirt/rock eruption VFX and begin patrolling and hybridizing (`Taupe-Colosse`, `Sapeur Taupe-Orc`).
+   *
+   * @param {number} [count=3]
+   * @returns {Array<Object>} Array of spawned Giant Mole entities.
+   */
+  triggerMoleSubterraneanEruption(count = 3) {
+    this.molesErupted = true;
+    if (this.ecoSim && typeof this.ecoSim.recordMoleEruption === 'function') {
+      this.ecoSim.recordMoleEruption();
+    }
+
+    const baseAngle = 5.15 + (Math.random() - 0.5) * 0.6;
+    const baseDist = 60 + Math.random() * 8;
+    const cx = Math.cos(baseAngle) * baseDist;
+    const cz = Math.sin(baseAngle) * baseDist;
+    const spawnedMoles = [];
+
+    for (let i = 0; i < Math.max(1, count); i++) {
+      const a = (i / Math.max(1, count)) * Math.PI * 2 + Math.random() * 0.35;
+      const r = i === 0 ? 0 : 4.5 + Math.random() * 4.0;
+      const sx = cx + Math.cos(a) * r;
+      const sz = cz + Math.sin(a) * r;
+      const genome = this._createSafeGenome('giant_mole');
+      const mole = this.spawnEnemy(sx, sz, genome, [], {
+        lifeStage: 'adult',
+        isAdult: true,
+      });
+      if (this.vfx && typeof this.vfx.spawnBurrowEruption === 'function') {
+        this.vfx.spawnBurrowEruption(new THREE.Vector3(mole.x, mole.y + 0.2, mole.z));
+      }
+      spawnedMoles.push(mole);
+    }
+
+    logger.evolution(
+      `⛏️ ÉRUPTION SOUTERRAINE : ${spawnedMoles.length}x Taupes Géantes Fouisseuses percent la croûte terrestre et surgissent des galeries profondes !`,
+      { count: spawnedMoles.length, x: Math.round(cx), z: Math.round(cz) }
+    );
+
+    if (typeof this.onMoleSubterraneanEruption === 'function') {
+      this.onMoleSubterraneanEruption(spawnedMoles);
+    }
+
+    return spawnedMoles;
+  }
+
+  /**
+   * Bio-Lab / Sanctuary Ecological Restoration Action: spends `25 Biomasse` (`playerResources.biomass`)
+   * to reintroduce breeding herds of Sylvestrian Deer (`3` adults) and Plains Rabbits (`4` adults)
+   * when overhunting or collateral AoE spell damage has decimated the island's herbivore prey!
+   *
+   * @param {Object} [playerResources=null] - Player resource bag `{ biomass, wood, crystal, food }`.
+   * @returns {{ success: boolean, cost: number, deerSpawned: number, rabbitsSpawned: number, spawned: Array<Object> }}
+   */
+  reintroducePreyHerds(playerResources = null) {
+    const cost = CONFIG.ECO?.PREY_REINTRODUCE_BIOMASS_COST || 25;
+    if (playerResources && typeof playerResources.biomass === 'number') {
+      if (playerResources.biomass < cost) {
+        return { success: false, cost, deerSpawned: 0, rabbitsSpawned: 0, spawned: [] };
+      }
+      playerResources.biomass -= cost;
+    }
+
+    const spawned = [];
+    const deerAnchor = { angle: 1.85, dist: 50 };
+    const rabbitAnchor = { angle: 4.45, dist: 46 };
+
+    for (let i = 0; i < 3; i++) {
+      const a = (i / 3) * Math.PI * 2;
+      const sx = Math.cos(deerAnchor.angle) * deerAnchor.dist + Math.cos(a) * 4.5;
+      const sz = Math.sin(deerAnchor.angle) * deerAnchor.dist + Math.sin(a) * 4.5;
+      const genome = this._createSafeGenome('deer');
+      const d = this.spawnEnemy(sx, sz, genome, [], { lifeStage: 'adult', isAdult: true });
+      if (this.vfx && typeof this.vfx.spawnBirthEffect === 'function') {
+        this.vfx.spawnBirthEffect(new THREE.Vector3(d.x, d.y + 0.5, d.z), false, false, 0x38c172);
+      }
+      spawned.push(d);
+    }
+
+    for (let i = 0; i < 4; i++) {
+      const a = (i / 4) * Math.PI * 2;
+      const sx = Math.cos(rabbitAnchor.angle) * rabbitAnchor.dist + Math.cos(a) * 4.0;
+      const sz = Math.sin(rabbitAnchor.angle) * rabbitAnchor.dist + Math.sin(a) * 4.0;
+      const genome = this._createSafeGenome('rabbit');
+      const r = this.spawnEnemy(sx, sz, genome, [], { lifeStage: 'adult', isAdult: true });
+      if (this.vfx && typeof this.vfx.spawnBirthEffect === 'function') {
+        this.vfx.spawnBirthEffect(new THREE.Vector3(r.x, r.y + 0.4, r.z), false, false, 0x38c172);
+      }
+      spawned.push(r);
+    }
+
+    // Relieve predator famine pressure now that prey herds are restored
+    for (const e of this.enemies) {
+      if (e && e.starving) {
+        e.starving = false;
+      }
+    }
+
+    logger.evolution(
+      '🦌 Réintroduction Écologique réussie (-25 Biomasse) : 3x Biches Sylvestres et 4x Lapins des Plaines relâchés dans les clairières !',
+      { deerSpawned: 3, rabbitsSpawned: 4 }
+    );
+
+    return {
+      success: true,
+      cost,
+      deerSpawned: 3,
+      rabbitsSpawned: 4,
+      spawned,
+    };
+  }
+
+  /**
    * Creates a fallback Genome object if `Genome.createInitial` is unavailable or returns partial data.
    * @param {string} speciesId - Base species ID.
    * @returns {Object} Genome instance.
@@ -381,21 +692,25 @@ export class EnemyManager {
       return Genome.createInitial(speciesId);
     }
     const sp = CONFIG.SPECIES[speciesId] || CONFIG.SPECIES.goblin;
+    const isPrey = sp.id === 'deer' || sp.id === 'rabbit' || sp.clade === 'herbivore';
     return {
       speciesId: sp.id,
       speciesName: sp.name,
+      clade: sp.clade || (isPrey ? 'herbivore' : 'beast'),
       isHybrid: false,
       hybridParents: [sp.id, sp.id],
       generation: 1,
       lineageId: `${sp.id}_gen1`,
-      aggroStance: sp.aggroStance || (sp.id === 'dragon' ? 'pacifist_apex' : 'hostile'),
+      aggroStance:
+        sp.aggroStance ||
+        (isPrey ? 'prey_pacifist' : sp.id === 'dragon' ? 'pacifist_apex' : 'hostile'),
       genes: {
         size: sp.baseSize,
         speed: sp.baseSpeed,
-        strength: sp.baseDamage,
+        strength: isPrey ? 0 : sp.baseDamage,
         maxHp: sp.baseHp,
         gestationTime: sp.baseGestationTime || 18,
-        aggressiveness: sp.baseAggressiveness ?? 0.7,
+        aggressiveness: isPrey ? 0 : (sp.baseAggressiveness ?? 0.7),
         fertility: sp.fertility || 1.0,
         metabolism: sp.metabolism || 4.0,
         aggroRadius: sp.aggroRadius || 18,
@@ -443,19 +758,19 @@ export class EnemyManager {
 
   /**
    * Spawns the initial tribal packs and beast prides across their preferred biomes
-   * outside the Bastion safe radius (`42` units), and seeds an innate "Patient Zero"
-   * Fire Troll (`troll` with `pyro_gland`) at moderate distance (~68-78 units) so
-   * Scouts can discover it early in the session.
+   * outside the Bastion safe radius (`42` units), seeds an innate "Patient Zero"
+   * Fire Troll (`troll` with `pyro_gland`), spawns breeding herds of Herbivore Prey
+   * (`5` `deer` and `6` `rabbit`), and spawns `4` offshore Ocean Sharks (`shark`, `isAquatic: true`)
+   * circling in the coastal ocean ring before their beach landing!
    *
-   * @param {number} [count=CONFIG.ECO.INITIAL_POPULATION] - Total initial creatures to spawn.
+   * @param {number} [count=CONFIG.ECO.INITIAL_POPULATION] - Total initial hostile creatures to spawn.
    * @returns {Array<Object>} Spawned enemies.
    */
   spawnInitialPopulation(count = CONFIG.ECO?.INITIAL_POPULATION || 42) {
     const safeRadius = CONFIG.WORLD?.SAFE_SPAWN_RADIUS || 42;
     const maxRadius = (CONFIG.WORLD?.SIZE || 240) * 0.43;
 
-    // Define biome-aligned pack centers around the island (each pack has 3-5 creatures
-    // within Conway's optimal neighbor radius so reproduction works immediately).
+    // 1. Define biome-aligned hostile pack centers around the island
     const packDefinitions = [
       { speciesId: 'goblin', angle: 0.35, dist: 52, size: 5 },
       { speciesId: 'orc', angle: 0.95, dist: 62, size: 5 },
@@ -515,7 +830,7 @@ export class EnemyManager {
       }
     }
 
-    // Fill any remaining count with small sister-species pairs
+    // Fill any remaining hostile count with small sister-species pairs
     const fallbackSpecies = ['goblin', 'orc', 'wolf', 'lion', 'vulture', 'troll'];
     while (spawnedCount < count) {
       const spId = fallbackSpecies[spawnedCount % fallbackSpecies.length];
@@ -528,7 +843,45 @@ export class EnemyManager {
       spawnedCount++;
     }
 
-    logger.info('ECO', `Population initiale générée : ${this.enemies.length} créatures réparties en meutes.`, {
+    // 2. Spawn Herbivore Prey Herds (`5` Sylvestrian Deer & `6` Plains Rabbits) in forest/meadow clearings
+    const preyHerds = [
+      { speciesId: 'deer', angle: 1.82, dist: 49, size: 3 },
+      { speciesId: 'deer', angle: 5.85, dist: 54, size: 2 },
+      { speciesId: 'rabbit', angle: 3.12, dist: 46, size: 3 },
+      { speciesId: 'rabbit', angle: 4.52, dist: 48, size: 3 },
+    ];
+    for (const herd of preyHerds) {
+      const hcx = Math.cos(herd.angle) * herd.dist;
+      const hcz = Math.sin(herd.angle) * herd.dist;
+      for (let i = 0; i < herd.size; i++) {
+        const a = (i / herd.size) * Math.PI * 2 + Math.random() * 0.35;
+        const r = 3.2 + Math.random() * 3.5;
+        const px = hcx + Math.cos(a) * r;
+        const pz = hcz + Math.sin(a) * r;
+        const preyGenome = this._createSafeGenome(herd.speciesId);
+        this.spawnEnemy(px, pz, preyGenome, [], {
+          lifeStage: 'adult',
+          isAdult: true,
+        });
+      }
+    }
+
+    // 3. Spawn 4 Offshore Ocean Sharks (`isAquatic: true`, `hasLandLegs: false`) swimming around the island coast
+    for (let i = 0; i < 4; i++) {
+      const angle = (i / 4) * Math.PI * 2 + 0.4;
+      const oceanDist = 92 + (i % 2) * 5;
+      const sx = Math.cos(angle) * oceanDist;
+      const sz = Math.sin(angle) * oceanDist;
+      const sharkGenome = this._createSafeGenome('shark');
+      this.spawnEnemy(sx, sz, sharkGenome, [], {
+        lifeStage: 'adult',
+        isAdult: true,
+        isAquatic: true,
+        hasLandLegs: false,
+      });
+    }
+
+    logger.info('ECO', `Population initiale générée : ${this.enemies.length} créatures (meutes + troupeaux de Biches/Lapins + Requins au large).`, {
       count: this.enemies.length,
     });
 
@@ -546,9 +899,13 @@ export class EnemyManager {
       return spDef.baseMaturationTime;
     }
     const speciesTimes = {
+      rabbit: 8,
       goblin: 12,
+      deer: 14,
       wolf: 15,
       vulture: 17,
+      giant_mole: 19,
+      shark: 20,
       orc: 22,
       lion: 26,
       troll: 34,
@@ -568,10 +925,14 @@ export class EnemyManager {
       return spDef.baseGestationTime;
     }
     const gestationTimes = {
+      rabbit: 8,
       goblin: 9,
       wolf: 13,
+      deer: 14,
       vulture: 15,
       orc: 18,
+      giant_mole: 19,
+      shark: 20,
       lion: 24,
       troll: 30,
       dragon: 65,
@@ -583,13 +944,14 @@ export class EnemyManager {
    * Spawns a single enemy creature in the world with articulated genome-driven 3D morphology.
    * Supports both Adult (`lifeStage: 'adult'`, `isAdult: true`) and Juvenile Baby
    * (`lifeStage: 'baby'`, `isAdult: false`, `0.5x` 3D scale, `0.55x` HP/damage, cannot reproduce),
-   * individual `gestationTime` & `reproTimer`, and species `aggressiveness` & `aggroStance`.
+   * individual `gestationTime` & `reproTimer`, species `aggressiveness` & `aggroStance`,
+   * offshore Ocean vs Amphibious Land-Shark modes (`isAquatic`, `hasLandLegs`), and Herbivore Prey (`prey_pacifist`).
    *
    * @param {number} x - World X position.
    * @param {number} z - World Z position.
    * @param {Object} genome - Creature Genome object.
    * @param {Array<string|number>} [parentIds=[]] - Parent IDs if born from crossover.
-   * @param {Object} [options={}] - Additional spawn flags (`isPatientZero`, `spottedByScout`, `lifeStage`, `isAdult`, `age`, `gestationTime`, `reproTimer`, `aggressiveness`, `aggroStance`).
+   * @param {Object} [options={}] - Additional spawn flags (`isPatientZero`, `spottedByScout`, `lifeStage`, `isAdult`, `age`, `gestationTime`, `reproTimer`, `aggressiveness`, `aggroStance`, `isAquatic`, `hasLandLegs`, `isAmphibiousLanded`).
    * @returns {Object} Spawned enemy entity.
    */
   spawnEnemy(x, z, genome, parentIds = [], options = {}) {
@@ -619,8 +981,32 @@ export class EnemyManager {
       this.seenMutations.add(mutId);
     }
 
+    const isPrey =
+      safeGenome.speciesId === 'deer' ||
+      safeGenome.speciesId === 'rabbit' ||
+      safeGenome.clade === 'herbivore' ||
+      spDef.clade === 'herbivore' ||
+      safeGenome.aggroStance === 'prey_pacifist' ||
+      spDef.aggroStance === 'prey_pacifist';
+
+    const isAquatic = Boolean(options.isAquatic);
+    const hasLandLegs =
+      options.hasLandLegs !== undefined
+        ? Boolean(options.hasLandLegs)
+        : safeGenome.speciesId === 'shark'
+          ? !isAquatic
+          : true;
+    const isAmphibiousLanded = Boolean(
+      options.isAmphibiousLanded || (safeGenome.speciesId === 'shark' && hasLandLegs && !isAquatic)
+    );
+
     const id = `enemy_${this.nextEnemyId++}`;
-    const y = this.terrain ? this.terrain.getHeightAt(x, z) : 0;
+    const waterLevel = CONFIG.WORLD?.WATER_LEVEL ?? -0.5;
+    const y = isAquatic
+      ? waterLevel - 0.15
+      : this.terrain
+        ? this.terrain.getHeightAt(x, z)
+        : 0;
 
     // Determine juvenile ('baby') vs 'adult' lifecycle stage
     const isNewborn = parentIds && parentIds.length > 0;
@@ -645,27 +1031,35 @@ export class EnemyManager {
           ? Number((gestationTime * (0.25 + Math.random() * 0.45)).toFixed(2))
           : 0;
 
-    // Aggressiveness gene & stance ('hostile' | 'territorial' | 'pacifist_apex')
-    const speciesWrathActive = this.isSpeciesProvoked(safeGenome.speciesId);
-    const enraged = Boolean(options.enraged || speciesWrathActive);
-    const aggressiveness = enraged
-      ? 1.0
-      : typeof options.aggressiveness === 'number'
-        ? options.aggressiveness
-        : Number((genes.aggressiveness ?? spDef.baseAggressiveness ?? 0.7).toFixed(3));
-    const aggroStance = enraged
-      ? 'hostile'
-      : options.aggroStance ||
-        safeGenome.aggroStance ||
-        spDef.aggroStance ||
-        (safeGenome.speciesId === 'dragon' ? 'pacifist_apex' : 'hostile');
+    // Aggressiveness gene & stance ('hostile' | 'territorial' | 'pacifist_apex' | 'prey_pacifist')
+    const speciesWrathActive = !isPrey && this.isSpeciesProvoked(safeGenome.speciesId);
+    const enraged = Boolean(!isPrey && (options.enraged || speciesWrathActive));
+    const aggressiveness = isPrey
+      ? 0.0
+      : enraged
+        ? 1.0
+        : typeof options.aggressiveness === 'number'
+          ? options.aggressiveness
+          : Number((genes.aggressiveness ?? spDef.baseAggressiveness ?? 0.7).toFixed(3));
+    const aggroStance = isPrey
+      ? 'prey_pacifist'
+      : enraged
+        ? 'hostile'
+        : options.aggroStance ||
+          safeGenome.aggroStance ||
+          spDef.aggroStance ||
+          (safeGenome.speciesId === 'dragon' ? 'pacifist_apex' : 'hostile');
 
     const adultMaxHp = Math.round(genes.maxHp || spDef.baseHp || 60);
-    const adultDamage = +(genes.strength || spDef.baseDamage || 10).toFixed(1);
+    const adultDamage = isPrey ? 0 : +(genes.strength ?? spDef.baseDamage ?? 10).toFixed(1);
     const babyStatMult = CONFIG.ECO?.BABY_STAT_MULT || 0.55;
 
     const baseCalculatedMaxHp = isAdult ? adultMaxHp : Math.max(12, Math.round(adultMaxHp * babyStatMult));
-    const baseCalculatedDamage = isAdult ? adultDamage : +(adultDamage * babyStatMult).toFixed(1);
+    const baseCalculatedDamage = isPrey
+      ? 0
+      : isAdult
+        ? adultDamage
+        : +(adultDamage * babyStatMult).toFixed(1);
     const baseCalculatedSpeed = +(genes.speed || spDef.baseSpeed || 6.5).toFixed(2);
 
     const maxHp = typeof options.hpOverride === 'number' ? options.hpOverride : baseCalculatedMaxHp;
@@ -685,8 +1079,13 @@ export class EnemyManager {
         isPatientZero,
         lifeStage,
         isAdult,
+        hasLandLegs,
+        isAquatic,
       });
-      mesh.position.set(x, Math.max(y, CONFIG.WORLD.WATER_LEVEL + 0.2), z);
+      if (safeGenome.speciesId === 'shark') {
+        setSharkAmphibiousMode(mesh, hasLandLegs);
+      }
+      mesh.position.set(x, isAquatic ? waterLevel - 0.15 : Math.max(y, waterLevel + 0.2), z);
       mesh.userData.enemyId = id;
       this.scene.add(mesh);
     }
@@ -715,6 +1114,10 @@ export class EnemyManager {
       aggressiveness,
       aggroStance,
       enraged,
+      isAquatic,
+      hasLandLegs,
+      isAmphibiousLanded,
+      isPrey,
       _wrathSpeedApplied: enraged,
       starving: false,
       lonely: false,
@@ -726,7 +1129,7 @@ export class EnemyManager {
       freezeMaturationAt80: Boolean(options.freezeMaturationAt80),
       mesh,
       position: mesh ? mesh.position : new THREE.Vector3(x, y, z),
-      state: enraged ? 'wrath_raid' : 'patrol',
+      state: isPrey ? 'graze' : isAquatic ? 'swim' : enraged ? 'wrath_raid' : 'patrol',
       targetId: null,
       attackCooldown: 0,
       hitFlash: 0,
@@ -1150,7 +1553,7 @@ export class EnemyManager {
       const starvingSet =
         result.starvingIds instanceof Set ? result.starvingIds : new Set(result.starvingIds);
       for (const e of this.enemies) {
-        e.starving = starvingSet.has(e.id);
+        e.starving = e.isPrey || e.isAquatic ? false : starvingSet.has(e.id);
       }
     }
     if (result.lonelyIds) {
@@ -1186,6 +1589,8 @@ export class EnemyManager {
         lifeStage: 'baby',
         isAdult: false,
         age: 0,
+        isAquatic: false,
+        hasLandLegs: true,
       });
       spawnedOffspring.push(child);
 
@@ -1229,7 +1634,7 @@ export class EnemyManager {
 
   /**
    * Attempts an immediate individual gestation birth for fast-breeding species (e.g. Goblins at `9s`
-   * gestation) when `parentA.reproTimer >= parentA.gestationTime` in real time and a compatible
+   * or Rabbits at `8s` gestation) when `parentA.reproTimer >= parentA.gestationTime` in real time and a compatible
    * adult mate in Conway's optimal density window (`2..6` neighbors) is nearby.
    *
    * @param {Object} parentA
@@ -1237,7 +1642,7 @@ export class EnemyManager {
    * @private
    */
   _tryIndividualGestationBirth(parentA) {
-    if (!parentA || !parentA.isAdult || parentA.starving || parentA.lonely) return null;
+    if (!parentA || !parentA.isAdult || parentA.starving || parentA.lonely || parentA.isAquatic) return null;
     const maxPop = CONFIG.ECO?.MAX_WORLD_POPULATION || 130;
     if (this.enemies.length >= maxPop) return null;
 
@@ -1250,7 +1655,7 @@ export class EnemyManager {
     let bestFitness = -Infinity;
 
     for (const other of this.enemies) {
-      if (!other || other.id === parentA.id || other.hp <= 0) continue;
+      if (!other || other.id === parentA.id || other.hp <= 0 || other.isAquatic) continue;
       const d = dist2D(parentA.x, parentA.z, other.x, other.z);
       if (d <= neighborRadius) {
         neighborCount++;
@@ -1276,11 +1681,11 @@ export class EnemyManager {
       return null;
     }
 
-    // Check cell biomass if ecoSim grid is available
+    // Check cell biomass if ecoSim grid is available (herbivore births cost less biomass)
     if (this.ecoSim && typeof this.ecoSim.getCellAt === 'function') {
       const cell = this.ecoSim.getCellAt(parentA.x, parentA.z);
-      if (cell && cell.biomass < 18) return null;
-      if (cell) {
+      if (!parentA.isPrey && cell && cell.biomass < 18) return null;
+      if (cell && !parentA.isPrey) {
         cell.biomass = Math.max(10, cell.biomass - (CONFIG.ECO?.BIRTH_BIOMASS_COST || 22));
       }
     }
@@ -1318,6 +1723,8 @@ export class EnemyManager {
       lifeStage: 'baby',
       isAdult: false,
       age: 0,
+      isAquatic: false,
+      hasLandLegs: true,
     });
 
     if (this.vfx && typeof this.vfx.spawnBirthEffect === 'function') {
@@ -1338,8 +1745,9 @@ export class EnemyManager {
   }
 
   /**
-   * Updates all enemies, eco-tick timers, individual gestation timers, wild species repopulation,
-   * juvenile-to-adult maturation, starvation damage, peaceful/enraged Dragon AI, pack movement,
+   * Updates all enemies, progressive species emergence timers (Land-Sharks & Giant Moles),
+   * eco-tick timers, individual gestation timers, wild species repopulation, juvenile-to-adult maturation,
+   * starvation damage, peaceful/enraged Dragon AI, herbivore grazing/fleeing AI, pack movement,
    * combat attacks, and projectiles every frame.
    *
    * @param {number} dt - Frame delta time in seconds.
@@ -1385,13 +1793,47 @@ export class EnemyManager {
       }
     }
 
-    // 1. Automatic Genetic Eco-Tick Timer & Wild Species Repopulation (paused during Acts 1–6 of the guided tutorial)
+    // 1. Automatic Genetic Eco-Tick Timer, Progressive Species Emergence & Wild Species Repopulation
     if (!this.ecoPaused) {
       this.ecoTickTimer += dt;
       this.timeUntilNextTick = Math.max(0, this.ecoTickInterval - this.ecoTickTimer);
       this.ecoTickProgress = clamp(this.ecoTickTimer / this.ecoTickInterval, 0, 1);
 
-      // Continuous Wild Species Repopulation when any base species drops < 2
+      if (!this.tutorialMode) {
+        this.survivalElapsedTime += dt;
+
+        // Progressive Emergence Event 1: Amphibious Land-Sharks at 40s (and reinforcements every 35s)
+        const sharkTime = CONFIG.ECO?.SHARK_EMERGENCE_TIME || 40;
+        if (!this.sharksLanded && this.survivalElapsedTime >= sharkTime) {
+          this.triggerSharkBeachLanding();
+        } else if (this.sharksLanded) {
+          this.sharkReinforceTimer += dt;
+          if (this.sharkReinforceTimer >= (CONFIG.ECO?.SHARK_REINFORCE_INTERVAL || 35)) {
+            this.sharkReinforceTimer = 0;
+            const summary = this.getPreyPopulationSummary();
+            if (summary.sharkLanded < 4 && this.enemies.length < (CONFIG.ECO?.MAX_WORLD_POPULATION || 130) - 2) {
+              this.triggerSharkBeachLanding();
+            }
+          }
+        }
+
+        // Progressive Emergence Event 2: Subterranean Giant Moles at 65s (and reinforcements every 42s)
+        const moleTime = CONFIG.ECO?.MOLE_EMERGENCE_TIME || 65;
+        if (!this.molesErupted && this.survivalElapsedTime >= moleTime) {
+          this.triggerMoleSubterraneanEruption(3);
+        } else if (this.molesErupted) {
+          this.moleReinforceTimer += dt;
+          if (this.moleReinforceTimer >= (CONFIG.ECO?.MOLE_REINFORCE_INTERVAL || 42)) {
+            this.moleReinforceTimer = 0;
+            const summary = this.getPreyPopulationSummary();
+            if (summary.giantMole < 4 && this.enemies.length < (CONFIG.ECO?.MAX_WORLD_POPULATION || 130) - 2) {
+              this.triggerMoleSubterraneanEruption(2);
+            }
+          }
+        }
+      }
+
+      // Continuous Wild Species Repopulation when any base hostile species drops < 2 (never deer/rabbit!)
       this.checkAndRepopulateSpecies(dt, false);
 
       if (this.ecoTickTimer >= this.ecoTickInterval) {
@@ -1402,12 +1844,60 @@ export class EnemyManager {
     const worldHalf = (CONFIG.WORLD?.SIZE || 240) * 0.45;
     const bastionRadius = CONFIG.BASTION?.RADIUS || 14;
     const starvationDps = CONFIG.ECO?.STARVATION_DPS || 4.5;
+    const waterLevel = CONFIG.WORLD?.WATER_LEVEL ?? -0.5;
 
     // 2. Update Each Enemy Entity
     for (let i = this.enemies.length - 1; i >= 0; i--) {
       const enemy = this.enemies[i];
       enemy.attackCooldown = Math.max(0, enemy.attackCooldown - dt);
       enemy.hitFlash = Math.max(0, enemy.hitFlash - dt * 4);
+
+      const spId = enemy.genome?.speciesId || 'goblin';
+      const isPrey =
+        Boolean(enemy.isPrey) ||
+        enemy.aggroStance === 'prey_pacifist' ||
+        enemy.genome?.clade === 'herbivore' ||
+        spId === 'deer' ||
+        spId === 'rabbit';
+
+      // Offshore Ocean Sharks (`isAquatic === true`): swim in the coastal ocean ring (`radius: 88..104m`)
+      if (enemy.isAquatic) {
+        enemy.state = 'swim';
+        const radialAngle = Math.atan2(enemy.z, enemy.x);
+        const targetRadius = 94 + Math.sin(elapsedTime * 0.7 + i) * 4;
+        const nextAngle = radialAngle + (enemy.speed * 0.011) * dt;
+        const targetX = Math.cos(nextAngle) * targetRadius;
+        const targetZ = Math.sin(nextAngle) * targetRadius;
+        enemy.vx = (targetX - enemy.x) / Math.max(dt, 0.016);
+        enemy.vz = (targetZ - enemy.z) / Math.max(dt, 0.016);
+        enemy.x = targetX;
+        enemy.z = targetZ;
+        enemy.y = waterLevel - 0.15;
+
+        if (enemy.mesh) {
+          enemy.mesh.position.set(enemy.x, enemy.y, enemy.z);
+          const speedMag = Math.hypot(enemy.vx, enemy.vz);
+          if (speedMag > 0.1) {
+            enemy.mesh.rotation.y = Math.atan2(enemy.vx, enemy.vz);
+          }
+          animateCreatureMesh(
+            enemy.mesh,
+            {
+              isMoving: true,
+              speed: enemy.speed,
+              isAttacking: false,
+              hitFlash: enemy.hitFlash,
+              hasLandLegs: false,
+              isAquatic: true,
+            },
+            elapsedTime,
+            dt
+          );
+        } else {
+          enemy.position.set(enemy.x, enemy.y, enemy.z);
+        }
+        continue;
+      }
 
       // Advance age & check Baby -> Adult maturation (slowed by Bastion Bio-Lab for mutant babies!)
       const isMutantBaby =
@@ -1423,11 +1913,9 @@ export class EnemyManager {
       if (!enemy.isAdult && enemy.freezeMaturationAt80) {
         const dPlayerToBaby = player ? dist2D(enemy.x, enemy.z, player.x, player.z) : Infinity;
         if (dPlayerToBaby <= 14) {
-          // Player has engaged the Juvenile Patient Zero; unfreeze with ~25% remaining timer
           enemy.freezeMaturationAt80 = false;
           enemy.age = Math.min(enemy.age, matTime * 0.75);
         } else {
-          // Cap maturation at 80% while player is still traveling so they are guaranteed to face a Baby
           enemy.age = Math.min(enemy.age, matTime * 0.80);
         }
       }
@@ -1439,7 +1927,6 @@ export class EnemyManager {
       if (enemy.isAdult && !enemy.starving) {
         enemy.reproTimer = (enemy.reproTimer || 0) + dt;
         const gestReq = enemy.gestationTime || 18;
-        // Fast breeders (e.g. Goblins at 9s gestation < 12s Eco-Tick) can give birth continuously in real time
         if (!this.ecoPaused && gestReq < this.ecoTickInterval && enemy.reproTimer >= gestReq) {
           this._tryIndividualGestationBirth(enemy);
         }
@@ -1461,7 +1948,8 @@ export class EnemyManager {
               enemy.id,
               Math.max(1, Math.round(activeDps * tickSpan)),
               null,
-              this.onLineageEradicated
+              this.onLineageEradicated,
+              { isSpellDamage: true }
             );
             if (dotRes.killed) {
               continue;
@@ -1483,9 +1971,9 @@ export class EnemyManager {
         enemy.stunTimer = Math.max(0, enemy.stunTimer - dt);
       }
 
-      // Starvation HP drain & migration pressure (unprovoked peaceful Sovereign Dragons have ancient volcanic reserves)
+      // Starvation HP drain & migration pressure (unprovoked peaceful Dragons & Herbivore Prey don't starve)
       const isPeacefulApex = this.isPeacefulTowardsPlayer(enemy);
-      if (enemy.starving && !isPeacefulApex) {
+      if (enemy.starving && !isPeacefulApex && !isPrey) {
         const hasCryo = Array.isArray(enemy.genome?.mutations) && enemy.genome.mutations.includes('cryo_blood');
         const drain = starvationDps * (hasCryo ? 0.55 : 1.0) * dt;
         enemy.hp -= drain;
@@ -1510,11 +1998,12 @@ export class EnemyManager {
         !enemy.provokedByAttack &&
         !enemy.aggroBastionForced &&
         !enemy.enraged;
-      const effectiveAggroRadius = isPeacefulApex
-        ? 0
-        : isTerritorialUnprovoked
-          ? rawAggroRadius * (0.52 + 0.45 * (enemy.aggressiveness ?? 0.48))
-          : rawAggroRadius * (0.85 + 0.3 * (enemy.aggressiveness ?? 0.75));
+      const effectiveAggroRadius =
+        isPeacefulApex || isPrey
+          ? 0
+          : isTerritorialUnprovoked
+            ? rawAggroRadius * (0.52 + 0.45 * (enemy.aggressiveness ?? 0.48))
+            : rawAggroRadius * (0.85 + 0.3 * (enemy.aggressiveness ?? 0.75));
 
       let targetX = null;
       let targetZ = null;
@@ -1522,7 +2011,7 @@ export class EnemyManager {
       let targetEntity = null;
       let nearestDist = Infinity;
 
-      if (!isPeacefulApex) {
+      if (!isPeacefulApex && !isPrey) {
         // Enraged Wrath Raid (e.g. provoked Sovereign Dragons): charge Player if within 36m, otherwise raze the Bastion ("notre villa")!
         if (enemy.enraged || enemy.state === 'wrath_raid') {
           const dPlayer = player && player.hp > 0 ? dist2D(enemy.x, enemy.z, player.x, player.z) : Infinity;
@@ -1594,6 +2083,69 @@ export class EnemyManager {
         enemy.state = 'stunned';
         enemy.vx *= 0.25;
         enemy.vz *= 0.25;
+      } else if (isPrey) {
+        // Herbivore Prey (`deer` / `rabbit`): graze peacefully in meadows/forests, or flee from nearby Player / Carnivores!
+        let threatX = 0;
+        let threatZ = 0;
+        let threatCount = 0;
+
+        if (player && player.hp > 0) {
+          const dp = dist2D(enemy.x, enemy.z, player.x, player.z);
+          if (dp <= 10.5) {
+            const w = (11.5 - dp) / 11.5;
+            threatX += ((enemy.x - player.x) / Math.max(dp, 0.2)) * w;
+            threatZ += ((enemy.z - player.z) / Math.max(dp, 0.2)) * w;
+            threatCount++;
+          }
+        }
+
+        for (const other of this.enemies) {
+          if (!other || other.id === enemy.id || other.hp <= 0 || other.isPrey || other.isAquatic) continue;
+          if (other.aggroStance === 'prey_pacifist') continue;
+          const dc = dist2D(enemy.x, enemy.z, other.x, other.z);
+          if (dc <= 9.5) {
+            const w = (10.5 - dc) / 10.5;
+            threatX += ((enemy.x - other.x) / Math.max(dc, 0.2)) * w;
+            threatZ += ((enemy.z - other.z) / Math.max(dc, 0.2)) * w;
+            threatCount++;
+          }
+        }
+
+        if (threatCount > 0) {
+          enemy.state = 'flee';
+          const fleeAngle = Math.atan2(threatZ, threatX);
+          enemy.wanderAngle = fleeAngle;
+          const fleeSpeed = moveSpeed * 1.15;
+          enemy.vx = Math.cos(fleeAngle) * fleeSpeed;
+          enemy.vz = Math.sin(fleeAngle) * fleeSpeed;
+        } else {
+          enemy.state = 'graze';
+          enemy.wanderTimer -= dt;
+          if (enemy.wanderTimer <= 0) {
+            enemy.wanderTimer = 2.0 + Math.random() * 3.0;
+            const mate = this._findNearestCompatibleMate(enemy);
+            const dHome = dist2D(enemy.x, enemy.z, enemy.homeX, enemy.homeZ);
+            if (mate && dist2D(enemy.x, enemy.z, mate.x, mate.z) > 12) {
+              enemy.wanderAngle = Math.atan2(mate.z - enemy.z, mate.x - enemy.x);
+            } else if (dHome > 16) {
+              enemy.wanderAngle =
+                Math.atan2(enemy.homeZ - enemy.z, enemy.homeX - enemy.x) +
+                (Math.random() - 0.5) * 0.5;
+            } else {
+              enemy.wanderAngle += (Math.random() - 0.5) * 1.3;
+            }
+          }
+          const grazeSpeed = moveSpeed * 0.36;
+          enemy.vx = Math.cos(enemy.wanderAngle) * grazeSpeed;
+          enemy.vz = Math.sin(enemy.wanderAngle) * grazeSpeed;
+        }
+
+        if (distToBastion < bastionRadius + 10) {
+          const pushAngle = Math.atan2(enemy.z, enemy.x);
+          enemy.vx = Math.cos(pushAngle) * moveSpeed * 0.55;
+          enemy.vz = Math.sin(pushAngle) * moveSpeed * 0.55;
+          enemy.wanderAngle = pushAngle;
+        }
       } else if (targetType) {
         enemy.state = enemy.enraged ? 'wrath_raid' : 'chase';
         const attackRange = targetType === 'bastion' ? bastionRadius + 2.5 : 2.6;
@@ -1684,7 +2236,7 @@ export class EnemyManager {
       enemy.y = this.terrain ? this.terrain.getHeightAt(enemy.x, enemy.z) : 0;
 
       // Prevent drowning in deep ocean
-      if (enemy.y < CONFIG.WORLD.WATER_LEVEL + 0.1) {
+      if (enemy.y < waterLevel + 0.1) {
         const toCenter = Math.atan2(-enemy.z, -enemy.x);
         enemy.x += Math.cos(toCenter) * moveSpeed * dt * 1.5;
         enemy.z += Math.sin(toCenter) * moveSpeed * dt * 1.5;
@@ -1694,7 +2246,7 @@ export class EnemyManager {
 
       // Sync 3D Mesh & Animation
       if (enemy.mesh) {
-        enemy.mesh.position.set(enemy.x, Math.max(enemy.y, CONFIG.WORLD.WATER_LEVEL + 0.1), enemy.z);
+        enemy.mesh.position.set(enemy.x, Math.max(enemy.y, waterLevel + 0.1), enemy.z);
         const speedMag = Math.hypot(enemy.vx, enemy.vz);
         if (speedMag > 0.15) {
           const targetRot = Math.atan2(enemy.vx, enemy.vz);
@@ -1708,6 +2260,8 @@ export class EnemyManager {
             speed: speedMag,
             isAttacking: isAttacking || enemy.attackCooldown > 0.75,
             hitFlash: enemy.hitFlash,
+            hasLandLegs: enemy.hasLandLegs !== false,
+            isAquatic: Boolean(enemy.isAquatic),
           },
           elapsedTime,
           dt
@@ -1751,7 +2305,7 @@ export class EnemyManager {
     let best = null;
     let bestDist = Infinity;
     for (const other of this.enemies) {
-      if (other.id === enemy.id) continue;
+      if (other.id === enemy.id || other.isAquatic) continue;
       if (other.genome?.speciesId === enemy.genome?.speciesId || other.genome?.clade === enemy.genome?.clade) {
         const d = dist2D(enemy.x, enemy.z, other.x, other.z);
         if (d < bestDist && d < 65) {
@@ -1881,17 +2435,21 @@ export class EnemyManager {
 
   /**
    * Applies combat damage and optional knockback to an enemy.
-   * If the damaged enemy is an unprovoked peaceful Sovereign Dragon (`aggroStance === 'pacifist_apex'`),
-   * immediately triggers `provokeSpecies('dragon', enemy)` so the entire Dragon species charges the
-   * Player and Bastion! Also checks for complete eradication of a mutant lineage when a carrier dies.
+   * - If the damaged enemy is an unprovoked peaceful Sovereign Dragon (`aggroStance === 'pacifist_apex'`),
+   *   immediately triggers `provokeSpecies('dragon', enemy)` so the entire Dragon species charges the
+   *   Player and Bastion!
+   * - If a herbivore prey (`deer` / `rabbit`) dies, awards Food Rations (`+35` / `+18`) & instant HP heal
+   *   (`+25` / `+12`), fires `onPreyKilled`, and triggers `onPreyEcologicalCrisis` + carnivore famine
+   *   migration if the herd is overhunted below `< 2` individuals!
    *
    * @param {string|Object} enemyIdOrObj - Enemy ID string or enemy object.
    * @param {number} amount - Damage amount.
    * @param {{x: number, z: number}|THREE.Vector3|null} [knockbackDir=null] - Normalized knockback vector.
    * @param {Function|null} [onLineageEradicated=null] - Optional eradication callback.
+   * @param {Object} [options={}] - Optional `{ isSpellDamage: boolean }`.
    * @returns {{ killed: boolean, enemy: Object|null, xpGained: number }}
    */
-  damageEnemy(enemyIdOrObj, amount, knockbackDir = null, onLineageEradicated = null) {
+  damageEnemy(enemyIdOrObj, amount, knockbackDir = null, onLineageEradicated = null, options = {}) {
     const targetId = typeof enemyIdOrObj === 'object' ? enemyIdOrObj?.id : enemyIdOrObj;
     const idx = this.enemies.findIndex((e) => e.id === targetId);
     if (idx === -1) {
@@ -1899,6 +2457,7 @@ export class EnemyManager {
     }
 
     const enemy = this.enemies[idx];
+    const isSpellDamage = Boolean(options?.isSpellDamage);
 
     // Provoke Collective Dragon Wrath if an unprovoked peaceful apex sovereign is attacked!
     if (
@@ -1932,8 +2491,16 @@ export class EnemyManager {
     }
 
     if (enemy.hp <= 0) {
-      const spDef = CONFIG.SPECIES[enemy.genome?.speciesId] || CONFIG.SPECIES.goblin;
-      const baseXp = spDef.xpReward || 20;
+      const spId = enemy.genome?.speciesId || 'goblin';
+      const spDef = CONFIG.SPECIES[spId] || CONFIG.SPECIES.goblin;
+      const isPrey =
+        Boolean(enemy.isPrey) ||
+        enemy.aggroStance === 'prey_pacifist' ||
+        enemy.genome?.clade === 'herbivore' ||
+        spId === 'deer' ||
+        spId === 'rabbit';
+
+      const baseXp = spDef.xpReward || (isPrey ? 10 : 20);
       const mutBonus = (enemy.genome?.mutations?.length || 0) * 25;
       const pzBonus = enemy.isPatientZero ? 45 : 0;
       const xpGained =
@@ -1946,7 +2513,42 @@ export class EnemyManager {
 
       if (this.playerRef && typeof this.playerRef.recordEnemyKill === 'function' && !enemy._killRecorded) {
         enemy._killRecorded = true;
-        this.playerRef.recordEnemyKill(enemy, xpGained);
+        this.playerRef.recordEnemyKill(enemy, xpGained, isSpellDamage);
+      }
+
+      if (isPrey) {
+        const summary = this.getPreyPopulationSummary();
+        if (typeof this.onPreyKilled === 'function') {
+          this.onPreyKilled(enemy, summary, isSpellDamage);
+        }
+        if (summary.isExtinct || summary.isEndangered) {
+          if (summary.isExtinct) {
+            for (const pred of this.enemies) {
+              if (!pred || pred.isPrey || pred.isAquatic) continue;
+              if (
+                pred.genome?.speciesId === 'wolf' ||
+                pred.genome?.speciesId === 'lion' ||
+                pred.genome?.speciesId === 'vulture' ||
+                pred.genome?.speciesId === 'shark'
+              ) {
+                pred.starving = true;
+              }
+            }
+            logger.alert(
+              `⚠️ EXTINCTION DES PROIES ! Les troupeaux de Biches et Lapins ont été décimés (${isSpellDamage ? 'dégâts collatéraux de sorts' : 'surchasse'}) : les prédateurs affamés convergent vers le Bastion ! Utilisez [Réintroduire Troupeaux (-25 Biomasse)] au Bio-Lab !`,
+              { summary, isSpellDamage }
+            );
+          } else {
+            logger.warn(
+              'ECO',
+              `⚠️ ALERTE ÉCOLOGIQUE : Troupeaux d'herbivores menacés (${summary.deer} Biches, ${summary.rabbit} Lapins). Sous < 2 individus d'une espèce, elle ne pourra plus se reproduire !`,
+              { summary, isSpellDamage }
+            );
+          }
+          if (typeof this.onPreyEcologicalCrisis === 'function') {
+            this.onPreyEcologicalCrisis(summary, enemy, isSpellDamage);
+          }
+        }
       }
 
       if (typeof this.onEnemyKilled === 'function') {

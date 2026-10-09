@@ -73,6 +73,38 @@ const FALLBACK_SPECIES = {
     color: 0x8f2424,
     accentColor: 0xff6b1a,
   },
+  shark: {
+    id: 'shark',
+    name: 'Requin Marcheur des Abysses',
+    clade: 'aquatic',
+    baseSize: 1.35,
+    color: 0x2c5282,
+    accentColor: 0x90cdf4,
+  },
+  giant_mole: {
+    id: 'giant_mole',
+    name: 'Taupe Géante Fouisseuse',
+    clade: 'subterranean',
+    baseSize: 1.25,
+    color: 0x5d4037,
+    accentColor: 0xf48fb1,
+  },
+  deer: {
+    id: 'deer',
+    name: 'Biche Sylvestre',
+    clade: 'herbivore',
+    baseSize: 0.96,
+    color: 0xb87333,
+    accentColor: 0xf5e6d3,
+  },
+  rabbit: {
+    id: 'rabbit',
+    name: 'Lapin des Plaines',
+    clade: 'herbivore',
+    baseSize: 0.58,
+    color: 0xe8e4d9,
+    accentColor: 0xffb6c1,
+  },
 };
 
 /**
@@ -940,6 +972,313 @@ export function buildCreatureMesh(spec = {}) {
     leftLeg.add(new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.65, 0.28), skinMat));
     rightLeg.position.set(0.36, baseBodyY - 0.35, -0.35);
     rightLeg.add(new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.65, 0.28), skinMat));
+  } else if (primarySpeciesId === 'shark') {
+    const hasLandLegs = Boolean(
+      spec.hasLandLegs ||
+        spec.isAmphibiousLanded ||
+        spec.isAquatic === false ||
+        hasMutation('amphibious_lungs')
+    );
+    isQuadruped = hasLandLegs;
+    baseBodyY = hasLandLegs ? 0.86 : 0.38;
+    body.position.y = baseBodyY;
+
+    // Sleek hydrodynamic slate-blue shark torso + pale underbelly
+    const sharkTorso = new THREE.Mesh(new THREE.BoxGeometry(0.72, 0.58, 1.55), skinMat);
+    const belly = new THREE.Mesh(new THREE.BoxGeometry(0.64, 0.18, 1.44), accentMat);
+    belly.position.y = -0.24;
+    body.add(sharkTorso, belly);
+
+    // Tall iconic triangular dorsal fin protruding above water/back
+    addSharkDorsalFin(body, skinMat);
+
+    // Predatory conical snout + open jaws with white serrated teeth
+    head.position.set(0, 0.06, 0.85);
+    const upperJaw = new THREE.Mesh(new THREE.ConeGeometry(0.36, 0.68, 5), skinMat);
+    upperJaw.rotation.x = Math.PI * 0.5;
+    upperJaw.position.set(0, 0.08, 0.2);
+    const lowerJaw = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.14, 0.48), accentMat);
+    lowerJaw.position.set(0, -0.14, 0.16);
+    lowerJaw.rotation.x = 0.22;
+    head.add(upperJaw, lowerJaw);
+
+    for (let t = -2; t <= 2; t++) {
+      const tooth = new THREE.Mesh(new THREE.ConeGeometry(0.035, 0.11, 4), boneMat);
+      tooth.rotation.x = Math.PI;
+      tooth.position.set(t * 0.075, -0.02, 0.34);
+      head.add(tooth);
+    }
+    addEyes(head, eyeMat, 0.2, 0.12, 0.12, 0.055);
+
+    // Vertical crescent caudal tail fin (sways side-to-side)
+    tail.position.set(0, 0.04, -0.78);
+    const tailPeduncle = new THREE.Mesh(new THREE.ConeGeometry(0.24, 0.65, 5), skinMat);
+    tailPeduncle.rotation.x = -Math.PI * 0.5;
+    tailPeduncle.position.z = -0.28;
+    const caudalFin = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.78, 0.36), skinMat);
+    caudalFin.position.set(0, 0.08, -0.62);
+    caudalFin.rotation.x = 0.25;
+    tail.add(tailPeduncle, caudalFin);
+
+    // Pectoral fins (also swing with front amphibious stride)
+    leftArm.position.set(-0.38, -0.08, 0.32);
+    const lPecFin = new THREE.Mesh(new THREE.BoxGeometry(0.54, 0.08, 0.34), skinMat);
+    lPecFin.position.set(-0.24, -0.04, 0);
+    lPecFin.rotation.z = 0.25;
+    leftArm.add(lPecFin);
+
+    rightArm.position.set(0.38, -0.08, 0.32);
+    const rPecFin = new THREE.Mesh(new THREE.BoxGeometry(0.54, 0.08, 0.34), skinMat);
+    rPecFin.position.set(0.24, -0.04, 0);
+    rPecFin.rotation.z = -0.25;
+    rightArm.add(rPecFin);
+
+    // Toggleable Muscular Amphibious Legs (`group.userData.amphibiousLegs`)
+    // Hidden while swimming in the ocean (`isAquatic: true`), unfolded when landing on the beach!
+    const amphibiousLegs = new THREE.Group();
+    amphibiousLegs.name = 'amphibiousLegs';
+    amphibiousLegs.visible = hasLandLegs;
+    group.add(amphibiousLegs);
+
+    // Front muscular clawed limbs attached inside leftArm / rightArm
+    const fLegGeo = new THREE.BoxGeometry(0.22, 0.64, 0.24);
+    const clawFootGeo = new THREE.BoxGeometry(0.26, 0.12, 0.34);
+    const frontLeftLegMesh = new THREE.Mesh(fLegGeo, skinMat);
+    frontLeftLegMesh.position.set(-0.08, -0.36, 0);
+    const frontLeftFoot = new THREE.Mesh(clawFootGeo, accentMat);
+    frontLeftFoot.position.set(-0.08, -0.66, 0.08);
+    frontLeftLegMesh.visible = hasLandLegs;
+    frontLeftFoot.visible = hasLandLegs;
+    leftArm.add(frontLeftLegMesh, frontLeftFoot);
+
+    const frontRightLegMesh = new THREE.Mesh(fLegGeo, skinMat);
+    frontRightLegMesh.position.set(0.08, -0.36, 0);
+    const frontRightFoot = new THREE.Mesh(clawFootGeo, accentMat);
+    frontRightFoot.position.set(0.08, -0.66, 0.08);
+    frontRightLegMesh.visible = hasLandLegs;
+    frontRightFoot.visible = hasLandLegs;
+    rightArm.add(frontRightLegMesh, frontRightFoot);
+
+    // Hind muscular legs (mapped to leftLeg / rightLeg)
+    leftLeg.position.set(-0.32, 0.72, -0.36);
+    const hLeftLegMesh = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.72, 0.28), skinMat);
+    hLeftLegMesh.position.y = -0.34;
+    const hLeftFoot = new THREE.Mesh(clawFootGeo, accentMat);
+    hLeftFoot.position.set(0, -0.68, 0.08);
+    leftLeg.add(hLeftLegMesh, hLeftFoot);
+    leftLeg.visible = hasLandLegs;
+
+    rightLeg.position.set(0.32, 0.72, -0.36);
+    const hRightLegMesh = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.72, 0.28), skinMat);
+    hRightLegMesh.position.y = -0.34;
+    const hRightFoot = new THREE.Mesh(clawFootGeo, accentMat);
+    hRightFoot.position.set(0, -0.68, 0.08);
+    rightLeg.add(hRightLegMesh, hRightFoot);
+    rightLeg.visible = hasLandLegs;
+
+    group.userData = group.userData || {};
+    group.userData.amphibiousLegs = amphibiousLegs;
+    group.userData.sharkLegParts = [
+      amphibiousLegs,
+      leftLeg,
+      rightLeg,
+      frontLeftLegMesh,
+      frontLeftFoot,
+      frontRightLegMesh,
+      frontRightFoot,
+    ];
+  } else if (primarySpeciesId === 'giant_mole') {
+    baseBodyY = 0.82;
+    body.position.y = baseBodyY;
+
+    // Stocky subterranean mole body with rocky back plates
+    const moleTorso = new THREE.Mesh(new THREE.SphereGeometry(0.58, 10, 8), skinMat);
+    moleTorso.scale.set(1.05, 0.88, 1.32);
+    body.add(moleTorso);
+    addTrollBackStones(body, darkMat);
+
+    // Subterranean head with pink Star-Nose sensory tentacles
+    head.position.set(0, 0.14, 0.66);
+    const moleSkull = new THREE.Mesh(new THREE.BoxGeometry(0.48, 0.42, 0.48), skinMat);
+    const snoutCone = new THREE.Mesh(new THREE.ConeGeometry(0.22, 0.38, 6), accentMat);
+    snoutCone.rotation.x = Math.PI * 0.5;
+    snoutCone.position.set(0, -0.04, 0.34);
+    head.add(moleSkull, snoutCone);
+
+    // Star-nose tentacles (6 radiating pink feelers)
+    for (let s = 0; s < 6; s++) {
+      const sa = (s / 6) * Math.PI * 2;
+      const feeler = new THREE.Mesh(new THREE.ConeGeometry(0.04, 0.16, 4), accentMat);
+      feeler.position.set(Math.cos(sa) * 0.14, -0.04 + Math.sin(sa) * 0.14, 0.52);
+      feeler.rotation.z = -sa;
+      head.add(feeler);
+    }
+    addEyes(head, eyeMat, 0.15, 0.08, 0.22, 0.04);
+
+    // Oversized metallic/ivory front digging excavator claws
+    leftArm.position.set(-0.56, 0.06, 0.28);
+    rightArm.position.set(0.56, 0.06, 0.28);
+    addMoleDiggingClaws(leftArm, rightArm, skinMat, boneMat);
+
+    // Short sturdy hind legs
+    leftLeg.position.set(-0.28, 0.52, -0.32);
+    const lLegM = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.5, 0.26), skinMat);
+    lLegM.position.y = -0.24;
+    leftLeg.add(lLegM);
+
+    rightLeg.position.set(0.28, 0.52, -0.32);
+    const rLegM = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.5, 0.26), skinMat);
+    rLegM.position.y = -0.24;
+    rightLeg.add(rLegM);
+
+    // Stubby subterranean tail
+    tail.position.set(0, -0.05, -0.72);
+    const moleTail = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.1, 0.32, 6), accentMat);
+    moleTail.rotation.x = -Math.PI * 0.4;
+    tail.add(moleTail);
+  } else if (primarySpeciesId === 'deer') {
+    isQuadruped = true;
+    baseBodyY = 0.92;
+    body.position.y = baseBodyY;
+
+    // Graceful tawny-brown woodland deer torso + cream belly + white fawn spots
+    const deerTorso = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.46, 1.12), skinMat);
+    const deerBelly = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.12, 1.04), accentMat);
+    deerBelly.position.y = -0.2;
+    body.add(deerTorso, deerBelly);
+
+    const spotGeo = new THREE.SphereGeometry(0.055, 6, 6);
+    for (const [sx, sy, sz] of [
+      [-0.18, 0.18, -0.15],
+      [0.18, 0.18, -0.15],
+      [-0.16, 0.16, -0.38],
+      [0.16, 0.16, -0.38],
+    ]) {
+      const spot = new THREE.Mesh(spotGeo, accentMat);
+      spot.position.set(sx, sy, sz);
+      body.add(spot);
+    }
+
+    // Slender upright neck + graceful head + branching ivory antlers
+    head.position.set(0, 0.48, 0.56);
+    const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.18, 0.52, 6), skinMat);
+    neck.position.set(0, -0.2, -0.12);
+    neck.rotation.x = 0.28;
+    const skull = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.28, 0.38), skinMat);
+    const snout = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.16, 0.28), accentMat);
+    snout.position.set(0, -0.04, 0.26);
+    head.add(neck, skull, snout);
+
+    const earGeo = new THREE.ConeGeometry(0.07, 0.24, 4);
+    const lEar = new THREE.Mesh(earGeo, skinMat);
+    lEar.position.set(-0.18, 0.16, -0.06);
+    lEar.rotation.z = 0.45;
+    const rEar = new THREE.Mesh(earGeo, skinMat);
+    rEar.position.set(0.18, 0.16, -0.06);
+    rEar.rotation.z = -0.45;
+    head.add(lEar, rEar);
+    addDeerAntlers(head, boneMat);
+
+    const gentleEyeMat = new THREE.MeshStandardMaterial({
+      color: 0x1b263b,
+      emissive: 0x2ec4b6,
+      emissiveIntensity: 0.45,
+    });
+    addEyes(head, gentleEyeMat, 0.12, 0.05, 0.16, 0.042);
+
+    // White tail
+    tail.position.set(0, 0.18, -0.58);
+    const deerTail = new THREE.Mesh(new THREE.ConeGeometry(0.1, 0.28, 5), accentMat);
+    deerTail.rotation.x = -Math.PI * 0.25;
+    tail.add(deerTail);
+
+    // Long slender legs
+    const legH = baseBodyY;
+    leftArm.position.set(-0.18, -0.08, 0.4);
+    const fl = new THREE.Mesh(new THREE.BoxGeometry(0.12, legH, 0.12), skinMat);
+    fl.position.y = -legH * 0.46;
+    leftArm.add(fl);
+
+    rightArm.position.set(0.18, -0.08, 0.4);
+    const fr = new THREE.Mesh(new THREE.BoxGeometry(0.12, legH, 0.12), skinMat);
+    fr.position.y = -legH * 0.46;
+    rightArm.add(fr);
+
+    leftLeg.position.set(-0.18, legH * 0.86, -0.4);
+    const bl = new THREE.Mesh(new THREE.BoxGeometry(0.13, legH, 0.13), skinMat);
+    bl.position.y = -legH * 0.46;
+    leftLeg.add(bl);
+
+    rightLeg.position.set(0.18, legH * 0.86, -0.4);
+    const br = new THREE.Mesh(new THREE.BoxGeometry(0.13, legH, 0.13), skinMat);
+    br.position.y = -legH * 0.46;
+    rightLeg.add(br);
+  } else if (primarySpeciesId === 'rabbit') {
+    isQuadruped = true;
+    baseBodyY = 0.46;
+    body.position.y = baseBodyY;
+
+    // Compact rounded meadow rabbit body
+    const bunnyBody = new THREE.Mesh(new THREE.SphereGeometry(0.32, 10, 8), skinMat);
+    bunnyBody.scale.set(0.92, 0.86, 1.25);
+    body.add(bunnyBody);
+
+    // Head + pink twitching nose + long upright rabbit ears
+    head.position.set(0, 0.24, 0.34);
+    const bunnyHead = new THREE.Mesh(new THREE.SphereGeometry(0.22, 8, 8), skinMat);
+    const pinkNose = new THREE.Mesh(new THREE.SphereGeometry(0.05, 6, 6), accentMat);
+    pinkNose.position.set(0, 0.0, 0.21);
+    head.add(bunnyHead, pinkNose);
+
+    const earOuterGeo = new THREE.BoxGeometry(0.08, 0.46, 0.05);
+    const earInnerGeo = new THREE.BoxGeometry(0.045, 0.36, 0.055);
+    const lEar = new THREE.Mesh(earOuterGeo, skinMat);
+    lEar.position.set(-0.09, 0.34, -0.02);
+    lEar.rotation.z = 0.12;
+    const lEarInner = new THREE.Mesh(earInnerGeo, accentMat);
+    lEarInner.position.set(-0.09, 0.34, 0.0);
+    lEarInner.rotation.z = 0.12;
+
+    const rEar = new THREE.Mesh(earOuterGeo, skinMat);
+    rEar.position.set(0.09, 0.34, -0.02);
+    rEar.rotation.z = -0.12;
+    const rEarInner = new THREE.Mesh(earInnerGeo, accentMat);
+    rEarInner.position.set(0.09, 0.34, 0.0);
+    rEarInner.rotation.z = -0.12;
+    head.add(lEar, lEarInner, rEar, rEarInner);
+
+    const rabbitEyeMat = new THREE.MeshStandardMaterial({
+      color: 0x22252a,
+      emissive: 0xffb6c1,
+      emissiveIntensity: 0.3,
+    });
+    addEyes(head, rabbitEyeMat, 0.11, 0.05, 0.15, 0.036);
+
+    // Fluffy cotton-ball tail
+    tail.position.set(0, 0.06, -0.38);
+    const cottonTail = new THREE.Mesh(new THREE.SphereGeometry(0.13, 8, 8), boneMat);
+    tail.add(cottonTail);
+
+    // Short forepaws & springy hind hopping legs
+    leftArm.position.set(-0.14, -0.12, 0.22);
+    const fPawL = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.32, 0.1), skinMat);
+    fPawL.position.y = -0.14;
+    leftArm.add(fPawL);
+
+    rightArm.position.set(0.14, -0.12, 0.22);
+    const fPawR = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.32, 0.1), skinMat);
+    fPawR.position.y = -0.14;
+    rightArm.add(fPawR);
+
+    leftLeg.position.set(-0.18, 0.38, -0.2);
+    const hFootL = new THREE.Mesh(new THREE.BoxGeometry(0.13, 0.36, 0.24), skinMat);
+    hFootL.position.set(0, -0.18, 0.04);
+    leftLeg.add(hFootL);
+
+    rightLeg.position.set(0.18, 0.38, -0.2);
+    const hFootR = new THREE.Mesh(new THREE.BoxGeometry(0.13, 0.36, 0.24), skinMat);
+    hFootR.position.set(0, -0.18, 0.04);
+    rightLeg.add(hFootR);
   }
 
   // --- INTER-SPECIES HYBRID ANATOMICAL GRAFTING ---
@@ -968,6 +1307,18 @@ export function buildCreatureMesh(spec = {}) {
     // Graft Dragon horns when hybridized with Dragon
     if (parents.has('dragon') && primarySpeciesId !== 'dragon') {
       addDragonHorns(head, boneMat);
+    }
+    // Graft Shark dorsal fin when hybridized with Shark (e.g. Requin-Garou, Léviathan Abyssal, Requin-Brute)
+    if (parents.has('shark') && primarySpeciesId !== 'shark') {
+      addSharkDorsalFin(body, skinMat);
+    }
+    // Graft Giant Mole digging claws when hybridized with Giant Mole (e.g. Taupe-Troll, Fouisseur-Loup)
+    if (parents.has('giant_mole') && primarySpeciesId !== 'giant_mole') {
+      addMoleDiggingClaws(leftArm, rightArm, skinMat, boneMat);
+    }
+    // Graft Deer antlers when hybridized with Deer (e.g. Cerf-Loup, Jackalope)
+    if (parents.has('deer') && primarySpeciesId !== 'deer') {
+      addDeerAntlers(head, boneMat);
     }
   }
 
@@ -1155,6 +1506,26 @@ export function buildCreatureMesh(spec = {}) {
     body.add(titanRunes);
   }
 
+  // 8. amphibious_lungs ("Poumons & Pattes Amphibies"): glowing oceanic gill crests + webbed limb fins (0x00a8ff)
+  if (hasMutation('amphibious_lungs')) {
+    const gillMat = new THREE.MeshStandardMaterial({
+      color: 0x00a8ff,
+      emissive: 0x0077b6,
+      emissiveIntensity: 1.45,
+      roughness: 0.25,
+    });
+    for (const side of [-1, 1]) {
+      const gillCrest = new THREE.Mesh(new THREE.ConeGeometry(0.1, 0.42, 4), gillMat);
+      gillCrest.position.set(side * 0.28, 0.16, -0.05);
+      gillCrest.rotation.z = -side * 0.65;
+      head.add(gillCrest);
+
+      const webbedFin = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.36, 0.24), gillMat);
+      webbedFin.position.set(side * 0.22, -0.18, -0.08);
+      body.add(webbedFin);
+    }
+  }
+
   // Compute genome-driven overall adult scale
   const baseSize = spA.baseSize || 1.0;
   const geneSize = genome.genes?.size ? genome.genes.size / baseSize : 1.0;
@@ -1171,6 +1542,7 @@ export function buildCreatureMesh(spec = {}) {
   overlayGroup.position.set(0, baseBodyY + 1.25, 0);
   group.add(overlayGroup);
 
+  const isPreyHerbivore = primarySpeciesId === 'deer' || primarySpeciesId === 'rabbit';
   const hpBarBg = new THREE.Mesh(
     new THREE.PlaneGeometry(1.1, 0.13),
     new THREE.MeshBasicMaterial({ color: 0x0d131a, side: THREE.DoubleSide })
@@ -1178,7 +1550,13 @@ export function buildCreatureMesh(spec = {}) {
   const hpBarFill = new THREE.Mesh(
     new THREE.PlaneGeometry(1.04, 0.08),
     new THREE.MeshBasicMaterial({
-      color: isPatientZero ? 0xff3b30 : mutationIds.length > 0 ? 0xff9f1c : 0x38c172,
+      color: isPatientZero
+        ? 0xff3b30
+        : mutationIds.length > 0
+          ? 0xff9f1c
+          : isPreyHerbivore
+            ? 0x7bed9f
+            : 0x38c172,
       side: THREE.DoubleSide,
     })
   );
@@ -1238,6 +1616,7 @@ export function buildCreatureMesh(spec = {}) {
     mutantDiamond,
     isQuadruped,
     isHovering,
+    isHopper: primarySpeciesId === 'rabbit',
     baseBodyY,
     adultScale,
   };
@@ -1311,6 +1690,88 @@ function addDragonHorns(headGroup, hornMat) {
   rHorn.position.set(0.18, 0.28, -0.12);
   rHorn.rotation.set(-Math.PI * 0.28, 0, -0.25);
   headGroup.add(lHorn, rHorn);
+}
+
+/**
+ * Grafts a tall triangular Shark dorsal fin onto a creature's back.
+ */
+function addSharkDorsalFin(bodyGroup, finMat) {
+  const finGeo = new THREE.ConeGeometry(0.24, 0.72, 4);
+  const dorsalFin = new THREE.Mesh(finGeo, finMat);
+  dorsalFin.position.set(0, 0.58, -0.05);
+  dorsalFin.rotation.x = -0.25;
+  dorsalFin.scale.set(0.35, 1.0, 1.35);
+  bodyGroup.add(dorsalFin);
+}
+
+/**
+ * Grafts oversized subterranean Giant Mole digging claws onto left and right arms.
+ */
+function addMoleDiggingClaws(leftArmGroup, rightArmGroup, armMat, clawMat) {
+  for (const [armGroup, dir] of [
+    [leftArmGroup, -1],
+    [rightArmGroup, 1],
+  ]) {
+    const forearm = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.42, 0.32), armMat);
+    forearm.position.set(dir * 0.06, -0.18, 0.08);
+    armGroup.add(forearm);
+
+    for (let c = -1; c <= 1; c++) {
+      const claw = new THREE.Mesh(new THREE.ConeGeometry(0.065, 0.42, 4), clawMat);
+      claw.rotation.x = Math.PI * 0.42;
+      claw.position.set(dir * 0.06 + c * 0.09, -0.34, 0.34);
+      armGroup.add(claw);
+    }
+  }
+}
+
+/**
+ * Grafts branching woodland Deer antlers onto a creature's head.
+ */
+function addDeerAntlers(headGroup, antlerMat) {
+  for (const side of [-1, 1]) {
+    const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.04, 0.56, 5), antlerMat);
+    beam.position.set(side * 0.14, 0.36, -0.06);
+    beam.rotation.set(-0.22, 0, -side * 0.38);
+
+    const tine1 = new THREE.Mesh(new THREE.ConeGeometry(0.028, 0.26, 4), antlerMat);
+    tine1.position.set(side * 0.24, 0.46, 0.06);
+    tine1.rotation.set(0.35, 0, -side * 0.6);
+
+    const tine2 = new THREE.Mesh(new THREE.ConeGeometry(0.028, 0.24, 4), antlerMat);
+    tine2.position.set(side * 0.28, 0.56, -0.14);
+    tine2.rotation.set(-0.35, 0, -side * 0.25);
+
+    headGroup.add(beam, tine1, tine2);
+  }
+}
+
+/**
+ * Unfolds or retracts the muscular amphibious legs on a Shark 3D mesh when transitioning
+ * from ocean swimming (`hasLandLegs = false`) to beach-landed predator (`hasLandLegs = true`).
+ *
+ * @param {THREE.Group} group - Root Shark creature group.
+ * @param {boolean} [hasLandLegs=true] - Whether amphibious legs are active.
+ */
+export function setSharkAmphibiousMode(group, hasLandLegs = true) {
+  if (!group) return;
+  const visible = Boolean(hasLandLegs);
+  if (group.userData?.amphibiousLegs) {
+    group.userData.amphibiousLegs.visible = visible;
+  }
+  if (Array.isArray(group.userData?.sharkLegParts)) {
+    for (const part of group.userData.sharkLegParts) {
+      if (part) part.visible = visible;
+    }
+  }
+  const limbs = group.userData?.limbs;
+  if (limbs) {
+    limbs.isQuadruped = visible;
+    limbs.baseBodyY = visible ? 0.86 : 0.38;
+    if (limbs.body) {
+      limbs.body.position.y = limbs.baseBodyY;
+    }
+  }
 }
 
 /**
@@ -1406,10 +1867,22 @@ export function animateCreatureMesh(group, animState = {}, elapsedTime = 0, dt =
   const moveSpeed = animState.speed || 4.5;
   const phase = elapsedTime * Math.max(4.5, moveSpeed * 1.15) + (group.id || 0) * 0.7;
 
+  // Synchronize Shark amphibious legs if userData.amphibiousLegs.visible was toggled directly
+  if (group.userData?.amphibiousLegs && Array.isArray(group.userData?.sharkLegParts)) {
+    const legsVisible = Boolean(group.userData.amphibiousLegs.visible);
+    if (limbs.isQuadruped !== legsVisible) {
+      setSharkAmphibiousMode(group, legsVisible);
+    }
+  }
+
   // 1. Walk Cycle & Idle Breathing
   if (limbs.body) {
     const hoverOffset = limbs.isHovering ? Math.sin(elapsedTime * 3.8 + (group.id || 0)) * 0.22 : 0;
-    const walkBob = isMoving && !limbs.isHovering ? Math.abs(Math.sin(phase)) * 0.1 : Math.sin(elapsedTime * 2.2) * 0.03;
+    const hopAmp = limbs.isHopper ? 0.22 : 0.1;
+    const walkBob =
+      isMoving && !limbs.isHovering
+        ? Math.abs(Math.sin(phase)) * hopAmp
+        : Math.sin(elapsedTime * 2.2) * 0.03;
     limbs.body.position.y = limbs.baseBodyY + hoverOffset + walkBob;
   }
 
