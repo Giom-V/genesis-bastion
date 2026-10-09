@@ -462,29 +462,36 @@ export class GenesisBastionGame {
       this.tutorialSubStep = '2A';
       this.tutState.usedDashInAct2 = false;
       this.tutState.upgradePickedInAct2 = false;
-      const goblin = this._spawnTutorialCreature({
-        speciesId: 'goblin',
-        x: 10,
-        z: 10,
-        hp: 36,
-        damage: 5,
-        speed: 5.2,
-      });
+      const goblin =
+        typeof this.enemyManager.spawnTutorialGoblin === 'function'
+          ? this.enemyManager.spawnTutorialGoblin(10, 10)
+          : this._spawnTutorialCreature({
+              speciesId: 'goblin',
+              x: 10,
+              z: 10,
+              hp: 36,
+              damage: 5,
+              speed: 5.2,
+            });
       this.tutState.spawnedEnemies = [goblin];
       this._updateTutorialWaypointAndArrow({ x: goblin.x, z: goblin.z }, 0xff4757);
     } else if (act.actNumber === 3) {
       this.tutorialSubStep = '3A';
       this.tutState.harvestedInAct3 = false;
-      this._spawnTutorialCageAt(20, 20, 'harvester', 'cage_tut_1');
-      const wolf = this._spawnTutorialCreature({
-        speciesId: 'wolf',
-        x: 22,
-        z: 18,
-        hp: 48,
-        damage: 8,
-        speed: 6.8,
-      });
-      this.tutState.spawnedEnemies = [wolf];
+      if (typeof this.bastionAndNpcs.spawnTutorialCage1 === 'function') {
+        this.bastionAndNpcs.spawnTutorialCage1(20, 20, this.enemyManager);
+      } else {
+        this._spawnTutorialCageAt(20, 20, 'harvester', 'cage_tut_1');
+        const wolf = this._spawnTutorialCreature({
+          speciesId: 'wolf',
+          x: 22,
+          z: 18,
+          hp: 48,
+          damage: 8,
+          speed: 6.8,
+        });
+        this.tutState.spawnedEnemies = [wolf];
+      }
       this._updateTutorialWaypointAndArrow({ x: 20, z: 20 }, 0x00d8ff);
     } else if (act.actNumber === 4) {
       this.tutorialSubStep = '4A';
@@ -499,7 +506,11 @@ export class GenesisBastionGame {
     } else if (act.actNumber === 5) {
       this.tutorialSubStep = '5A';
       this.tutState.scoutAssignedInAct5 = false;
-      this._spawnTutorialCageAt(0, -38, 'harvester', 'cage_tut_2');
+      if (typeof this.bastionAndNpcs.spawnTutorialCage2 === 'function') {
+        this.bastionAndNpcs.spawnTutorialCage2(0, -38);
+      } else {
+        this._spawnTutorialCageAt(0, -38, 'harvester', 'cage_tut_2');
+      }
       const orcGuard = this._spawnTutorialCreature({
         speciesId: 'orc',
         x: 3,
@@ -513,19 +524,22 @@ export class GenesisBastionGame {
     } else if (act.actNumber === 6) {
       this.tutorialSubStep = '6A';
       this.tutState.codexOpenedInAct6 = false;
-      const babyTroll = this._spawnTutorialCreature({
-        speciesId: 'troll',
-        mutationId: 'pyro_gland',
-        isPatientZero: true,
-        lifeStage: 'baby',
-        isAdult: false,
-        x: 46,
-        z: -46,
-        hp: 88,
-        damage: 9,
-        speed: 4.5,
-        maturationTime: 40,
-      });
+      const babyTroll =
+        typeof this.enemyManager.spawnTutorialBabyFireTroll === 'function'
+          ? this.enemyManager.spawnTutorialBabyFireTroll(46, -46)
+          : this._spawnTutorialCreature({
+              speciesId: 'troll',
+              mutationId: 'pyro_gland',
+              isPatientZero: true,
+              lifeStage: 'baby',
+              isAdult: false,
+              x: 46,
+              z: -46,
+              hp: 88,
+              damage: 9,
+              speed: 4.5,
+              maturationTime: 40,
+            });
       this.tutState.babyTroll = babyTroll;
       this.tutState.spawnedEnemies = [babyTroll];
 
@@ -544,11 +558,15 @@ export class GenesisBastionGame {
       this.tutState.act7BannerTimer = 10.0;
       this._updateTutorialWaypointAndArrow(null);
 
-      // Spawner le reste des cages et la population sauvage complète de l'île (42 créatures)
-      if (this.bastionAndNpcs && this.bastionAndNpcs.cages.length < 6) {
+      // Activer le mode Survie Ouvert complet (cages restantes + 42 créatures sauvages)
+      if (typeof this.bastionAndNpcs.startOpenSurvivalMode === 'function') {
+        this.bastionAndNpcs.startOpenSurvivalMode();
+      } else if (this.bastionAndNpcs && this.bastionAndNpcs.cages.length < 6) {
         this.bastionAndNpcs._spawnPrisonerCages();
       }
-      if (this.enemyManager.getEnemies().length < 15) {
+      if (typeof this.enemyManager.startOpenSurvivalMode === 'function') {
+        this.enemyManager.startOpenSurvivalMode(CONFIG.ECO?.INITIAL_POPULATION || 42);
+      } else if (this.enemyManager.getEnemies().length < 15) {
         this.enemyManager.spawnInitialPopulation(CONFIG.ECO?.INITIAL_POPULATION || 42);
       }
       this.ecoSim.stepEcoTick(this.enemyManager.getEnemies(), (x, z) =>
@@ -575,8 +593,9 @@ export class GenesisBastionGame {
     this.hud.updateContextualPrompt(null);
     this._updateTutorialWaypointAndArrow(null);
 
-    // S'assurer que le Bastion dispose au moins d'un Récolteur, d'un Éclaireur et des cages
-    if (this.bastionAndNpcs) {
+    if (typeof this.bastionAndNpcs?.startOpenSurvivalMode === 'function') {
+      this.bastionAndNpcs.startOpenSurvivalMode();
+    } else if (this.bastionAndNpcs) {
       const counts = this.bastionAndNpcs.getRoleCounts();
       if (counts.harvester === 0) {
         this.bastionAndNpcs.spawnNpc('harvester', -3.5, -2.5);
@@ -589,12 +608,14 @@ export class GenesisBastionGame {
       }
     }
 
-    if (this.enemyManager.getEnemies().length < 15) {
+    if (typeof this.enemyManager?.startOpenSurvivalMode === 'function') {
+      this.enemyManager.startOpenSurvivalMode(CONFIG.ECO?.INITIAL_POPULATION || 42);
+    } else if (this.enemyManager.getEnemies().length < 15) {
       this.enemyManager.spawnInitialPopulation(CONFIG.ECO?.INITIAL_POPULATION || 42);
-      this.ecoSim.stepEcoTick(this.enemyManager.getEnemies(), (x, z) =>
-        this.terrain.getBiomeAt(x, z)
-      );
     }
+    this.ecoSim.stepEcoTick(this.enemyManager.getEnemies(), (x, z) =>
+      this.terrain.getBiomeAt(x, z)
+    );
 
     logger.info(
       'SYSTEM',
@@ -648,7 +669,7 @@ export class GenesisBastionGame {
 
     // Acte 2 : 2A (Gobelin Égaré) -> 2B (Esquive Shift + Orc Maraudeur) -> 2C (Carte Roguelike Niv. 2)
     else if (this.tutorialAct === 2) {
-      if (this.player.dashTimer > 0) {
+      if (this.player.dashTimer > 0 || (this.player.dashCount || 0) > 0) {
         this.tutState.usedDashInAct2 = true;
       }
 
@@ -665,14 +686,17 @@ export class GenesisBastionGame {
         } else {
           // Gobelin vaincu -> Passer à 2B (Orc Maraudeur)
           this.tutorialSubStep = '2B';
-          const orc = this._spawnTutorialCreature({
-            speciesId: 'orc',
-            x: 13,
-            z: -9,
-            hp: 68,
-            damage: 9,
-            speed: 5.6,
-          });
+          const orc =
+            typeof this.enemyManager.spawnTutorialOrc === 'function'
+              ? this.enemyManager.spawnTutorialOrc(13, -9)
+              : this._spawnTutorialCreature({
+                  speciesId: 'orc',
+                  x: 13,
+                  z: -9,
+                  hp: 68,
+                  damage: 9,
+                  speed: 5.6,
+                });
           this.tutState.spawnedEnemies = [orc];
           this._updateTutorialWaypointAndArrow({ x: orc.x, z: orc.z }, 0xff4757);
         }
@@ -723,7 +747,7 @@ export class GenesisBastionGame {
           this._updateTutorialWaypointAndArrow({ x: 20, z: 20 }, 0x00d8ff);
         }
       } else if (this.tutorialSubStep === '3B') {
-        if (this.tutState.harvestedInAct3) {
+        if (this.tutState.harvestedInAct3 || (this.player.harvestCount || 0) >= 1) {
           this.startTutorialAct(4);
           return;
         }
@@ -736,26 +760,35 @@ export class GenesisBastionGame {
         if (this.tutState.watchtowerBuiltInAct4) {
           this.tutorialSubStep = '4B';
           this.hud.setTutorialHighlight(null);
-          const raider1 = this._spawnTutorialCreature({
-            speciesId: 'goblin',
-            x: -22,
-            z: 16,
-            hp: 40,
-            damage: 6,
-            speed: 6.2,
-            forceChaseBastion: true,
-          });
-          const raider2 = this._spawnTutorialCreature({
-            speciesId: 'goblin',
-            x: -19,
-            z: 21,
-            hp: 40,
-            damage: 6,
-            speed: 6.2,
-            forceChaseBastion: true,
-          });
-          this.tutState.spawnedEnemies = [raider1, raider2];
-          this._updateTutorialWaypointAndArrow({ x: raider1.x, z: raider1.z }, 0xff4757);
+          if (typeof this.enemyManager.spawnTutorialRaiders === 'function') {
+            this.tutState.spawnedEnemies = this.enemyManager.spawnTutorialRaiders();
+          } else {
+            const raider1 = this._spawnTutorialCreature({
+              speciesId: 'goblin',
+              x: -22,
+              z: 16,
+              hp: 40,
+              damage: 6,
+              speed: 6.2,
+              forceChaseBastion: true,
+            });
+            const raider2 = this._spawnTutorialCreature({
+              speciesId: 'goblin',
+              x: -19,
+              z: 21,
+              hp: 40,
+              damage: 6,
+              speed: 6.2,
+              forceChaseBastion: true,
+            });
+            this.tutState.spawnedEnemies = [raider1, raider2];
+          }
+          if (this.tutState.spawnedEnemies[0]) {
+            this._updateTutorialWaypointAndArrow(
+              { x: this.tutState.spawnedEnemies[0].x, z: this.tutState.spawnedEnemies[0].z },
+              0xff4757
+            );
+          }
         }
       } else if (this.tutorialSubStep === '4B') {
         const aliveRaiders = this.tutState.spawnedEnemies.filter(
