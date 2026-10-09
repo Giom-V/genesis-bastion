@@ -130,7 +130,43 @@ flowchart TD
 
 ---
 
-## 6. Sécurité & Qualité Logicielle
+## 6. Pipeline 3D Blender 5.0 MCP (`.glb` PBR) & Décoration Hybride (`v0.10.0`)
+
+La branche `blender-3d-models` (`v0.10.0-blender-mcp-3d-models`) associe la génération 3D sous **Blender 5.0.1 MCP** (`/google/bin/releases/gemini-agents-blender/blender_cli`) à la morphologie génétique dynamique de Three.js :
+1. **Génération & Export Blender 5.0 (`scripts/generate-blender-models.py`)** :
+   - 14 modèles `.glb` PBR subdivisés (`SUBSURF` + `BEVEL` + `shade_smooth`) exportés dans `public/assets/models/` avec `export_yup=True` (pieds à `Y=0`, orientation avant `+Z`, sous-nœuds articulés `Body`, `Head`, `LeftArm`, `RightArm`, `LeftLeg`, `RightLeg`, `LeftWing`, `RightWing`, `Tail`, `Weapon`).
+2. **Décoration Génétique & Bascule Temps Réel (`src/entities/BlenderModelManager.js`)** :
+   - `blenderModelManager.decorateCreatureGroup(group, params)` attache une instance clonée du modèle `.glb` dans chaque entité tout en conservant les greffes mendéliennes (cristaux de feu `pyro_gland`, sacs à venin, plaques osseuses, ailes, couronne Patient Zéro) et l'animation procédurale des membres.
+   - `blenderModelManager.toggleBlenderMode()` (touche **`[J]`** ou bouton HUD) bascule instantanément en temps réel entre les **Modèles Blender 3D (`.glb`)** et les **Maillages Procéduraux Classiques**, tandis que la version classique dédiée reste accessible en parallèle sur le port `5174`.
+
+---
+
+## 7. Équilibrage de la Maîtrise Adaptative (`<= 1%` / Monstre à Rendement Décroissant) & des Upgrades (`v0.11.0`)
+
+Afin d'éviter toute explosion exponentielle des multiplicateurs de dégâts en cours de partie :
+1. **Courbe de Maîtrise par Monstre / Mutant (`computeSpeciesSlayerBonusPct` & `computeMutationSlayerBonusPct`)** :
+   $$\text{Bonus}(k) = \begin{cases} 1.0\% \times k & \text{si } 1 \le k \le 5 \\ 5.0\% + 0.5\% \times (k - 5) & \text{si } 6 \le k \le 15 \\ \min\left(15.0\%,\; 10.0\% + 0.25\% \times (k - 15)\right) & \text{si } k \ge 16 \end{cases}$$
+   - Les paliers de rang (`[1, 3, 6, 10, 15]` kills) notifient ainsi des bonus progressifs de **`+1%`, `+3%`, `+5.5%`, `+7.5%`, `+10%`** (plafond absolu **`+15%`** à 35 kills, et plafond global cumulé espèce + mutations borné à **`1.30x` (`+30%`)**).
+2. **Résistance Adaptative (`computeResistanceBonusPct`)** :
+   - Élémentaire / Venin / Vide : `+0.5%` par impact (`1..6`), `+0.25%` (`7..22`), `+0.15%` au-delà, plafonné à **`10%` max**.
+   - Physique : `+0.4%` par impact (`1..5`), `+0.2%` au-delà, plafonné à **`6%` max**.
+3. **Progression des Sorts, Passifs & Armes Élémentaires** :
+   - **Sorts 3D (`getAbilityStatsAtLevel`)** : `+8%` dégâts/niveau, `+4%` rayon/niveau, `-4%` cooldown/niveau (plancher `65%`).
+   - **Cartes Passives (`DESIGNED_UPGRADES` / `CONFIG.UPGRADES`)** : `+10%` dégâts de mêlée, `+8%` vitesse de déplacement, `+10%` vitesse d'attaque, `+12%` maîtrise élémentaire, `+15` PV max.
+   - **Armes Élémentaires (`ELEMENTAL_WEAPONS_CATALOG`)** : `1.10x` à `1.12x` dégâts de base (`+10%`–`+12%`) et `1.15x` (`+15%`) contre le clade vulnérable.
+
+---
+
+## 8. Architecture de Performance Temps Réel 60 FPS (`v0.12.0`)
+
+- **Cache Géométrique $O(1)$ (`Terrain.js`)** : `getHeightAt(x, z)` interpole bilinéairement sur une table `Float32Array(257 * 257)` précalculée au chargement et `getBiomeAt(x, z)` indexe une table `129x129`, supprimant les appels analytiques FBM en cours de frame.
+- **Rendu WebGL Direct & Ombres Optimisées (`SceneManager.js`)** : `pixelRatio` borné à `1.0`, `PCFShadowMap` `1024x1024`, et rendu direct `renderer.render(scene, camera)` par défaut (court-circuitant les 5 passes plein écran d'`EffectComposer` sauf activation explicite de `useBloom`).
+- **LOD d'Animation & Culling d'Entités (`EnemyManager.js` & `BlenderModelManager.js`)** : Maillages `.glb` low-poly lissés (`~450–1 200` sommets), `materialCache` partagé par signature génétique, culling d'affichage au-delà de `95` unités et décimation d'animation (`1/4` frame) au-delà de `48` unités.
+- **Zéro Mutation DOM Inutile (`HUDManager.js`, `Minimap.js`, `main.js`)** : Signature de diffing avant tout `replaceChildren()`, throttling des panneaux analytiques (`140ms`) et du canvas Minimap (`80ms`).
+
+---
+
+## 9. Sécurité & Qualité Logicielle
 
 - **Politique de Sécurité du Contenu (CSP)** : Définie dans `index.html`, interdisant tout script externe non approuvé.
 - **Zéro Injection DOM** : Aucune utilisation de `innerHTML`, `outerHTML`, `insertAdjacentHTML` ou `document.write`. Toute l'interface est construite via `document.createElement` et `textContent`.

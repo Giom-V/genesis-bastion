@@ -66,8 +66,6 @@ const WATER_VERTEX_SHADER = /* glsl */ `
 
     offset += gerstnerWave(xz, 0.14, 18.0, vec2(1.0, 0.35), uTime * 1.05, tangent, binormal);
     offset += gerstnerWave(xz, 0.10, 11.5, vec2(0.45, 0.9), uTime * 1.25, tangent, binormal);
-    offset += gerstnerWave(xz, 0.07, 6.4, vec2(-0.7, 0.65), uTime * 1.55, tangent, binormal);
-    offset += gerstnerWave(xz, 0.04, 3.3, vec2(0.85, -0.5), uTime * 1.90, tangent, binormal);
 
     vec3 displacedWorld = baseWorld.xyz + offset;
     vWorldPos = displacedWorld;
@@ -199,7 +197,7 @@ export class Terrain {
     /** @type {number} */
     this.size = CONFIG?.WORLD?.SIZE ?? 240;
     /** @type {number} */
-    this.segments = 160;
+    this.segments = 96;
     /** @type {number} */
     this.waterLevel = CONFIG?.WORLD?.WATER_LEVEL ?? -1.2;
     /** @type {number} */
@@ -211,15 +209,53 @@ export class Terrain {
     /** @type {Array<{uTime: {value: number}}>} Shared wind shader uniforms for foliage */
     this._windUniformsList = [];
 
+    // Precompute O(1) bilinear heightmap (257x257) and biome lookup grid (129x129)
+    this._buildLookupCaches();
+
     this._buildIslandMesh();
     this._buildOceanPlane();
     this._populateInstancedProps();
 
-    logger.info('WORLD', 'Terrain & Ocean generated', {
+    logger.info('WORLD', 'Terrain & Ocean generated (O(1) height/biome cache enabled)', {
       size: `${this.size}x${this.size}`,
       segments: `${this.segments}x${this.segments}`,
       resourceNodes: this.resourceNodes.length,
     });
+  }
+
+  /**
+   * Precomputes `this._heightGrid` (`257x257` Float32Array) and `this._biomeGrid` (`129x129` Array)
+   * covering `[-this.size * 0.5, +this.size * 0.5]` so runtime `getHeightAt` and `getBiomeAt`
+   * execute in O(1) without evaluating 12 octaves of Perlin/FBM noise on every entity frame.
+   * @private
+   */
+  _buildLookupCaches() {
+    this._heightRes = 257;
+    this._heightGrid = new Float32Array(this._heightRes * this._heightRes);
+    const half = this.size * 0.5;
+    const stepH = this.size / (this._heightRes - 1);
+
+    for (let iz = 0; iz < this._heightRes; iz++) {
+      const wz = -half + iz * stepH;
+      const rowOffset = iz * this._heightRes;
+      for (let ix = 0; ix < this._heightRes; ix++) {
+        const wx = -half + ix * stepH;
+        this._heightGrid[rowOffset + ix] = this._computeAnalyticalHeightAt(wx, wz);
+      }
+    }
+
+    this._biomeRes = 129;
+    this._biomeGrid = new Array(this._biomeRes * this._biomeRes);
+    const stepB = this.size / (this._biomeRes - 1);
+
+    for (let iz = 0; iz < this._biomeRes; iz++) {
+      const wz = -half + iz * stepB;
+      const rowOffset = iz * this._biomeRes;
+      for (let ix = 0; ix < this._biomeRes; ix++) {
+        const wx = -half + ix * stepB;
+        this._biomeGrid[rowOffset + ix] = this._computeAnalyticalBiomeAt(wx, wz);
+      }
+    }
   }
 
   /**
@@ -268,15 +304,47 @@ export class Terrain {
   }
 
   /**
-   * Exact analytical terrain elevation function at world coordinates `(x, z)`.
-   * Used both during vertex buffer construction and runtime entity grounding so
-   * creatures, NPCs, structures, and the Player never float or sink.
+   * Fast O(1) bilinear terrain elevation lookup at world coordinates `(x, z)`.
+   * Falls back to `_computeAnalyticalHeightAt(x, z)` only outside `[-size/2, +size/2]`.
    *
    * @param {number} x - World X coordinate.
    * @param {number} z - World Z coordinate.
    * @returns {number} Terrain height Y in world units.
    */
   getHeightAt(x, z) {
+    if (this._heightGrid) {
+      const half = this.size * 0.5;
+      if (x >= -half && x <= half && z >= -half && z <= half) {
+        const resMinus1 = this._heightRes - 1;
+        const fx = ((x + half) / this.size) * resMinus1;
+        const fz = ((z + half) / this.size) * resMinus1;
+        const ix = Math.min(resMinus1 - 1, Math.max(0, fx | 0));
+        const iz = Math.min(resMinus1 - 1, Math.max(0, fz | 0));
+        const tx = fx - ix;
+        const tz = fz - iz;
+        const row0 = iz * this._heightRes + ix;
+        const row1 = row0 + this._heightRes;
+        const h00 = this._heightGrid[row0];
+        const h10 = this._heightGrid[row0 + 1];
+        const h01 = this._heightGrid[row1];
+        const h11 = this._heightGrid[row1 + 1];
+        const h0 = h00 + (h10 - h00) * tx;
+        const h1 = h01 + (h11 - h01) * tx;
+        return h0 + (h1 - h0) * tz;
+      }
+    }
+    return this._computeAnalyticalHeightAt(x, z);
+  }
+
+  /**
+   * Exact analytical terrain elevation function at world coordinates `(x, z)`.
+   *
+   * @param {number} x - World X coordinate.
+   * @param {number} z - World Z coordinate.
+   * @returns {number} Terrain height Y in world units.
+   * @private
+   */
+  _computeAnalyticalHeightAt(x, z) {
     const r = Math.hypot(x, z);
     const angle = Math.atan2(z, x);
 
@@ -345,13 +413,34 @@ export class Terrain {
   }
 
   /**
-   * Determines the ecological biome classification at world coordinates `(x, z)`.
+   * Fast O(1) ecological biome classification at world coordinates `(x, z)`.
    *
    * @param {number} x - World X coordinate.
    * @param {number} z - World Z coordinate.
    * @returns {'beach' | 'plains' | 'forest' | 'highlands' | 'volcanic'} Biome identifier.
    */
   getBiomeAt(x, z) {
+    if (this._biomeGrid) {
+      const half = this.size * 0.5;
+      if (x >= -half && x <= half && z >= -half && z <= half) {
+        const resMinus1 = this._biomeRes - 1;
+        const ix = Math.min(resMinus1, Math.max(0, Math.round(((x + half) / this.size) * resMinus1)));
+        const iz = Math.min(resMinus1, Math.max(0, Math.round(((z + half) / this.size) * resMinus1)));
+        return this._biomeGrid[iz * this._biomeRes + ix] || 'plains';
+      }
+    }
+    return this._computeAnalyticalBiomeAt(x, z);
+  }
+
+  /**
+   * Analytical ecological biome classification at world coordinates `(x, z)`.
+   *
+   * @param {number} x - World X coordinate.
+   * @param {number} z - World Z coordinate.
+   * @returns {'beach' | 'plains' | 'forest' | 'highlands' | 'volcanic'} Biome identifier.
+   * @private
+   */
+  _computeAnalyticalBiomeAt(x, z) {
     const h = this.getHeightAt(x, z);
     const r = Math.hypot(x, z);
 
@@ -492,7 +581,7 @@ export class Terrain {
 
     this.mesh = new THREE.Mesh(geo, this.terrainMaterial);
     this.mesh.receiveShadow = true;
-    this.mesh.castShadow = true;
+    this.mesh.castShadow = false;
     this.scene.add(this.mesh);
   }
 
@@ -539,7 +628,7 @@ export class Terrain {
    */
   _buildOceanPlane() {
     const heightTex = this._createHeightDataTexture();
-    const waterGeo = new THREE.PlaneGeometry(820, 820, 180, 180);
+    const waterGeo = new THREE.PlaneGeometry(680, 680, 56, 56);
     waterGeo.rotateX(-Math.PI / 2);
 
     this.waterMaterial = new THREE.ShaderMaterial({
@@ -601,9 +690,9 @@ export class Terrain {
   /**
    * Populates GPU-instanced environmental props (`THREE.InstancedMesh`) across the island
    * outside the central Bastion sanctuary:
-   * 1. Wind-swaying grass clumps (`750` instances)
-   * 2. Stylized low-poly pine & broadleaf trees (`170` instances, registered as wood nodes)
-   * 3. Rugged boulders & volcanic crags (`110` instances)
+   * 1. Wind-swaying grass clumps (`260` instances)
+   * 2. Stylized low-poly pine & broadleaf trees (`110` instances, registered as wood nodes)
+   * 3. Rugged boulders & volcanic crags (`70` instances)
    * 4. Glowing arcane crystal clusters (`48` instances, registered as crystal nodes)
    * @private
    */
@@ -615,7 +704,7 @@ export class Terrain {
     // -------------------------------------------------------------------------
     // 1. Wind-Swaying Grass Clumps (InstancedMesh)
     // -------------------------------------------------------------------------
-    const grassCount = 750;
+    const grassCount = 260;
     const grassGeo = new THREE.ConeGeometry(0.28, 0.95, 4);
     grassGeo.translate(0, 0.45, 0);
     const grassMat = new THREE.MeshStandardMaterial({
@@ -626,7 +715,8 @@ export class Terrain {
     this._applyWindShader(grassMat, 0.26, 0.05);
 
     this.grassInstanced = new THREE.InstancedMesh(grassGeo, grassMat, grassCount);
-    this.grassInstanced.receiveShadow = true;
+    this.grassInstanced.receiveShadow = false;
+    this.grassInstanced.castShadow = false;
 
     let placedGrass = 0;
     let attempts = 0;
@@ -664,7 +754,7 @@ export class Terrain {
     // -------------------------------------------------------------------------
     // 2. Stylized Low-Poly Trees (Trunks + Multi-Tier Wind-Animated Canopies)
     // -------------------------------------------------------------------------
-    const maxTrees = 175;
+    const maxTrees = 110;
     const trunkGeo = new THREE.CylinderGeometry(0.22, 0.36, 1.8, 6);
     trunkGeo.translate(0, 0.9, 0);
     const trunkMat = new THREE.MeshStandardMaterial({
@@ -682,8 +772,8 @@ export class Terrain {
 
     this.treeTrunkInstanced = new THREE.InstancedMesh(trunkGeo, trunkMat, maxTrees);
     this.treeCanopyInstanced = new THREE.InstancedMesh(canopyGeo, canopyMat, maxTrees);
-    this.treeTrunkInstanced.castShadow = true;
-    this.treeTrunkInstanced.receiveShadow = true;
+    this.treeTrunkInstanced.castShadow = false;
+    this.treeTrunkInstanced.receiveShadow = false;
     this.treeCanopyInstanced.castShadow = true;
     this.treeCanopyInstanced.receiveShadow = true;
 
@@ -746,7 +836,7 @@ export class Terrain {
     // -------------------------------------------------------------------------
     // 3. Rugged Boulders & Volcanic Crags (InstancedMesh)
     // -------------------------------------------------------------------------
-    const maxRocks = 115;
+    const maxRocks = 70;
     const rockGeo = new THREE.DodecahedronGeometry(0.95, 1);
     rockGeo.translate(0, 0.45, 0);
     const rockMat = new THREE.MeshStandardMaterial({
@@ -757,7 +847,7 @@ export class Terrain {
     });
 
     this.rockInstanced = new THREE.InstancedMesh(rockGeo, rockMat, maxRocks);
-    this.rockInstanced.castShadow = true;
+    this.rockInstanced.castShadow = false;
     this.rockInstanced.receiveShadow = true;
 
     let placedRocks = 0;
@@ -814,7 +904,7 @@ export class Terrain {
     });
 
     this.crystalInstanced = new THREE.InstancedMesh(crystalGeo, this.crystalMaterial, maxCrystals);
-    this.crystalInstanced.castShadow = true;
+    this.crystalInstanced.castShadow = false;
 
     let placedCrystals = 0;
     attempts = 0;

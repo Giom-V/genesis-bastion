@@ -44,7 +44,7 @@ npm run build
 | **`K`** | Ouvrir / Fermer l'**Armurerie des Artefacts Élémentaires (Feu, Glace, Foudre, Venin Symbiotique)** *(met le jeu en pause)* |
 | **`V`** | **Activer le Dôme-Bouclier Planétaire de l'Île** (`3/3` Reliques) & passer à l'**Île Suivante** *(met le jeu en pause)* |
 | **`H`** | Ouvrir / Fermer la modale **Architecte du Bastion (5 Bâtiments Niv. 0 $\rightarrow$ 3)** *(met le jeu en pause)* |
-| **`Q` / `E` ou Glisser Clic Droit** | Rotation orbitale de la caméra 3D tactique |
+| **`R` / `F` ou Glisser Clic Droit** | Rotation orbitale de la caméra 3D tactique *(découplée de `E` Récolte et `Q` Déplacement)* |
 | **`Molette Souris`** | Zoom / Dézoom tactique (vue rapprochée action $\leftrightarrow$ vue stratégique écosystème) |
 | **`Tab`** | Ouvrir / Fermer le **Codex de l'Arbre Phylogénétique & Génome** *(met le jeu 100% en pause)* |
 | **`P`** | Passer l'**Onboarding Guidé en 7 Actes** et éveiller immédiatement l'écosystème |
@@ -52,6 +52,7 @@ npm run build
 | **`T`** | **[Labo Test]** Forcer immédiatement un **Cycle Écologique (Eco-Tick)** |
 | **`M`** | **[Labo Test]** Faire apparaître un **Patient Zéro (Troll de Feu)** dans la nature |
 | **`X`** | **[Labo Test]** Tester l'**Écran Game Over Roguelike** & la musique triste **Lyria « Requiem des Cendres » (64 BPM)** |
+| **`J`** | **Basculer en direct entre les Modèles 3D Blender 5.0 (`.glb`) et les Maillages Procéduraux Classiques** |
 | **`F1`..`F5`** | Construire / Améliorer les **5 Bâtiments du Bastion** (Tour de Guet, Scierie, Bio-Labo, Guilde des Éclaireurs, Cœur) |
 
 ---
@@ -67,8 +68,10 @@ genesis-bastion/
 ├── vite.config.js                    # Serveur Vite lié exclusivement à 127.0.0.1
 ├── README.md                         # Guide utilisateur, commandes et vue d'ensemble
 ├── Design.md                         # Spécifications mathématiques, génétiques et IA
+├── public/assets/models/             # 14 modèles 3D PBR subdivisés (.glb) générés via Blender 5.0 MCP
 ├── scripts/
-│   └── dry-run-sim.js                # Simulateur CLI headless (--dry-run) sur 30 cycles + test Game Over Reset
+│   ├── generate-blender-models.py    # Script Python Blender 5.0 (bpy) sculptant et exportant les 14 modèles .glb
+│   └── dry-run-sim.js                # Simulateur CLI headless (--dry-run) sur 30 cycles + test Game Over & Blender 3D
 └── src/
     ├── config.js                     # Configuration centralisée (WORLD, ECO, SPECIES, PHYLOGENY_DIST, MUTATIONS...)
     ├── main.js                       # Boucle principale requestAnimationFrame, Game Over Roguelike & orchestration
@@ -84,7 +87,8 @@ genesis-bastion/
     │   ├── Genome.js                 # Génome continu, calcul de fitness (stats + mutations), croisement mendélien
     │   └── EcosystemSimulator.js     # Grille 24x24 du Jeu de la Vie de Conway, biomasse, maturité Bébé -> Adulte
     ├── entities/
-    │   ├── CreatureMeshBuilder.js    # Morphologie 3D procédurale pilotée par le génome, les hybrides et les mutations
+    │   ├── BlenderModelManager.js    # Chargeur GLTFLoader, cache des 14 modèles .glb Blender 5.0 & bascule temps réel [J]
+    │   ├── CreatureMeshBuilder.js    # Morphologie 3D hybride (Modèles .glb Blender 5.0 + greffes génétiques/mutations)
     │   ├── EnemyManager.js           # IA ennemie, croissance Bébé (0.5x) -> Adulte (1.0x), famine et éradication
     │   ├── PlayerController.js       # Contrôles action-roguelike du joueur, mort Roguelike, grâce & remise à zéro
     │   └── BastionAndNPCs.js         # Sanctuaire central, cages, Autels d'Armes, Reliques d'Éden et IA Éclaireurs
@@ -92,7 +96,7 @@ genesis-bastion/
     │   └── SoundManager.js           # Musique adaptative Lyria Realtime + 5 stems Lyria 3 (dont Requiem Game Over 64 BPM), voix Gemini TTS FR & SFX WebAudio
     ├── ui/
     │   ├── CharacterPortraitsConfig.js # Portraits Nano Banana (Aldric, Kaelen, Troll de Feu, Dragon, Requin, Taupe) & Simagrées
-    │   ├── HUDManager.js             # Interface tactique DOM (zéro innerHTML), Modale Game Over, Forge [K], Dôme [V], Codex [Tab]
+    │   ├── HUDManager.js             # Interface tactique DOM (zéro innerHTML), Modale Game Over, Forge [K], Dôme [V], Bascule 3D [J]
     │   └── Minimap.js                # Radar 2D temps réel (biomasse Conway, cônes de vue Éclaireurs, balises Mutants & Reliques)
     └── styles/
         └── main.css                  # Design système cartographique & biologique dark-fantasy
@@ -120,3 +124,40 @@ Lorsque les PV du Gardien tombent à `0` (ou que le Cœur du Sanctuaire est dét
    - **`🔄 Repartir à Zéro (Nouvelle Run Roguelike — Niv. 1, Île #1)`** : Applique la vraie règle Roguelike en réinitialisant intégralement le Héros au Niveau 1, les Bâtiments du Bastion, la Grille de Conway et la Population Sauvage sur l'Île #1 (`resetForNewRoguelikeRun()`).
    - **`✨ Continuer quand même (Grâce Temporaire du Sanctuaire — 100% PV)`** : Relève le Gardien devant le Sanctuaire avec `100 % PV`, `+60 Rations`, une onde de choc dorée qui repousse les assaillants, et conserve toute la progression acquise.
 
+---
+
+## Modèles 3D Blender 5.0 MCP (`.glb` PBR) & Architecture Multi-Versions (`v0.10.0`)
+
+La version **`v0.10.0-blender-mcp-3d-models`** (branche `blender-3d-models`) intègre **14 modèles 3D `.glb` PBR subdivisés et lissés** générés directement via **Blender 5.0.1 MCP** (`scripts/generate-blender-models.py` $\rightarrow$ `public/assets/models/*.glb`) :
+- **Personnages & Structures** : `hero_guardian.glb` (Gardien en armure obsidienne/or, cape cramoisie, bouclier runique & espadon `Weapon`), `npc_survivor.glb` (Éclaireur à lanterne dorée), `bastion_monolith.glb` (Monolithe de Relique d'Éden).
+- **Bestiaire Darwinien Complet (11 espèces)** : `goblin.glb`, `orc.glb`, `troll.glb`, `wolf.glb`, `lion.glb`, `vulture.glb`, `dragon.glb`, `shark.glb` (Requin Marcheur amphibie), `giant_mole.glb` (Taupe Géante à museau étoilé), `deer.glb`, `rabbit.glb`.
+- **Bascule Temps Réel (`[J]` / Bouton HUD)** : Appuyez sur **`J`** ou cliquez sur **`🎨 Modèles 3D : Blender (.glb) [J]`** pour comparer instantanément en plein jeu les modèles `.glb` Blender 5.0 et les maillages procéduraux historiques (sans recharger la page).
+- **Double Serveur en Parallèle** :
+  - **Version Blender 3D (`.glb`)** : `http://giom-us.c.googlers.com:5173/` (branche `blender-3d-models`)
+  - **Version Classique Procédurale (`v0.9.0`)** : `http://giom-us.c.googlers.com:5174/` (branche `v0.9-classic-procedural`, accessible en 1 clic via le bouton `⏪ Version Classique (5174)` de l'en-tête).
+
+---
+
+## Équilibrage Tactique de la Maîtrise Adaptative (`<= 1%` / Monstre à Rendement Décroissant) & des Upgrades (`v0.11.0`)
+
+Pour garantir une progression tactique mesurée sans inflation de statistiques :
+- **Maîtrise Tueur d'Espèce & Briseur de Mutation (`<= 1 %` par monstre avec décroissance rapide)** :
+  - **Kills `1..5`** : **`+1,0 %` par monstre** (`+1 %` à 1 kill, `+3 %` au Rang 2 à 3 kills, `+5 %` à 5 kills).
+  - **Kills `6..15`** : **`+0,5 %` par monstre** (`+5,5 %` au Rang 3 à 6 kills, `+7,5 %` au Rang 4 à 10 kills, `+10,0 %` au Rang 5 à 15 kills).
+  - **Kills `16+`** : **`+0,25 %` par monstre**, plafonné strictement à **`+15,0 %` maximum** par espèce/mutation (plafond cumulé total `1.30x` soit `+30 %` grand max).
+- **Résistance Adaptative aux Coups Subis** : **`+0,5 %` par coup** élémentaire/venin (`1..6`), puis **`+0,25 %`** (`7..22`), puis **`+0,15 %`** (plafond **`10 %` max** ; physique plafonné à **`6 %` max**).
+- **Échelle des Sorts 3D, Cartes Passives & Armes Élémentaires** :
+  - **Sorts 3D (Niv. 1 $\rightarrow$ 5)** : **`+8 %` dégâts** et **`+4 %` portée** par niveau (`-4 %` temps de recharge).
+  - **Cartes Passives de Level-Up** : Bonus réalistes de **`+8 %` à `+12 %`** (`+10 %` mêlée, `+8 %` vitesse, `+10 %` cadence, `+12 %` élémentaire, `+15 PV max`).
+  - **Armes Élémentaires Légendaires (`[K]`)** : **`+10 %` à `+12 %` de dégâts de base** et **`+15 %` contre leur clade cible**.
+
+---
+
+## Optimisation Ultra-Fluide 60 FPS & Découplage Clavier `[E]` / `[R-F]` (`v0.12.0`)
+
+Pour garantir une fluidité constante à **60 FPS** (y compris sous WebGL Cloudtop) :
+1. **Découplage Strict `[E]` Récolte / `[R-F]` Caméra** : La touche **`[E]`** est dédiée exclusivement à l'interaction contextuelle (récolter bois/cristal, ouvrir une cage, forger une arme, bâtir sur socle), tandis que la rotation clavier de la caméra est assignée à **`[R]` / `[F]`** (ou `Clic Droit + Glisser`).
+2. **Zéro DOM Thrashing 60 Hz (`HUDManager` & `Minimap`)** : Mémoïsation par signature d'état des listes de lignées (`_lastLineageListSig`) et de la bannière d'Onboarding (`_lastOnboardingBannerSig`), cadencement des panneaux lourds à `~7 Hz` (`140ms`) et du radar Minimap 2D à `~12 Hz` (`80ms`).
+3. **Cache Bilinéaire $O(1)$ de Hauteur & Biome (`Terrain.js`)** : Précalcul d'une grille `257x257` (`Float32Array`) pour `getHeightAt(x, z)` et `129x129` pour `getBiomeAt(x, z)`, éliminant des centaines d'évaluations FBM/Perlin par frame, avec géométrie d'île et d'océan allégée.
+4. **Modèles `.glb` Low-Poly Stylisés & Cache de Matériaux (`BlenderModelManager.js`)** : Réduction de **85 %** du nombre de sommets des 14 modèles `.glb` (`~450–1 200` sommets avec lissage de normales), mutualisation des matériaux PBR teintés (`materialCache`) et ombres portées limitées au tronc principal (`Body`).
+5. **Culling Spatial & LOD d'Animation (`EnemyManager.js`)** : Masquage et mise en veille d'animation des créatures éloignées (`> 95m` hors Patients Zéro), animation 1 frame sur 4 à moyenne distance (`> 48m`), et scan de fuite des herbivores cadencé à `4 Hz`.

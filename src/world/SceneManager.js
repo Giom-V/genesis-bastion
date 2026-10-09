@@ -191,12 +191,12 @@ export class SceneManager {
       powerPreference: 'high-performance',
     });
     this.renderer.setSize(width, height);
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    this.renderer.setPixelRatio(1);
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.06;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.shadowMap.enabled = true;
-    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    this.renderer.shadowMap.type = THREE.PCFShadowMap;
 
     const canvasEl = this.renderer.domElement;
     if (canvasEl && canvasEl.style) {
@@ -252,7 +252,11 @@ export class SceneManager {
       lastMouseY: 0,
     };
 
-    // Post-processing pipeline (RenderPass + subtle UnrealBloomPass)
+    // Bypass 5-pass full-screen Bloom Composer by default for maximum 60 FPS WebGL performance
+    /** @type {boolean} */
+    this.useBloom = false;
+
+    // Post-processing pipeline (RenderPass + subtle UnrealBloomPass, used when this.useBloom === true)
     /** @type {EffectComposer} */
     this.composer = new EffectComposer(this.renderer);
     /** @type {RenderPass} */
@@ -278,10 +282,21 @@ export class SceneManager {
     /** @type {THREE.Vector3} Normalized direction vector toward the sun */
     this.sunDirection = new THREE.Vector3(0.45, 0.72, 0.52).normalize();
 
-    // Reusable raycasting helpers for screenToWorld
+    // Reusable raycasting & atmosphere helpers to avoid per-frame GC allocations
     this._raycaster = new THREE.Raycaster();
     this._ndc = new THREE.Vector2();
     this._groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+    this._projVec = new THREE.Vector3();
+    this._moonDirVec = new THREE.Vector3();
+    this._daySunCol = new THREE.Color(0xfff5e0);
+    this._duskSunCol = new THREE.Color(0xff8442);
+    this._nightMoonCol = new THREE.Color(0x5a82b8);
+    this._daySkyHemi = new THREE.Color(0x8ec8ff);
+    this._duskSkyHemi = new THREE.Color(0xd9865b);
+    this._nightSkyHemi = new THREE.Color(0x1b2c47);
+    this._dayFog = new THREE.Color(0x82b5dc);
+    this._duskFog = new THREE.Color(0xc46d4e);
+    this._nightFog = new THREE.Color(0x0b1526);
 
     this._initSkyDome();
     this._initLighting();
@@ -289,9 +304,10 @@ export class SceneManager {
     this._updateCameraTransform(1.0);
     this._updateAtmosphere(0.016, 0);
 
-    logger.info('WORLD', 'SceneManager initialized (ACESFilmic + PCFSoftShadowMap + Hillaire Sky + Bloom)', {
+    logger.info('WORLD', 'SceneManager initialized (60FPS Direct Render + PCFShadowMap 1024 + Hillaire Sky)', {
       viewport: `${width}x${height}`,
       pixelRatio: this.renderer.getPixelRatio(),
+      useBloom: this.useBloom,
     });
   }
 
@@ -316,7 +332,7 @@ export class SceneManager {
    * @private
    */
   _initSkyDome() {
-    const skyGeo = new THREE.SphereGeometry(520, 48, 32);
+    const skyGeo = new THREE.SphereGeometry(520, 28, 18);
     this.skyMaterial = new THREE.ShaderMaterial({
       vertexShader: SKY_VERTEX_SHADER,
       fragmentShader: SKY_FRAGMENT_SHADER,
@@ -341,10 +357,10 @@ export class SceneManager {
    * @private
    */
   _initLighting() {
-    // Primary directional sun/moon light with soft shadow map
+    // Primary directional sun/moon light with fast 1024x1024 shadow map
     this.sunLight = new THREE.DirectionalLight(0xfff4dc, 2.5);
     this.sunLight.castShadow = true;
-    this.sunLight.shadow.mapSize.set(2048, 2048);
+    this.sunLight.shadow.mapSize.set(1024, 1024);
     this.sunLight.shadow.camera.near = 5;
     this.sunLight.shadow.camera.far = 230;
     const shadowHalfExtent = 72;
@@ -376,7 +392,8 @@ export class SceneManager {
   }
 
   /**
-   * Attaches window resize, mouse-wheel zoom, right-drag camera orbit, and Q/E rotation listeners.
+   * Attaches window resize, mouse-wheel zoom, right-drag camera orbit, and R/F rotation listeners.
+   * Note: KeyE (Interact/Harvest) and KeyQ (Move Left) are strictly excluded from camera rotation.
    * @private
    */
   _bindEvents() {
@@ -386,7 +403,9 @@ export class SceneManager {
       this.camera.aspect = width / Math.max(1, height);
       this.camera.updateProjectionMatrix();
       this.renderer.setSize(width, height);
-      this.composer.setSize(width, height);
+      if (this.useBloom && this.composer) {
+        this.composer.setSize(width, height);
+      }
     };
 
     this._onWheel = (e) => {
@@ -434,19 +453,19 @@ export class SceneManager {
 
     this._onKeyDown = (e) => {
       if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) return;
-      if (e.code === 'KeyQ') {
+      if (e.code === 'KeyR' || e.code === 'PageUp') {
         this._camInput.rotateLeft = true;
         this.hasRotatedCamera = true;
       }
-      if (e.code === 'KeyE') {
+      if (e.code === 'KeyF' || e.code === 'PageDown') {
         this._camInput.rotateRight = true;
         this.hasRotatedCamera = true;
       }
     };
 
     this._onKeyUp = (e) => {
-      if (e.code === 'KeyQ') this._camInput.rotateLeft = false;
-      if (e.code === 'KeyE') this._camInput.rotateRight = false;
+      if (e.code === 'KeyR' || e.code === 'PageUp') this._camInput.rotateLeft = false;
+      if (e.code === 'KeyF' || e.code === 'PageDown') this._camInput.rotateRight = false;
     };
 
     window.addEventListener('resize', this._onResize);
@@ -625,7 +644,7 @@ export class SceneManager {
     const activeLightDir =
       sunElevation >= -0.05
         ? this.sunDirection
-        : new THREE.Vector3(-this.sunDirection.x, Math.max(0.38, -this.sunDirection.y), -this.sunDirection.z).normalize();
+        : this._moonDirVec.set(-this.sunDirection.x, Math.max(0.38, -this.sunDirection.y), -this.sunDirection.z).normalize();
 
     // Texel-snap shadow target around cameraTarget to eliminate shadow edge shimmering
     const snapStep = 1.5;
@@ -638,34 +657,24 @@ export class SceneManager {
       .multiplyScalar(95)
       .add(this.sunLight.target.position);
 
-    // Blend directional light color & intensity across day / golden hour / night
-    const daySunCol = new THREE.Color(0xfff5e0);
-    const duskSunCol = new THREE.Color(0xff8442);
-    const nightMoonCol = new THREE.Color(0x5a82b8);
-
+    // Blend directional light color & intensity across day / golden hour / night (zero allocation)
     this.sunLight.color
-      .copy(daySunCol)
-      .lerp(duskSunCol, twilightFactor)
-      .lerp(nightMoonCol, nightFactor);
+      .copy(this._daySunCol)
+      .lerp(this._duskSunCol, twilightFactor)
+      .lerp(this._nightMoonCol, nightFactor);
     this.sunLight.intensity = lerp(lerp(2.6, 1.85, twilightFactor), 0.72, nightFactor);
 
-    // Hemisphere & fog atmospheric harmony
-    const daySkyHemi = new THREE.Color(0x8ec8ff);
-    const duskSkyHemi = new THREE.Color(0xd9865b);
-    const nightSkyHemi = new THREE.Color(0x1b2c47);
+    // Hemisphere & fog atmospheric harmony (zero allocation)
     this.hemiLight.color
-      .copy(daySkyHemi)
-      .lerp(duskSkyHemi, twilightFactor)
-      .lerp(nightSkyHemi, nightFactor);
+      .copy(this._daySkyHemi)
+      .lerp(this._duskSkyHemi, twilightFactor)
+      .lerp(this._nightSkyHemi, nightFactor);
     this.hemiLight.intensity = lerp(0.82, 0.42, nightFactor);
 
-    const dayFog = new THREE.Color(0x82b5dc);
-    const duskFog = new THREE.Color(0xc46d4e);
-    const nightFog = new THREE.Color(0x0b1526);
     this.scene.fog.color
-      .copy(dayFog)
-      .lerp(duskFog, twilightFactor * 0.75)
-      .lerp(nightFog, nightFactor);
+      .copy(this._dayFog)
+      .lerp(this._duskFog, twilightFactor * 0.75)
+      .lerp(this._nightFog, nightFactor);
 
     // Warm campfire flicker at the Bastion (stronger during twilight and night)
     const flicker =
@@ -677,8 +686,7 @@ export class SceneManager {
 
   /**
    * Main per-frame update: smoothly tracks `playerPos` with the 3rd-person tactical camera,
-   * advances the Hillaire atmospheric sky & sun cycle, and renders the scene through the
-   * post-processing `EffectComposer` (with automatic direct-renderer fallback).
+   * advances the Hillaire atmospheric sky & sun cycle, and renders the scene.
    *
    * @param {number} dt - Delta time in seconds.
    * @param {number} elapsedTime - Total elapsed session time in seconds.
@@ -694,11 +702,12 @@ export class SceneManager {
   }
 
   /**
-   * Explicit render helper with automatic direct-renderer fallback if post-processing fails.
+   * Explicit render helper: renders directly via WebGLRenderer when `this.useBloom === false`
+   * (default for 60 FPS), or through EffectComposer when `this.useBloom === true`.
    */
   render() {
     try {
-      if (this.composer) {
+      if (this.useBloom && this.composer) {
         this.composer.render();
       } else {
         this.renderer.render(this.scene, this.camera);
@@ -714,7 +723,7 @@ export class SceneManager {
    * @returns {THREE.Vector3} Normalized sun direction vector.
    */
   getSunDirection() {
-    return this.sunDirection.clone();
+    return this.sunDirection;
   }
 
   /**
@@ -795,7 +804,7 @@ export class SceneManager {
     const wy = (worldPos.y ?? worldPos.position?.y ?? 2.0) + yOffset;
     const wz = worldPos.z ?? worldPos.position?.z ?? 0;
 
-    const vec = new THREE.Vector3(wx, wy, wz);
+    const vec = this._projVec.set(wx, wy, wz);
     vec.project(this.camera);
 
     const width = this.container?.clientWidth || window.innerWidth || 1280;
