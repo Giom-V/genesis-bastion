@@ -340,6 +340,8 @@ export class HUDManager {
     this.isIslandModalOpen = false;
     /** @type {boolean} */
     this.isGameOverModalOpen = false;
+    /** @type {boolean} */
+    this.isBlenderMode = true;
     /** @type {'vampire_survivors'|'diablo_action'} */
     this.combatMode = 'vampire_survivors';
     /** @type {number} */
@@ -466,6 +468,42 @@ export class HUDManager {
     this.setCombatMode(this.combatMode, false);
   }
 
+  /**
+   * Met à jour l'état visuel des boutons de bascule Modèles 3D Blender (.glb) vs Procéduraux Classiques [J].
+   * @param {boolean} enabled
+   */
+  setBlenderModeUI(enabled) {
+    this.isBlenderMode = Boolean(enabled);
+    const label = this.isBlenderMode
+      ? '🎨 Modèles 3D : Blender (.glb) [J]'
+      : '🎨 Modèles 3D : Procéduraux (v0.9) [J]';
+
+    if (this.topBlenderSwitchBtn) {
+      this.topBlenderSwitchBtn.textContent = label;
+      this.topBlenderSwitchBtn.classList.toggle('is-blender-mode', this.isBlenderMode);
+    }
+    if (this.toggleBlenderModelsBtn) {
+      this.toggleBlenderModelsBtn.textContent = label;
+      this.toggleBlenderModelsBtn.classList.toggle('is-blender-mode', this.isBlenderMode);
+    }
+  }
+
+  /**
+   * Déclenche la bascule entre les Modèles 3D Blender (.glb) et les Modèles Procéduraux Classiques (`[J]`).
+   * @returns {boolean}
+   */
+  _triggerBlenderModelsToggle() {
+    if (typeof this.callbacks.onToggleBlenderModels === 'function') {
+      const next = this.callbacks.onToggleBlenderModels();
+      if (typeof next === 'boolean') {
+        this.setBlenderModeUI(next);
+        return next;
+      }
+    }
+    this.setBlenderModeUI(!this.isBlenderMode);
+    return this.isBlenderMode;
+  }
+
   /* ==========================================================================
      0. CALQUE DE PROJECTION 3D -> 2D (BULLES D'ACTION & DÉGÂTS FLOTTANTS)
      ========================================================================== */
@@ -572,7 +610,36 @@ export class HUDManager {
       }
     });
 
-    this.audioStatusGroup.append(this.lyriaStatusPill, this.muteToggleBtn);
+    // Bouton de bascule Modèles 3D Blender 5.0 (.glb) vs Procéduraux Classiques [J] & Lien Version Classique (Port 5174)
+    this.topBlenderSwitchBtn = el(
+      'button',
+      'hud-blender-switch-btn is-blender-mode',
+      '🎨 Modèles 3D : Blender (.glb) [J]'
+    );
+    this.topBlenderSwitchBtn.type = 'button';
+    this.topBlenderSwitchBtn.title =
+      'Basculer en temps réel entre les 14 Modèles 3D Blender 5.0 (.glb) et les Modèles Procéduraux Classiques [Raccourci : J]';
+    this.topBlenderSwitchBtn.addEventListener('click', () => {
+      this._triggerBlenderModelsToggle();
+    });
+
+    this.classicVersionLink = el(
+      'a',
+      'hud-classic-version-link',
+      '⏪ Ouvrir Version Classique (Port 5174)'
+    );
+    this.classicVersionLink.href = 'http://giom-us.c.googlers.com:5174/';
+    this.classicVersionLink.target = '_blank';
+    this.classicVersionLink.rel = 'noopener noreferrer';
+    this.classicVersionLink.title =
+      'Ouvrir la version précédente figée (v0.9.0 Modèles Procéduraux Classiques) qui tourne en parallèle sur http://giom-us.c.googlers.com:5174/';
+
+    this.audioStatusGroup.append(
+      this.lyriaStatusPill,
+      this.muteToggleBtn,
+      this.topBlenderSwitchBtn,
+      this.classicVersionLink
+    );
     brandGroup.append(brandTitle, this.clockBadge, this.combatModeSwitchBtn, this.audioStatusGroup);
 
     // Barre de progression Eco-Tick
@@ -1006,6 +1073,18 @@ export class HUDManager {
       }
     });
 
+    this.toggleBlenderModelsBtn = el(
+      'button',
+      'hud-btn hud-btn-blender is-blender-mode is-full-span',
+      '🎨 Modèles 3D : Blender (.glb) [J]'
+    );
+    this.toggleBlenderModelsBtn.type = 'button';
+    this.toggleBlenderModelsBtn.title =
+      'Comparer en 1 clic les 14 modèles 3D .glb sculptés sous Blender 5.0 et les modèles procéduraux classiques [J]';
+    this.toggleBlenderModelsBtn.addEventListener('click', () => {
+      this._triggerBlenderModelsToggle();
+    });
+
     simGrid.append(
       this.forceTickBtn,
       this.spawnFireTrollBtn,
@@ -1015,7 +1094,8 @@ export class HUDManager {
       this.openWeaponModalBtn,
       this.activateIslandShieldBtn,
       this.openCodexBtn,
-      this.triggerGameOverTestBtn
+      this.triggerGameOverTestBtn,
+      this.toggleBlenderModelsBtn
     );
     this.simLab.appendChild(simGrid);
 
@@ -2491,6 +2571,7 @@ export class HUDManager {
       { key: 'V', label: 'Bouclier Île' },
       { key: 'Tab', label: 'Codex Génétique' },
       { key: 'T', label: 'Eco-Tick' },
+      { key: 'J', label: 'Modèles Blender (.glb)' },
       { key: 'X', label: 'Test Game Over' },
     ];
 
@@ -4397,6 +4478,12 @@ export class HUDManager {
     }
     if (questSystem) {
       this.lastQuestSystemRef = questSystem;
+    }
+    if (
+      typeof state.isBlenderMode === 'boolean' &&
+      state.isBlenderMode !== this.isBlenderMode
+    ) {
+      this.setBlenderModeUI(state.isBlenderMode);
     }
 
     // 0. Télémétrie Musicale Adaptative Lyria & État Voix TTS
