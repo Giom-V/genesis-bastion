@@ -126,12 +126,13 @@ class PartBuilder:
     an explicit Three.js joint pivot `(px, py_up, pz_fwd)`.
     """
 
-    def __init__(self, name, pivot_three=(0.0, 0.0, 0.0), parent_part=None, subsurf_levels=1):
+    def __init__(self, name, pivot_three=(0.0, 0.0, 0.0), parent_part=None, subsurf_levels=0):
         self.name = name
         self.pivot_three = tuple(float(v) for v in pivot_three)
         self.pivot_blender = pt(*self.pivot_three)
         self.parent_part = parent_part
-        self.subsurf_levels = subsurf_levels
+        # Force 0 subdivision surface levels for 60 FPS WebGL performance (~450-1,200 verts/model)
+        self.subsurf_levels = 0
         self.bm = bmesh.new()
         self.materials = []
         self.mat_index_map = {}
@@ -173,7 +174,7 @@ class PartBuilder:
         size=(0.5, 0.5, 0.5),
         rot=(0, 0, 0),
         bevel=0.03,
-        bevel_segs=2,
+        bevel_segs=1,
         taper_top=1.0,
         taper_bottom=1.0,
         taper_front=1.0,
@@ -203,7 +204,7 @@ class PartBuilder:
                 sub,
                 geom=list(sub.verts) + list(sub.edges),
                 offset=min(bevel, min(sx, sy_up, sz_fwd) * 0.32),
-                segments=bevel_segs,
+                segments=1,
                 profile=0.5,
                 affect="EDGES",
             )
@@ -215,8 +216,8 @@ class PartBuilder:
         center=(0, 0, 0),
         radii=(0.3, 0.3, 0.3),
         rot=(0, 0, 0),
-        u_seg=14,
-        v_seg=10,
+        u_seg=8,
+        v_seg=6,
     ):
         """Adds a smooth ellipsoid at Three.js world coordinates `center` with `(rx, ry_up, rz_fwd)`."""
         sub = bmesh.new()
@@ -236,7 +237,7 @@ class PartBuilder:
         r_top=0.02,
         height=0.5,
         rot=(0, 0, 0),
-        segs=10,
+        segs=8,
         scale_xz=(1.0, 1.0),
     ):
         """Adds a smooth cone/frustum aligned along Three.js Y-up before `rot`."""
@@ -262,9 +263,9 @@ class PartBuilder:
         center=(0, 0, 0),
         radii=(0.18, 0.32, 0.18),
         rot=(0, 0, 0),
-        bevel=0.012,
+        bevel=0.0,
     ):
-        """Adds an octahedral beveled crystal at Three.js world coordinates `center`."""
+        """Adds an octahedral crystal at Three.js world coordinates `center`."""
         sub = bmesh.new()
         bmesh.ops.create_uvsphere(sub, u_segments=6, v_segments=2, radius=1.0)
         rx, ry_up, rz_fwd = radii
@@ -272,15 +273,6 @@ class PartBuilder:
             v.co.x *= rx
             v.co.y *= rz_fwd
             v.co.z *= ry_up
-        if bevel > 0.0:
-            bmesh.ops.bevel(
-                sub,
-                geom=list(sub.verts) + list(sub.edges),
-                offset=bevel,
-                segments=1,
-                profile=0.5,
-                affect="EDGES",
-            )
         self._merge_sub_bmesh(sub, mat, center, rot)
 
     def add_torus(
@@ -290,8 +282,8 @@ class PartBuilder:
         major_r=0.35,
         minor_r=0.05,
         rot=(0, 0, 0),
-        major_seg=20,
-        minor_seg=8,
+        major_seg=12,
+        minor_seg=6,
     ):
         """Adds a smooth torus lying in the horizontal XZ plane (before `rot`)."""
         sub = bmesh.new()
@@ -331,8 +323,8 @@ class PartBuilder:
         p2_three,
         r0=0.1,
         r1=0.015,
-        rings=10,
-        segs=10,
+        rings=6,
+        segs=6,
     ):
         """
         Sweeps a tapered circular tube along a quadratic Bezier curve from `p0_three`
@@ -395,7 +387,7 @@ class PartBuilder:
         bpy.data.meshes.remove(tmp_mesh)
 
     def build_object(self, collection=None):
-        """Finalizes the Blender Mesh object, links materials & SUBSURF modifier, and parents it."""
+        """Finalizes the Blender Mesh object, links materials, and parents it."""
         if collection is None:
             collection = bpy.context.scene.collection
 
@@ -419,11 +411,6 @@ class PartBuilder:
         else:
             obj.location = self.pivot_blender
 
-        if self.subsurf_levels > 0:
-            mod = obj.modifiers.new(name="Subsurf", type="SUBSURF")
-            mod.levels = self.subsurf_levels
-            mod.render_levels = self.subsurf_levels
-
         self.obj = obj
         return obj
 
@@ -434,30 +421,36 @@ def export_current_model_glb(filename):
     filepath = os.path.join(OUTPUT_DIR, filename)
 
     mesh_objs = [o for o in bpy.context.scene.objects if o.type == "MESH"]
+    total_verts = sum(len(o.data.vertices) for o in mesh_objs if o.data)
     if mesh_objs:
         bpy.context.view_layer.objects.active = mesh_objs[0]
 
-    win = bpy.context.window_manager.windows[0]
-    area = next((a for a in win.screen.areas if a.type == "VIEW_3D"), win.screen.areas[0])
-    with bpy.context.temp_override(
-        window=win,
-        screen=win.screen,
-        area=area,
-        view_layer=bpy.context.view_layer,
-        active_object=bpy.context.view_layer.objects.active,
-    ):
-        bpy.ops.export_scene.gltf(
-            filepath=filepath,
-            export_format="GLB",
-            use_selection=False,
-            export_cameras=False,
-            export_lights=False,
-            export_apply=True,
-            export_yup=True,
-        )
+    export_kwargs = dict(
+        filepath=filepath,
+        export_format="GLB",
+        use_selection=False,
+        export_cameras=False,
+        export_lights=False,
+        export_apply=True,
+        export_yup=True,
+    )
+
+    if bpy.app.background or not bpy.context.window_manager.windows:
+        bpy.ops.export_scene.gltf(**export_kwargs)
+    else:
+        win = bpy.context.window_manager.windows[0]
+        area = next((a for a in win.screen.areas if a.type == "VIEW_3D"), win.screen.areas[0])
+        with bpy.context.temp_override(
+            window=win,
+            screen=win.screen,
+            area=area,
+            view_layer=bpy.context.view_layer,
+            active_object=bpy.context.view_layer.objects.active,
+        ):
+            bpy.ops.export_scene.gltf(**export_kwargs)
 
     size_kb = os.path.getsize(filepath) / 1024.0
-    print(f"[BlenderGen] Exported {filename} ({size_kb:.1f} KB)")
+    print(f"[BlenderGen] Exported {filename} ({total_verts} verts, {size_kb:.1f} KB)")
     return filepath
 
 
@@ -1681,6 +1674,9 @@ def build_showcase_gallery_scene(exported_paths):
         "vulture.glb",
         "dragon.glb",
     ]
+
+    if bpy.app.background or not bpy.context.window_manager.windows:
+        return
 
     win = bpy.context.window_manager.windows[0]
     area = next((a for a in win.screen.areas if a.type == "VIEW_3D"), win.screen.areas[0])

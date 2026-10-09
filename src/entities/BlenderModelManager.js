@@ -112,6 +112,13 @@ export class BlenderModelManager {
     /** @type {Map<string, THREE.Group>} Cached master `.glb` scene templates keyed by model ID */
     this.templates = new Map();
 
+    /**
+     * Shared material cache keyed by `${modelKey}|${role || ''}|${primaryId}|${secondaryId}|${mutationIds.join(',')}`
+     * to prevent per-instance material cloning and WebGL shader uniform overhead.
+     * @type {Map<string, Map<THREE.Material, THREE.Material>>}
+     */
+    this.materialCache = new Map();
+
     /** @type {Set<THREE.Group>} Registered live entity groups for instant mode toggling */
     this.registeredGroups = new Set();
 
@@ -311,6 +318,13 @@ export class BlenderModelManager {
     rightLeg.position.set(0.2, 0.6, 0);
     root.add(rightLeg);
 
+    root.traverse((child) => {
+      if (child.isMesh) {
+        child.receiveShadow = false;
+        child.castShadow = child.name === 'Body';
+      }
+    });
+
     return root;
   }
 
@@ -361,8 +375,8 @@ export class BlenderModelManager {
               sceneRoot.name = `BlenderGLB_${key}`;
               sceneRoot.traverse((child) => {
                 if (child.isMesh) {
-                  child.castShadow = true;
-                  child.receiveShadow = true;
+                  child.receiveShadow = false;
+                  child.castShadow = child.name === 'Body';
                 }
               });
               this.templates.set(key, sceneRoot);
@@ -525,16 +539,11 @@ export class BlenderModelManager {
     const sourceRoot = template || this._createSyntheticTemplate(modelKey);
     const instance = sourceRoot.clone(true);
 
-    // Clone materials per entity instance so genetic/weapon/hit-flash tinting is isolated
+    // Apply sub-mesh shadow diet without cloning materials per entity instance
     instance.traverse((child) => {
-      if (child.isMesh && child.material) {
-        if (Array.isArray(child.material)) {
-          child.material = child.material.map((m) => (m ? m.clone() : m));
-        } else {
-          child.material = child.material.clone();
-        }
-        child.castShadow = true;
-        child.receiveShadow = true;
+      if (child.isMesh) {
+        child.receiveShadow = false;
+        child.castShadow = child.name === 'Body';
       }
     });
 
@@ -577,7 +586,7 @@ export class BlenderModelManager {
     if (type === 'player' || type === 'hero') {
       this._bindHeroBlenderMaterials(group, instance, blenderLimbs);
     } else if (type === 'npc') {
-      this._applyNpcRolePalette(instance, params.role || 'scout');
+      this._applyNpcRolePalette(instance, params.role || 'scout', modelKey);
     } else {
       this._applyCreatureGeneticsToBlenderInstance(group, instance, blenderLimbs, params);
     }
@@ -586,7 +595,7 @@ export class BlenderModelManager {
   /**
    * Binds the Hero Guardian's `.glb` `HeroBlade` and `HeroVisor` materials so
    * equipping Elemental Greatswords dynamically recolors both the Blender `.glb`
-   * sword/visor and the procedural fallback.
+   * sword/visor and the procedural fallback. Only clones `Mat_HeroBlade` and `Mat_HeroVisor`.
    *
    * @param {THREE.Group} group
    * @param {THREE.Object3D} instance
@@ -597,16 +606,23 @@ export class BlenderModelManager {
     let visorMat = null;
 
     instance.traverse((child) => {
-      if (!child.isMesh) return;
-      const mats = Array.isArray(child.material) ? child.material : [child.material];
-      for (const m of mats) {
-        if (!m) continue;
+      if (!child.isMesh || !child.material) return;
+      const replaceIfHeroMat = (m) => {
+        if (!m) return m;
         if (m.name?.includes('Mat_HeroBlade') || child.name === 'HeroBlade') {
-          bladeMat = m;
+          if (!bladeMat) bladeMat = m.clone();
+          return bladeMat;
         }
         if (m.name?.includes('Mat_HeroVisor') || child.name === 'HeroVisor') {
-          visorMat = m;
+          if (!visorMat) visorMat = m.clone();
+          return visorMat;
         }
+        return m;
+      };
+      if (Array.isArray(child.material)) {
+        child.material = child.material.map(replaceIfHeroMat);
+      } else {
+        child.material = replaceIfHeroMat(child.material);
       }
     });
 
@@ -661,35 +677,59 @@ export class BlenderModelManager {
   }
 
   /**
-   * Tints an allied NPC `.glb` clone according to its assigned role (`'scout' | 'guard' | 'harvester'`).
+   * Tints an allied NPC `.glb` clone according to its assigned role (`'scout' | 'guard' | 'harvester'`),
+   * sharing tinted materials via `this.materialCache`.
    *
    * @param {THREE.Object3D} instance
    * @param {string} role
+   * @param {string} [modelKey='npc_survivor']
    */
-  _applyNpcRolePalette(instance, role = 'scout') {
+  _applyNpcRolePalette(instance, role = 'scout', modelKey = 'npc_survivor') {
     const rolePalette = {
       scout: { tunic: 0x16697a, cloak: 0x2ed573, accent: 0x48dbfb },
       guard: { tunic: 0x3b4d61, cloak: 0xe6a145, accent: 0xff6b6b },
       harvester: { tunic: 0x6b5335, cloak: 0x38c172, accent: 0xfeca57 },
     };
     const pal = rolePalette[role] || rolePalette.scout;
+    const cacheKey = `${modelKey}|${role || 'scout'}|||`;
+    let roleMatMap = this.materialCache.get(cacheKey);
+    if (!roleMatMap) {
+      roleMatMap = new Map();
+      this.materialCache.set(cacheKey, roleMatMap);
+    }
 
-    instance.traverse((child) => {
-      if (!child.isMesh) return;
-      const mats = Array.isArray(child.material) ? child.material : [child.material];
-      for (const m of mats) {
-        if (!m || !m.name) continue;
-        if (m.name.includes('Mat_Tunic')) {
-          m.color.setHex(pal.tunic);
-        } else if (m.name.includes('Mat_Cloak')) {
-          m.color.setHex(pal.cloak);
-        } else if (m.name.includes('Mat_Accent')) {
-          m.color.setHex(pal.accent);
-          if (m.emissive) {
-            m.emissive.setHex(pal.accent);
-            m.emissiveIntensity = role === 'scout' ? 1.6 : 0.7;
+    const resolveRoleMat = (m) => {
+      if (!m || !m.name) return m;
+      const isTunic = m.name.includes('Mat_Tunic');
+      const isCloak = m.name.includes('Mat_Cloak');
+      const isAccent = m.name.includes('Mat_Accent');
+      if (!isTunic && !isCloak && !isAccent) return m;
+
+      let cached = roleMatMap.get(m);
+      if (!cached) {
+        cached = m.clone();
+        if (isTunic) {
+          cached.color.setHex(pal.tunic);
+        } else if (isCloak) {
+          cached.color.setHex(pal.cloak);
+        } else if (isAccent) {
+          cached.color.setHex(pal.accent);
+          if (cached.emissive) {
+            cached.emissive.setHex(pal.accent);
+            cached.emissiveIntensity = role === 'scout' ? 1.6 : 0.7;
           }
         }
+        roleMatMap.set(m, cached);
+      }
+      return cached;
+    };
+
+    instance.traverse((child) => {
+      if (!child.isMesh || !child.material) return;
+      if (Array.isArray(child.material)) {
+        child.material = child.material.map(resolveRoleMat);
+      } else {
+        child.material = resolveRoleMat(child.material);
       }
     });
   }
@@ -697,6 +737,8 @@ export class BlenderModelManager {
   /**
    * Applies hybrid color blending, Mendelian mutation emissive tints (`pyro_gland`, `cryo_blood`,
    * `venom_sacs`, `vampiric_maw`), and Shark amphibious leg bindings onto an enemy `.glb` clone.
+   * Reuses the template's original materials directly when non-hybrid with no tinting mutations,
+   * and caches tinted material maps in `this.materialCache` otherwise.
    *
    * @param {THREE.Group} group
    * @param {THREE.Object3D} instance
@@ -705,7 +747,8 @@ export class BlenderModelManager {
    */
   _applyCreatureGeneticsToBlenderInstance(group, instance, blenderLimbs, params = {}) {
     const genome = params.genome || {};
-    const primaryId = group.userData.blenderModelKey || 'goblin';
+    const modelKey = group.userData.blenderModelKey || 'goblin';
+    const primaryId = modelKey;
     const isHybrid = Boolean(genome.isHybrid);
     const hybridParents =
       Array.isArray(genome.hybridParents) && genome.hybridParents.length >= 2
@@ -746,21 +789,43 @@ export class BlenderModelManager {
       emissiveIntensity = 0.32;
     }
 
-    if (isHybrid || emissiveColor) {
-      instance.traverse((child) => {
-        if (!child.isMesh) return;
-        const mats = Array.isArray(child.material) ? child.material : [child.material];
-        for (const m of mats) {
-          if (!m || !m.name) continue;
-          if (m.name.includes('Mat_Skin')) {
-            m.color.copy(skinColor);
-            if (emissiveColor && m.emissive) {
-              m.emissive.copy(emissiveColor);
-              m.emissiveIntensity = emissiveIntensity;
+    if ((isHybrid && secondaryId !== primaryId) || emissiveColor) {
+      const cacheKey = `${modelKey}|${params.role || ''}|${primaryId}|${secondaryId}|${mutationIds.join(',')}`;
+      let tintedMatMap = this.materialCache.get(cacheKey);
+      if (!tintedMatMap) {
+        tintedMatMap = new Map();
+        this.materialCache.set(cacheKey, tintedMatMap);
+      }
+
+      const resolveGeneticMat = (m) => {
+        if (!m || !m.name) return m;
+        const isSkin = m.name.includes('Mat_Skin');
+        const isAccent = m.name.includes('Mat_Accent');
+        if (!isSkin && !isAccent) return m;
+
+        let cached = tintedMatMap.get(m);
+        if (!cached) {
+          cached = m.clone();
+          if (isSkin) {
+            cached.color.copy(skinColor);
+            if (emissiveColor && cached.emissive) {
+              cached.emissive.copy(emissiveColor);
+              cached.emissiveIntensity = emissiveIntensity;
             }
-          } else if (m.name.includes('Mat_Accent')) {
-            m.color.copy(accentColor);
+          } else if (isAccent) {
+            cached.color.copy(accentColor);
           }
+          tintedMatMap.set(m, cached);
+        }
+        return cached;
+      };
+
+      instance.traverse((child) => {
+        if (!child.isMesh || !child.material) return;
+        if (Array.isArray(child.material)) {
+          child.material = child.material.map(resolveGeneticMat);
+        } else {
+          child.material = resolveGeneticMat(child.material);
         }
       });
     }
