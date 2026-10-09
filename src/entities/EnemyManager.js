@@ -2045,12 +2045,14 @@ export class EnemyManager {
     const bastionRadius = CONFIG.BASTION?.RADIUS || 14;
     const starvationDps = CONFIG.ECO?.STARVATION_DPS || 4.5;
     const waterLevel = CONFIG.WORLD?.WATER_LEVEL ?? -0.5;
+    this._frameTick = ((this._frameTick || 0) + 1) | 0;
 
-    // 2. Update Each Enemy Entity
+    // 2. Update Each Enemy Entity (with Distance Culling & 4x Animation LOD)
     for (let i = this.enemies.length - 1; i >= 0; i--) {
       const enemy = this.enemies[i];
       enemy.attackCooldown = Math.max(0, enemy.attackCooldown - dt);
       enemy.hitFlash = Math.max(0, enemy.hitFlash - dt * 4);
+      const dPlayer = player ? dist2D(enemy.x, enemy.z, player.x, player.z) : 0;
 
       const spId = enemy.genome?.speciesId || 'goblin';
       const isPrey =
@@ -2076,23 +2078,30 @@ export class EnemyManager {
 
         if (enemy.mesh) {
           enemy.mesh.position.set(enemy.x, enemy.y, enemy.z);
-          const speedMag = Math.hypot(enemy.vx, enemy.vz);
-          if (speedMag > 0.1) {
-            enemy.mesh.rotation.y = Math.atan2(enemy.vx, enemy.vz);
+          if (dPlayer > 95 && !enemy.spottedByScout && !enemy.isPatientZero) {
+            enemy.mesh.visible = false;
+          } else {
+            enemy.mesh.visible = true;
+            const speedMag = Math.hypot(enemy.vx, enemy.vz);
+            if (speedMag > 0.1) {
+              enemy.mesh.rotation.y = Math.atan2(enemy.vx, enemy.vz);
+            }
+            if (dPlayer <= 48 || ((i + this._frameTick) & 3) === 0) {
+              animateCreatureMesh(
+                enemy.mesh,
+                {
+                  isMoving: true,
+                  speed: enemy.speed,
+                  isAttacking: false,
+                  hitFlash: enemy.hitFlash,
+                  hasLandLegs: false,
+                  isAquatic: true,
+                },
+                elapsedTime,
+                dt
+              );
+            }
           }
-          animateCreatureMesh(
-            enemy.mesh,
-            {
-              isMoving: true,
-              speed: enemy.speed,
-              isAttacking: false,
-              hitFlash: enemy.hitFlash,
-              hasLandLegs: false,
-              isAquatic: true,
-            },
-            elapsedTime,
-            dt
-          );
         } else {
           enemy.position.set(enemy.x, enemy.y, enemy.z);
         }
@@ -2289,35 +2298,45 @@ export class EnemyManager {
         enemy.vz *= 0.25;
       } else if (isPrey) {
         // Herbivore Prey (`deer` / `rabbit`): graze peacefully in meadows/forests, or flee from nearby Player / Carnivores!
-        let threatX = 0;
-        let threatZ = 0;
-        let threatCount = 0;
+        // Phase 12 Optimization: Throttle O(N) carnivore threat scan to every 0.25s per herbivore
+        enemy._fleeThreatTimer = (enemy._fleeThreatTimer || 0) - dt;
+        if (enemy._fleeThreatTimer <= 0) {
+          enemy._fleeThreatTimer = 0.25;
+          let threatX = 0;
+          let threatZ = 0;
+          let threatCount = 0;
 
-        if (player && player.hp > 0) {
-          const dp = dist2D(enemy.x, enemy.z, player.x, player.z);
-          if (dp <= 10.5) {
-            const w = (11.5 - dp) / 11.5;
-            threatX += ((enemy.x - player.x) / Math.max(dp, 0.2)) * w;
-            threatZ += ((enemy.z - player.z) / Math.max(dp, 0.2)) * w;
-            threatCount++;
+          if (player && player.hp > 0) {
+            const dp = dPlayer;
+            if (dp <= 10.5) {
+              const w = (11.5 - dp) / 11.5;
+              threatX += ((enemy.x - player.x) / Math.max(dp, 0.2)) * w;
+              threatZ += ((enemy.z - player.z) / Math.max(dp, 0.2)) * w;
+              threatCount++;
+            }
+          }
+
+          for (const other of this.enemies) {
+            if (!other || other.id === enemy.id || other.hp <= 0 || other.isPrey || other.isAquatic) continue;
+            if (other.aggroStance === 'prey_pacifist') continue;
+            const dc = dist2D(enemy.x, enemy.z, other.x, other.z);
+            if (dc <= 9.5) {
+              const w = (10.5 - dc) / 10.5;
+              threatX += ((enemy.x - other.x) / Math.max(dc, 0.2)) * w;
+              threatZ += ((enemy.z - other.z) / Math.max(dc, 0.2)) * w;
+              threatCount++;
+            }
+          }
+
+          enemy._cachedThreatCount = threatCount;
+          if (threatCount > 0) {
+            enemy._cachedFleeAngle = Math.atan2(threatZ, threatX);
           }
         }
 
-        for (const other of this.enemies) {
-          if (!other || other.id === enemy.id || other.hp <= 0 || other.isPrey || other.isAquatic) continue;
-          if (other.aggroStance === 'prey_pacifist') continue;
-          const dc = dist2D(enemy.x, enemy.z, other.x, other.z);
-          if (dc <= 9.5) {
-            const w = (10.5 - dc) / 10.5;
-            threatX += ((enemy.x - other.x) / Math.max(dc, 0.2)) * w;
-            threatZ += ((enemy.z - other.z) / Math.max(dc, 0.2)) * w;
-            threatCount++;
-          }
-        }
-
-        if (threatCount > 0) {
+        if ((enemy._cachedThreatCount || 0) > 0) {
           enemy.state = 'flee';
-          const fleeAngle = Math.atan2(threatZ, threatX);
+          const fleeAngle = enemy._cachedFleeAngle ?? enemy.wanderAngle;
           enemy.wanderAngle = fleeAngle;
           const fleeSpeed = moveSpeed * 1.15;
           enemy.vx = Math.cos(fleeAngle) * fleeSpeed;
@@ -2448,48 +2467,59 @@ export class EnemyManager {
         enemy.y = this.terrain ? this.terrain.getHeightAt(enemy.x, enemy.z) : 0;
       }
 
-      // Sync 3D Mesh & Animation
+      // Sync 3D Mesh & Animation (with Phase 12 Distance Culling > 95m & 4x Animation LOD > 48m)
       if (enemy.mesh) {
         enemy.mesh.position.set(enemy.x, Math.max(enemy.y, waterLevel + 0.1), enemy.z);
-        const speedMag = Math.hypot(enemy.vx, enemy.vz);
-        if (speedMag > 0.15) {
-          const targetRot = Math.atan2(enemy.vx, enemy.vz);
-          enemy.mesh.rotation.y = targetRot;
-        }
 
-        animateCreatureMesh(
-          enemy.mesh,
-          {
-            isMoving: speedMag > 0.25,
-            speed: speedMag,
-            isAttacking: isAttacking || enemy.attackCooldown > 0.75,
-            hitFlash: enemy.hitFlash,
-            hasLandLegs: enemy.hasLandLegs !== false,
-            isAquatic: Boolean(enemy.isAquatic),
-          },
-          elapsedTime,
-          dt
-        );
-
-        const growthProgress = enemy.isAdult
-          ? 1.0
-          : clamp((enemy.age || 0) / (enemy.maturationTime || 20), 0, 1);
-
-        updateCreatureOverlay(
-          enemy.mesh,
-          enemy.hp,
-          enemy.maxHp,
-          enemy.isPatientZero,
-          enemy.spottedByScout,
-          !enemy.isAdult,
-          growthProgress
-        );
-
-        // Keep 3D sky beacon locked onto moving spotted mutant/Patient Zero
+        // Keep 3D sky beacon locked onto moving spotted mutant/Patient Zero regardless of distance
         if (enemy.spottedByScout && this.vfx && typeof this.vfx.setPatientZeroBeacon === 'function') {
           const mutId = enemy.genome?.mutations?.[0];
           const colorHex = mutId ? CONFIG.MUTATIONS?.[mutId]?.colorHex || 0xff3300 : 0xff3300;
           this.vfx.setPatientZeroBeacon(enemy.id, enemy.mesh.position, colorHex, true);
+        }
+
+        if (dPlayer > 95 && !enemy.spottedByScout && !enemy.isPatientZero) {
+          enemy.mesh.visible = false;
+        } else {
+          enemy.mesh.visible = true;
+          const speedMag = Math.hypot(enemy.vx, enemy.vz);
+          if (speedMag > 0.15) {
+            const targetRot = Math.atan2(enemy.vx, enemy.vz);
+            enemy.mesh.rotation.y = targetRot;
+          }
+
+          const shouldAnimateFrame =
+            dPlayer <= 48 || enemy.hitFlash > 0 || ((i + this._frameTick) & 3) === 0;
+
+          if (shouldAnimateFrame) {
+            animateCreatureMesh(
+              enemy.mesh,
+              {
+                isMoving: speedMag > 0.25,
+                speed: speedMag,
+                isAttacking: isAttacking || enemy.attackCooldown > 0.75,
+                hitFlash: enemy.hitFlash,
+                hasLandLegs: enemy.hasLandLegs !== false,
+                isAquatic: Boolean(enemy.isAquatic),
+              },
+              elapsedTime,
+              dt
+            );
+
+            const growthProgress = enemy.isAdult
+              ? 1.0
+              : clamp((enemy.age || 0) / (enemy.maturationTime || 20), 0, 1);
+
+            updateCreatureOverlay(
+              enemy.mesh,
+              enemy.hp,
+              enemy.maxHp,
+              enemy.isPatientZero,
+              enemy.spottedByScout,
+              !enemy.isAdult,
+              growthProgress
+            );
+          }
         }
       } else {
         enemy.position.set(enemy.x, enemy.y, enemy.z);
