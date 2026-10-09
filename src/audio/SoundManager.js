@@ -1,203 +1,352 @@
 /**
  * @file src/audio/SoundManager.js
- * @description Gestionnaire Audio Hybride pour **Genesis Bastion** :
- * 1. **Voix Françaises du Tutoriel & Alertes (Gemini TTS `gemini-v4s-tts`)** :
- *    - 9 lignes de dialogue doublées en français dans `public/assets/audio/tts/*.wav` incarnant :
- *      - **Aldric, Maître Biologiste & Forgeron du Bastion (`Fenrir`)** : Actes 1 à 4
- *      - **Kaelen, Cheffe des Éclaireurs Hors-Frontière (`Kore`)** : Actes 5 à 7 + Alertes Patient Zéro & Courroux Draconique
- *    - Atténuation automatique de la musique (`-12 dB` / `0.22x` ducking) pendant qu'un personnage parle,
- *      déverrouillage automatique au premier clic/touche si l'autoplay navigateur bloque l'Acte 1,
- *      et fonction `replayCurrentVoice()` pour le bouton HUD `🔈 Réécouter Voix`.
+ * @description Hybrid Bilingual Audio Manager for **Genesis Bastion**:
+ * 1. **Bilingual Tutorial & Alert Voiceovers (Gemini TTS `gemini-v4s-tts` — 🇬🇧 English Default `'en'` + 🇫🇷 Français `'fr'`)**:
+ *    - 15 English voice lines in `public/assets/audio/tts/en/*.wav` and 15 French voice lines in `public/assets/audio/tts/*.wav` embodying:
+ *      - **Aldric, Master Biologist & Bastion Forgemaster (`Fenrir`)**: Acts 1 to 4 + Relic Found, Island Victory & Game Over Requiem
+ *      - **Kaelen, Chief of Outrider Scouts (`Kore`)**: Acts 5 to 7 + Patient Zero, Dragon Wrath, Shark Landing, Mole Eruption & Prey Crisis Alerts
+ *    - Automatic music ducking (`-12 dB` / `0.22x`) while a character is speaking,
+ *      instant live language switching (`setLanguage('en' | 'fr')`),
+ *      volume sliders (`setMusicVolume`, `setVoiceVolume`, `setSfxVolume`, `getAudioSettings`),
+ *      and `replayCurrentVoice()` for the HUD & Settings modal voice preview.
  *
- * 2. **Musique Adaptative Temps Réel (`LyriaRealtimeClient` `models/lyria-realtime-exp` + Multi-Stems Lyria 3 + Synthèse Élémentaire WebAudio)** :
- *    - 4 pistes maîtresses Lyria 3 (`public/assets/audio/music/*.mp3`) :
- *      - `lyria_tutorial_dialogue.mp3` (85 BPM — Tutoriel & Dialogues au Sanctuaire)
- *      - `lyria_sanctuary_peace.mp3` (92 BPM — Exploration paisible & Construction du Bastion)
- *      - `lyria_combat_pack.mp3` (128 BPM — Escarmouches contre Peaux-Vertes & Bêtes Sauvages)
- *      - `lyria_boss_mutation_wrath.mp3` (145 BPM — Traque de Patient Zéro Mutant, PV Critiques & Courroux Draconique)
- *    - Connecteur WebSocket temps réel vers `models/lyria-realtime-exp` (`BidiGenerateContent`)
- *      recalculant dynamiquement les `weightedPrompts` et `musicGenerationConfig` (`bpm`, `density`, `brightness`)
- *      en fonction :
- *      1) de l'état Tutoriel / Dialogue,
- *      2) du ratio de PV du joueur (`< 45%` tension + battement de cœur sub-bass, `< 25%` urgence vitale),
- *      3) de l'espèce et du clade combattus (`greenskin` tambours tribaux, `beast` cordes véloces, `mutant` dissonance arcane, `dragon` apocalyptique),
- *      4) des éléments actifs utilisés par les monstres mutants ET les sorts du joueur (`fire`, `ice`, `venom`, `lightning`, `arcane`, `earth`).
+ * 2. **Realtime Adaptive Music (`LyriaRealtimeClient` `models/lyria-realtime-exp` + Lyria 3 Multi-Stems + WebAudio Elemental Synth)**:
+ *    - 5 Lyria 3 master stems (`public/assets/audio/music/*.mp3`):
+ *      - `lyria_tutorial_dialogue.mp3` (85 BPM — Sanctuary & Tutorial Dialogue)
+ *      - `lyria_sanctuary_peace.mp3` (92 BPM — Peaceful Exploration & Base Building)
+ *      - `lyria_combat_pack.mp3` (128 BPM — Skirmishes against Greenskins & Wild Beasts)
+ *      - `lyria_boss_mutation_wrath.mp3` (145 BPM — Mutant Patient Zero Hunt, Critical HP & Dragon Wrath)
+ *      - `lyria_gameover_requiem.mp3` (64 BPM — D-Minor Game Over Requiem)
+ *    - Live WebSocket connector to `models/lyria-realtime-exp` (`BidiGenerateContent`)
+ *      dynamically computing `weightedPrompts` and `musicGenerationConfig` (`bpm`, `density`, `brightness`).
  *
- * 3. **Effets Sonores de Combat & Monde Procéduraux Zéro-Latence (WebAudio API)** :
- *    - Synthèse procédurale multi-couches pour la fente d'épée (`playSwordCleave`), les impacts élémentaires
- *      (`playHitImpact`), l'esquive (`playDash`), les 8 sorts 3D (`playSpellCast`), la récolte bois/cristal
- *      (`playHarvest`), la libération de prisonnier (`playCageRescue`), la construction/amélioration
- *      (`playBuildOrUpgrade`), l'alerte Éclaireur (`playScoutAlert`), le Level-Up (`playLevelUp`)
- *      et le Courroux Draconique (`playDragonWrath`).
+ * 3. **Zero-Latency Procedural WebAudio Combat & World SFX**:
+ *    - Multi-layered procedural synthesis for sword cleave, elemental hit impacts, dash, all 8 spells,
+ *      harvesting, cage rescue, building/upgrading, scout alerts, level-up, dragon wrath, shark landing,
+ *      mole eruption, prey crisis, relic pickup, weapon forge, island shield victory, and game over requiem.
  *
- * Compatible avec l'exécution headless Node.js (`scripts/dry-run-sim.js`) grâce à des garde-fous DOM/WebAudio complets.
+ * Headless Node.js compatible (`scripts/dry-run-sim.js`) with full DOM/WebAudio guards.
  */
 
 import { logger } from '../utils/logger.js';
+import { getLanguage, onLanguageChange } from '../utils/i18n.js';
 
 /**
- * Catalogue complet des 9 lignes de voix françaises générées via Gemini TTS (`gemini-v4s-tts`).
+ * Complete bilingual catalog of all 15 voiceover lines generated via Gemini TTS (`gemini-v4s-tts`)
+ * in both English (`public/assets/audio/tts/en/*.wav`, default) and French (`public/assets/audio/tts/*.wav`).
  */
 export const TTS_VOICE_CATALOG = {
   act1_aldric: {
     key: 'act1_aldric',
     actNumber: 1,
     speaker: 'Aldric',
-    speakerTitle: 'Maître Biologiste & Forgeron du Bastion',
     voiceModel: 'gemini-v4s-tts',
     voiceName: 'Fenrir',
-    url: '/assets/audio/tts/act1_aldric.wav',
-    text: "Bienvenue au Sanctuaire du Bastion, Gardien. L'écosystème autour de nous est figé pour l'instant. Marche jusqu'à la balise dorée au Sud et ajuste ta caméra.",
+    voice: 'Fenrir',
+    roleEN: 'Master Biologist & Bastion Forgemaster',
+    roleFR: 'Maître Biologiste & Forgeron du Bastion',
+    speakerTitle: 'Master Biologist & Bastion Forgemaster',
+    urlEN: '/assets/audio/tts/en/act1_aldric.wav',
+    urlFR: '/assets/audio/tts/act1_aldric.wav',
+    url: '/assets/audio/tts/en/act1_aldric.wav',
+    textEN:
+      'Welcome to the Bastion Sanctuary, Guardian. The ecosystem around us is frozen for now. Walk to the golden beacon to the South and adjust your camera.',
+    textFR:
+      "Bienvenue au Sanctuaire du Bastion, Gardien. L'écosystème autour de nous est figé pour l'instant. Marche jusqu'à la balise dorée au Sud et ajuste ta caméra.",
+    text:
+      'Welcome to the Bastion Sanctuary, Guardian. The ecosystem around us is frozen for now. Walk to the golden beacon to the South and adjust your camera.',
   },
   act2_aldric: {
     key: 'act2_aldric',
     actNumber: 2,
     speaker: 'Aldric',
-    speakerTitle: 'Maître Biologiste & Forgeron du Bastion',
     voiceModel: 'gemini-v4s-tts',
     voiceName: 'Fenrir',
-    url: '/assets/audio/tts/act2_aldric.wav',
-    text: 'Un Gobelin égaré puis un Orc maraudeur approchent ! Frappe-les avec ton épée runique, esquive avec Shift, et choisis ton premier sort au niveau deux.',
+    voice: 'Fenrir',
+    roleEN: 'Master Biologist & Bastion Forgemaster',
+    roleFR: 'Maître Biologiste & Forgeron du Bastion',
+    speakerTitle: 'Master Biologist & Bastion Forgemaster',
+    urlEN: '/assets/audio/tts/en/act2_aldric.wav',
+    urlFR: '/assets/audio/tts/act2_aldric.wav',
+    url: '/assets/audio/tts/en/act2_aldric.wav',
+    textEN:
+      'A stray Goblin and an Orc marauder are approaching! Strike them with your runic sword, dodge with Shift, and choose your first spell at level two.',
+    textFR:
+      'Un Gobelin égaré puis un Orc maraudeur approchent ! Frappe-les avec ton épée runique, esquive avec Shift, et choisis ton premier sort au niveau deux.',
+    text:
+      'A stray Goblin and an Orc marauder are approaching! Strike them with your runic sword, dodge with Shift, and choose your first spell at level two.',
   },
   act3_aldric: {
     key: 'act3_aldric',
     actNumber: 3,
     speaker: 'Aldric',
-    speakerTitle: 'Maître Biologiste & Forgeron du Bastion',
     voiceModel: 'gemini-v4s-tts',
     voiceName: 'Fenrir',
-    url: '/assets/audio/tts/act3_aldric.wav',
-    text: 'Élimine ce loup, libère le survivant enfermé dans la cage au Sud-Est avec la touche E, puis récolte du bois ou du cristal pour notre camp.',
+    voice: 'Fenrir',
+    roleEN: 'Master Biologist & Bastion Forgemaster',
+    roleFR: 'Maître Biologiste & Forgeron du Bastion',
+    speakerTitle: 'Master Biologist & Bastion Forgemaster',
+    urlEN: '/assets/audio/tts/en/act3_aldric.wav',
+    urlFR: '/assets/audio/tts/act3_aldric.wav',
+    url: '/assets/audio/tts/en/act3_aldric.wav',
+    textEN:
+      'Eliminate that wolf, rescue the survivor locked in the cage to the Southeast with the E key, then harvest wood or crystal for our camp.',
+    textFR:
+      'Élimine ce loup, libère le survivant enfermé dans la cage au Sud-Est avec la touche E, puis récolte du bois ou du cristal pour notre camp.',
+    text:
+      'Eliminate that wolf, rescue the survivor locked in the cage to the Southeast with the E key, then harvest wood or crystal for our camp.',
   },
   act4_aldric: {
     key: 'act4_aldric',
     actNumber: 4,
     speaker: 'Aldric',
-    speakerTitle: 'Maître Biologiste & Forgeron du Bastion',
     voiceModel: 'gemini-v4s-tts',
     voiceName: 'Fenrir',
-    url: '/assets/audio/tts/act4_aldric.wav',
-    text: 'Utilise nos ressources pour bâtir une Tour de Guet sur le socle doré, puis repousse les pillards gobelins qui fondent sur nos remparts !',
+    voice: 'Fenrir',
+    roleEN: 'Master Biologist & Bastion Forgemaster',
+    roleFR: 'Maître Biologiste & Forgeron du Bastion',
+    speakerTitle: 'Master Biologist & Bastion Forgemaster',
+    urlEN: '/assets/audio/tts/en/act4_aldric.wav',
+    urlFR: '/assets/audio/tts/act4_aldric.wav',
+    url: '/assets/audio/tts/en/act4_aldric.wav',
+    textEN:
+      'Use our resources to build a Watchtower on the golden pad, then repel the goblin raiders charging our ramparts!',
+    textFR:
+      'Utilise nos ressources pour bâtir une Tour de Guet sur le socle doré, puis repousse les pillards gobelins qui fondent sur nos remparts !',
+    text:
+      'Use our resources to build a Watchtower on the golden pad, then repel the goblin raiders charging our ramparts!',
   },
   act5_kaelen: {
     key: 'act5_kaelen',
     actNumber: 5,
     speaker: 'Kaelen',
-    speakerTitle: 'Cheffe des Éclaireurs Hors-Frontière',
     voiceModel: 'gemini-v4s-tts',
     voiceName: 'Kore',
-    url: '/assets/audio/tts/act5_kaelen.wav',
-    text: "Merci de m'avoir libérée ! Affecte un survivant au rôle d'Éclaireur dans le panneau gauche : nous irons patrouiller au-delà de la frontière pour traquer les mutations.",
+    voice: 'Kore',
+    roleEN: 'Chief of Outrider Scouts',
+    roleFR: 'Cheffe des Éclaireurs Hors-Frontière',
+    speakerTitle: 'Chief of Outrider Scouts',
+    urlEN: '/assets/audio/tts/en/act5_kaelen.wav',
+    urlFR: '/assets/audio/tts/act5_kaelen.wav',
+    url: '/assets/audio/tts/en/act5_kaelen.wav',
+    textEN:
+      'Thank you for freeing me! Assign a survivor to the Scout role in the left panel: we will patrol beyond the frontier to track down mutations.',
+    textFR:
+      "Merci de m'avoir libérée ! Affecte un survivant au rôle d'Éclaireur dans le panneau gauche : nous irons patrouiller au-delà de la frontière pour traquer les mutations.",
+    text:
+      'Thank you for freeing me! Assign a survivor to the Scout role in the left panel: we will patrol beyond the frontier to track down mutations.',
   },
   act6_kaelen: {
     key: 'act6_kaelen',
     actNumber: 6,
     speaker: 'Kaelen',
-    speakerTitle: 'Cheffe des Éclaireurs Hors-Frontière',
     voiceModel: 'gemini-v4s-tts',
     voiceName: 'Kore',
-    url: '/assets/audio/tts/act6_kaelen.wav',
-    text: "Alerte prioritaire ! J'ai repéré un Bébé Troll de Feu au Nord-Est ! C'est un Patient Zéro : élimine-le vite avant qu'il ne devienne adulte et ne se reproduise !",
+    voice: 'Kore',
+    roleEN: 'Chief of Outrider Scouts',
+    roleFR: 'Cheffe des Éclaireurs Hors-Frontière',
+    speakerTitle: 'Chief of Outrider Scouts',
+    urlEN: '/assets/audio/tts/en/act6_kaelen.wav',
+    urlFR: '/assets/audio/tts/act6_kaelen.wav',
+    url: '/assets/audio/tts/en/act6_kaelen.wav',
+    textEN:
+      'Priority alert! I have spotted a Baby Fire Troll to the Northeast! It is a Patient Zero: eliminate it quickly before it matures and reproduces!',
+    textFR:
+      "Alerte prioritaire ! J'ai repéré un Bébé Troll de Feu au Nord-Est ! C'est un Patient Zéro : élimine-le vite avant qu'il ne devienne adulte et ne se reproduise !",
+    text:
+      'Priority alert! I have spotted a Baby Fire Troll to the Northeast! It is a Patient Zero: eliminate it quickly before it matures and reproduces!',
   },
   act7_kaelen: {
     key: 'act7_kaelen',
     actNumber: 7,
     speaker: 'Kaelen',
-    speakerTitle: 'Cheffe des Éclaireurs Hors-Frontière',
     voiceModel: 'gemini-v4s-tts',
     voiceName: 'Kore',
-    url: '/assets/audio/tts/act7_kaelen.wav',
-    text: "Bien joué ! L'écosystème darwinien s'éveille maintenant sur toute l'île. Mais attention aux Dragons de la caldeira : tant qu'on ne les attaque pas, ils nous laissent en paix !",
+    voice: 'Kore',
+    roleEN: 'Chief of Outrider Scouts',
+    roleFR: 'Cheffe des Éclaireurs Hors-Frontière',
+    speakerTitle: 'Chief of Outrider Scouts',
+    urlEN: '/assets/audio/tts/en/act7_kaelen.wav',
+    urlFR: '/assets/audio/tts/act7_kaelen.wav',
+    url: '/assets/audio/tts/en/act7_kaelen.wav',
+    textEN:
+      'Well done! The Darwinian ecosystem now awakens across the entire island. But beware the caldera Dragons: as long as we do not attack them, they leave us in peace!',
+    textFR:
+      "Bien joué ! L'écosystème darwinien s'éveille maintenant sur toute l'île. Mais attention aux Dragons de la caldeira : tant qu'on ne les attaque pas, ils nous laissent en paix !",
+    text:
+      'Well done! The Darwinian ecosystem now awakens across the entire island. But beware the caldera Dragons: as long as we do not attack them, they leave us in peace!',
   },
   alert_patient_zero: {
     key: 'alert_patient_zero',
     actNumber: null,
     speaker: 'Kaelen',
-    speakerTitle: 'Cheffe des Éclaireurs Hors-Frontière',
     voiceModel: 'gemini-v4s-tts',
     voiceName: 'Kore',
-    url: '/assets/audio/tts/alert_patient_zero.wav',
-    text: 'Alerte Éclaireur ! Nouveau Patient Zéro mutant repéré dans les terres sauvages ! Traque-le avant le prochain cycle de reproduction !',
+    voice: 'Kore',
+    roleEN: 'Chief of Outrider Scouts',
+    roleFR: 'Cheffe des Éclaireurs Hors-Frontière',
+    speakerTitle: 'Chief of Outrider Scouts',
+    urlEN: '/assets/audio/tts/en/alert_patient_zero.wav',
+    urlFR: '/assets/audio/tts/alert_patient_zero.wav',
+    url: '/assets/audio/tts/en/alert_patient_zero.wav',
+    textEN:
+      'Scout Alert! A new mutant Patient Zero has been spotted in the wilds! Hunt it down before the next breeding cycle!',
+    textFR:
+      'Alerte Éclaireur ! Nouveau Patient Zéro mutant repéré dans les terres sauvages ! Traque-le avant le prochain cycle de reproduction !',
+    text:
+      'Scout Alert! A new mutant Patient Zero has been spotted in the wilds! Hunt it down before the next breeding cycle!',
   },
   alert_dragon_wrath: {
     key: 'alert_dragon_wrath',
     actNumber: null,
     speaker: 'Kaelen',
-    speakerTitle: 'Cheffe des Éclaireurs Hors-Frontière',
     voiceModel: 'gemini-v4s-tts',
     voiceName: 'Kore',
-    url: '/assets/audio/tts/alert_dragon_wrath.wav',
-    text: "Malheur ! Tu as provoqué un Dragon Souverain ! Toute l'espèce entre en fureur et fond sur notre Bastion !",
+    voice: 'Kore',
+    roleEN: 'Chief of Outrider Scouts',
+    roleFR: 'Cheffe des Éclaireurs Hors-Frontière',
+    speakerTitle: 'Chief of Outrider Scouts',
+    urlEN: '/assets/audio/tts/en/alert_dragon_wrath.wav',
+    urlFR: '/assets/audio/tts/alert_dragon_wrath.wav',
+    url: '/assets/audio/tts/en/alert_dragon_wrath.wav',
+    textEN:
+      'Disaster! You have provoked a Sovereign Dragon! The entire species has entered a frenzy and is descending upon our Bastion!',
+    textFR:
+      "Malheur ! Tu as provoqué un Dragon Souverain ! Toute l'espèce entre en fureur et fond sur notre Bastion !",
+    text:
+      'Disaster! You have provoked a Sovereign Dragon! The entire species has entered a frenzy and is descending upon our Bastion!',
   },
   alert_shark_landing: {
     key: 'alert_shark_landing',
     actNumber: null,
     speaker: 'Kaelen',
-    speakerTitle: 'Cheffe des Éclaireurs Hors-Frontière',
     voiceModel: 'gemini-v4s-tts',
     voiceName: 'Kore',
-    url: '/assets/audio/tts/alert_shark_landing.wav',
-    text: 'Alerte côtière ! Les Requins des Abysses ont développé des pattes amphibies et débarquent sur nos plages !',
+    voice: 'Kore',
+    roleEN: 'Chief of Outrider Scouts',
+    roleFR: 'Cheffe des Éclaireurs Hors-Frontière',
+    speakerTitle: 'Chief of Outrider Scouts',
+    urlEN: '/assets/audio/tts/en/alert_shark_landing.wav',
+    urlFR: '/assets/audio/tts/alert_shark_landing.wav',
+    url: '/assets/audio/tts/en/alert_shark_landing.wav',
+    textEN:
+      'Coastal alert! Abyssal Sharks have evolved amphibious legs and are storming onto our beaches!',
+    textFR:
+      'Alerte côtière ! Les Requins des Abysses ont développé des pattes amphibies et débarquent sur nos plages !',
+    text:
+      'Coastal alert! Abyssal Sharks have evolved amphibious legs and are storming onto our beaches!',
   },
   alert_mole_eruption: {
     key: 'alert_mole_eruption',
     actNumber: null,
     speaker: 'Kaelen',
-    speakerTitle: 'Cheffe des Éclaireurs Hors-Frontière',
     voiceModel: 'gemini-v4s-tts',
     voiceName: 'Kore',
-    url: '/assets/audio/tts/alert_mole_eruption.wav',
-    text: 'Attention sous vos pieds ! Des Taupes Géantes Fouisseuses surgissent des galeries souterraines !',
+    voice: 'Kore',
+    roleEN: 'Chief of Outrider Scouts',
+    roleFR: 'Cheffe des Éclaireurs Hors-Frontière',
+    speakerTitle: 'Chief of Outrider Scouts',
+    urlEN: '/assets/audio/tts/en/alert_mole_eruption.wav',
+    urlFR: '/assets/audio/tts/alert_mole_eruption.wav',
+    url: '/assets/audio/tts/en/alert_mole_eruption.wav',
+    textEN:
+      'Watch the ground beneath your feet! Burrowing Giant Moles are erupting from underground tunnels!',
+    textFR:
+      'Attention sous vos pieds ! Des Taupes Géantes Fouisseuses surgissent des galeries souterraines !',
+    text:
+      'Watch the ground beneath your feet! Burrowing Giant Moles are erupting from underground tunnels!',
   },
   alert_prey_crisis: {
     key: 'alert_prey_crisis',
     actNumber: null,
     speaker: 'Kaelen',
-    speakerTitle: 'Cheffe des Éclaireurs Hors-Frontière',
     voiceModel: 'gemini-v4s-tts',
     voiceName: 'Kore',
-    url: '/assets/audio/tts/alert_prey_crisis.wav',
-    text: 'Alerte écologique ! Nos sorts ont décimé le gibier herbivore ! Sans biches ni lapins, la famine menace et les prédateurs deviennent fous !',
+    voice: 'Kore',
+    roleEN: 'Chief of Outrider Scouts',
+    roleFR: 'Cheffe des Éclaireurs Hors-Frontière',
+    speakerTitle: 'Chief of Outrider Scouts',
+    urlEN: '/assets/audio/tts/en/alert_prey_crisis.wav',
+    urlFR: '/assets/audio/tts/alert_prey_crisis.wav',
+    url: '/assets/audio/tts/en/alert_prey_crisis.wav',
+    textEN:
+      'Ecological alert! Our spells have decimated the herbivore prey! Without deer or rabbits, famine looms and the predators are going berserk!',
+    textFR:
+      'Alerte écologique ! Nos sorts ont décimé le gibier herbivore ! Sans biches ni lapins, la famine menace et les prédateurs deviennent fous !',
+    text:
+      'Ecological alert! Our spells have decimated the herbivore prey! Without deer or rabbits, famine looms and the predators are going berserk!',
   },
   alert_relic_found: {
     key: 'alert_relic_found',
     actNumber: null,
     speaker: 'Aldric',
-    speakerTitle: 'Maître Biologiste & Forgeron du Bastion',
     voiceModel: 'gemini-v4s-tts',
     voiceName: 'Fenrir',
-    url: '/assets/audio/tts/alert_relic_found.wav',
-    text: "Fragment de Relique d'Éden récupéré ! Rassemble les trois fragments anciens pour ériger le Dôme-Bouclier Solaire sur toute l'île !",
+    voice: 'Fenrir',
+    roleEN: 'Master Biologist & Bastion Forgemaster',
+    roleFR: 'Maître Biologiste & Forgeron du Bastion',
+    speakerTitle: 'Master Biologist & Bastion Forgemaster',
+    urlEN: '/assets/audio/tts/en/alert_relic_found.wav',
+    urlFR: '/assets/audio/tts/alert_relic_found.wav',
+    url: '/assets/audio/tts/en/alert_relic_found.wav',
+    textEN:
+      'Eden Relic Fragment recovered! Gather all three ancient fragments to raise the Solar Shield Dome across the entire island!',
+    textFR:
+      "Fragment de Relique d'Éden récupéré ! Rassemble les trois fragments anciens pour ériger le Dôme-Bouclier Solaire sur toute l'île !",
+    text:
+      'Eden Relic Fragment recovered! Gather all three ancient fragments to raise the Solar Shield Dome across the entire island!',
   },
   alert_island_victory: {
     key: 'alert_island_victory',
     actNumber: null,
     speaker: 'Aldric',
-    speakerTitle: 'Maître Biologiste & Forgeron du Bastion',
     voiceModel: 'gemini-v4s-tts',
     voiceName: 'Fenrir',
-    url: '/assets/audio/tts/alert_island_victory.wav',
-    text: "Victoire ! Le Bouclier d'Éden rayonne sur toute l'île et purifie l'écosystème ! Notre Bastion est inviolable : prépare-toi à voguer vers la prochaine île !",
+    voice: 'Fenrir',
+    roleEN: 'Master Biologist & Bastion Forgemaster',
+    roleFR: 'Maître Biologiste & Forgeron du Bastion',
+    speakerTitle: 'Master Biologist & Bastion Forgemaster',
+    urlEN: '/assets/audio/tts/en/alert_island_victory.wav',
+    urlFR: '/assets/audio/tts/alert_island_victory.wav',
+    url: '/assets/audio/tts/en/alert_island_victory.wav',
+    textEN:
+      'Victory! The Shield of Eden shines across the entire island and purifies the ecosystem! Our Bastion is unbreakable: prepare to set sail for the next island!',
+    textFR:
+      "Victoire ! Le Bouclier d'Éden rayonne sur toute l'île et purifie l'écosystème ! Notre Bastion est inviolable : prépare-toi à voguer vers la prochaine île !",
+    text:
+      'Victory! The Shield of Eden shines across the entire island and purifies the ecosystem! Our Bastion is unbreakable: prepare to set sail for the next island!',
   },
   alert_gameover_requiem: {
     key: 'alert_gameover_requiem',
     actNumber: null,
     speaker: 'Aldric',
-    speakerTitle: 'Maître Biologiste & Forgeron du Bastion',
     voiceModel: 'gemini-v4s-tts',
     voiceName: 'Fenrir',
-    url: '/assets/audio/tts/alert_gameover_requiem.wav',
-    text: "Le Gardien est tombé et les ombres se referment sur le Bastion. Dans ce monde impitoyable, toute mort scelle le destin d'une expédition. Veux-tu repartir à zéro pour une nouvelle lignée, ou invoquer la Grâce du Sanctuaire pour continuer ?",
+    voice: 'Fenrir',
+    roleEN: 'Master Biologist & Bastion Forgemaster',
+    roleFR: 'Maître Biologiste & Forgeron du Bastion',
+    speakerTitle: 'Master Biologist & Bastion Forgemaster',
+    urlEN: '/assets/audio/tts/en/alert_gameover_requiem.wav',
+    urlFR: '/assets/audio/tts/alert_gameover_requiem.wav',
+    url: '/assets/audio/tts/en/alert_gameover_requiem.wav',
+    textEN:
+      "The Guardian has fallen, and shadows close in upon the Bastion. In this unforgiving world, every death seals the fate of an expedition. Will you start anew for a fresh lineage, or invoke the Sanctuary's Grace to carry on?",
+    textFR:
+      "Le Gardien est tombé et les ombres se referment sur le Bastion. Dans ce monde impitoyable, toute mort scelle le destin d'une expédition. Veux-tu repartir à zéro pour une nouvelle lignée, ou invoquer la Grâce du Sanctuaire pour continuer ?",
+    text:
+      "The Guardian has fallen, and shadows close in upon the Bastion. In this unforgiving world, every death seals the fate of an expedition. Will you start anew for a fresh lineage, or invoke the Sanctuary's Grace to carry on?",
   },
 };
 
 /**
- * Catalogue des 5 pistes musicales adaptatives générées via Lyria 3 (`lyria-3-mp3`).
+ * Catalog of the 5 adaptive music stems generated via Lyria 3 (`lyria-3-mp3`).
  */
 export const LYRIA_MUSIC_STEMS = {
   tutorial: {
     id: 'tutorial',
-    title: 'Parchemin du Sanctuaire (Tutoriel & Dialogue)',
+    title: 'Sanctuary Parchment (Tutorial & Dialogue)',
+    titleEN: 'Sanctuary Parchment (Tutorial & Dialogue)',
+    titleFR: 'Parchemin du Sanctuaire (Tutoriel & Dialogue)',
     url: '/assets/audio/music/lyria_tutorial_dialogue.mp3',
     bpm: 85,
     baseVolume: 0.42,
@@ -206,7 +355,9 @@ export const LYRIA_MUSIC_STEMS = {
   },
   peace: {
     id: 'peace',
-    title: 'Veillée du Bastion (Exploration & Camp)',
+    title: 'Bastion Watch (Exploration & Camp)',
+    titleEN: 'Bastion Watch (Exploration & Camp)',
+    titleFR: 'Veillée du Bastion (Exploration & Camp)',
     url: '/assets/audio/music/lyria_sanctuary_peace.mp3',
     bpm: 92,
     baseVolume: 0.44,
@@ -215,7 +366,9 @@ export const LYRIA_MUSIC_STEMS = {
   },
   combat: {
     id: 'combat',
-    title: 'Escarmouche Sauvage (Combat de Meute)',
+    title: 'Wild Skirmish (Pack Combat)',
+    titleEN: 'Wild Skirmish (Pack Combat)',
+    titleFR: 'Escarmouche Sauvage (Combat de Meute)',
     url: '/assets/audio/music/lyria_combat_pack.mp3',
     bpm: 128,
     baseVolume: 0.50,
@@ -224,7 +377,9 @@ export const LYRIA_MUSIC_STEMS = {
   },
   boss: {
     id: 'boss',
-    title: 'Patient Zéro & Courroux Draconique (Urgence Vitale)',
+    title: 'Patient Zero & Dragon Wrath (Critical Urgency)',
+    titleEN: 'Patient Zero & Dragon Wrath (Critical Urgency)',
+    titleFR: 'Patient Zéro & Courroux Draconique (Urgence Vitale)',
     url: '/assets/audio/music/lyria_boss_mutation_wrath.mp3',
     bpm: 145,
     baseVolume: 0.56,
@@ -233,7 +388,9 @@ export const LYRIA_MUSIC_STEMS = {
   },
   gameover: {
     id: 'gameover',
-    title: 'Requiem des Cendres (Game Over — 64 BPM)',
+    title: 'Requiem of Ashes (Game Over — 64 BPM)',
+    titleEN: 'Requiem of Ashes (Game Over — 64 BPM)',
+    titleFR: 'Requiem des Cendres (Game Over — 64 BPM)',
     url: '/assets/audio/music/lyria_gameover_requiem.mp3',
     bpm: 64,
     baseVolume: 0.62,
@@ -531,19 +688,43 @@ export class LyriaRealtimeClient {
 }
 
 /**
- * Gestionnaire principal du son, des voix françaises Gemini TTS, de la musique adaptative Lyria
- * et des effets sonores procéduraux WebAudio.
+ * Main manager for sound, bilingual Gemini TTS voiceovers (EN default, FR 2nd),
+ * Lyria adaptive music, and procedural WebAudio SFX.
  */
 export class SoundManager {
   /**
    * @param {Object} [options={}]
-   * @param {boolean} [options.muted=false] - Démarre en mode muet si true.
+   * @param {boolean} [options.muted=false] - Starts muted if true.
+   * @param {'en'|'fr'} [options.language] - Initial language ('en' default, 'fr' 2nd).
+   * @param {number} [options.musicVolume=1.0] - Music volume multiplier [0..1].
+   * @param {number} [options.voiceVolume=1.0] - Voiceover volume multiplier [0..1].
+   * @param {number} [options.sfxVolume=1.0] - Combat & world SFX volume multiplier [0..1].
    */
   constructor(options = {}) {
     /** @type {boolean} */
     this.isBrowser = typeof window !== 'undefined' && typeof document !== 'undefined';
     /** @type {boolean} */
     this.muted = Boolean(options.muted);
+    /** @type {'en'|'fr'} */
+    this.language =
+      options.language === 'fr' || (!options.language && getLanguage() === 'fr') ? 'fr' : 'en';
+
+    /** @type {number} Music volume multiplier (0..1) */
+    this.musicVolume =
+      typeof options.musicVolume === 'number'
+        ? Math.max(0, Math.min(1, options.musicVolume))
+        : 1.0;
+    /** @type {number} Voiceover volume multiplier (0..1) */
+    this.voiceVolume =
+      typeof options.voiceVolume === 'number'
+        ? Math.max(0, Math.min(1, options.voiceVolume))
+        : 1.0;
+    /** @type {number} Combat & World SFX volume multiplier (0..1) */
+    this.sfxVolume =
+      typeof options.sfxVolume === 'number'
+        ? Math.max(0, Math.min(1, options.sfxVolume))
+        : 1.0;
+
     /** @type {AudioContext|null} */
     this.ctx = null;
     /** @type {GainNode|null} */
@@ -556,7 +737,7 @@ export class SoundManager {
     /** @type {boolean} */
     this.audioUnlocked = false;
 
-    // --- État Voix TTS (Gemini TTS) ---
+    // --- Gemini TTS Voice State (Bilingual EN / FR) ---
     /** @type {HTMLAudioElement|null} */
     this.activeVoiceAudio = null;
     /** @type {boolean} */
@@ -564,11 +745,13 @@ export class SoundManager {
     /** @type {string|null} */
     this.currentVoiceKey = 'act1_aldric';
     /** @type {string|null} */
+    this.lastPlayedVoiceKey = 'act1_aldric';
+    /** @type {string|null} */
     this.pendingAutoplayVoiceKey = null;
     /** @type {Set<Function>} */
     this.voiceListeners = new Set();
 
-    // --- État Musique Adaptative Lyria 3 + Lyria Realtime ---
+    // --- Adaptive Music State (Lyria 3 + Lyria Realtime) ---
     /** @type {LyriaRealtimeClient} */
     this.lyriaRealtime = new LyriaRealtimeClient();
     /** @type {Object<string, HTMLAudioElement>} */
@@ -586,12 +769,18 @@ export class SoundManager {
     /** @type {number} */
     this.musicDuckMultiplier = 1.0;
 
-    // --- Télémétrie & État Adaptatif Temps Réel ---
+    // --- Realtime Adaptive Telemetry ---
     /** @type {Object} */
     this.adaptiveState = {
       stemId: 'tutorial',
-      modeLabelFR: '📜 Sanctuaire & Dialogue (85 BPM)',
-      shortStatusFR: '🔊 Lyria : 📜 Dialogue & Sanctuaire',
+      modeLabelFR:
+        this.language === 'fr'
+          ? '📜 Sanctuaire & Dialogue (85 BPM)'
+          : '📜 Sanctuary & Dialogue (85 BPM)',
+      shortStatusFR:
+        this.language === 'fr'
+          ? '🔊 Lyria : 📜 Dialogue & Sanctuaire'
+          : '🔊 Lyria: 📜 Sanctuary & Dialogue',
       bpm: 85,
       hpRatio: 1.0,
       isLowHp: false,
@@ -608,7 +797,7 @@ export class SoundManager {
     };
 
     /**
-     * Sorts élémentaires récemment lancés par le joueur : `{ element: expiresAtMs }`
+     * Recently cast player elemental spells: `{ element: expiresAtMs }`
      * @type {Map<string, number>}
      * @private
      */
@@ -623,6 +812,13 @@ export class SoundManager {
     /** @type {number} */
     this._lastHitSfxMs = 0;
 
+    // Keep SoundManager language synchronized with global i18n changes
+    this._unsubscribeI18n = onLanguageChange((newLang) => {
+      if (newLang && newLang !== this.language) {
+        this.setLanguage(newLang);
+      }
+    });
+
     if (this.isBrowser) {
       this._initAudioStems();
       this._bindUserGestureUnlock();
@@ -630,8 +826,9 @@ export class SoundManager {
 
     logger.info(
       'AUDIO',
-      'SoundManager initialisé (Gemini TTS Français + Lyria Adaptive 5 stems + WebAudio SFX)',
+      'SoundManager initialized (Bilingual Gemini TTS EN/FR + Lyria Adaptive 5 stems + WebAudio SFX)',
       {
+        defaultLanguage: this.language,
         ttsTracks: Object.keys(TTS_VOICE_CATALOG).length,
         lyriaStems: Object.keys(LYRIA_MUSIC_STEMS),
         lyriaRealtimeModel: this.lyriaRealtime.model,
@@ -640,7 +837,7 @@ export class SoundManager {
   }
 
   /**
-   * Précharge les 4 pistes MP3 Lyria 3 (`public/assets/audio/music/*.mp3`).
+   * Preloads the 5 Lyria 3 MP3 tracks (`public/assets/audio/music/*.mp3`).
    * @private
    */
   _initAudioStems() {
@@ -660,7 +857,7 @@ export class SoundManager {
   }
 
   /**
-   * Initialise ou reprend le `AudioContext` WebAudio.
+   * Initializes or resumes the WebAudio `AudioContext`.
    * @returns {AudioContext|null}
    * @private
    */
@@ -676,11 +873,11 @@ export class SoundManager {
         this.masterGain.connect(this.ctx.destination);
 
         this.sfxGain = this.ctx.createGain();
-        this.sfxGain.gain.value = 0.9;
+        this.sfxGain.gain.value = 0.9 * this.sfxVolume;
         this.sfxGain.connect(this.masterGain);
 
         this.elementalLayerGain = this.ctx.createGain();
-        this.elementalLayerGain.gain.value = 0.16;
+        this.elementalLayerGain.gain.value = 0.16 * this.musicVolume;
         this.elementalLayerGain.connect(this.masterGain);
       } catch (_err) {
         return null;
@@ -696,8 +893,8 @@ export class SoundManager {
   }
 
   /**
-   * Déverrouille automatiquement le contexte WebAudio et lance la voix ou musique en attente
-   * dès le premier clic ou la première touche pressée par le joueur.
+   * Automatically unlocks the WebAudio context and plays any pending voice/music
+   * on the player's first pointer click or key press.
    * @private
    */
   _bindUserGestureUnlock() {
@@ -720,7 +917,7 @@ export class SoundManager {
   }
 
   /**
-   * Démarre la lecture HTMLAudio de la piste Lyria active si elle est en pause.
+   * Starts HTMLAudio playback of the active Lyria stem if paused.
    * @private
    */
   _ensureActiveStemPlaying() {
@@ -732,52 +929,129 @@ export class SoundManager {
   }
 
   // ============================================================================
-  // 1. VOIX FRANÇAISES GEMINI TTS (TUTORIEL ACTES 1–7 & ALERTES)
+  // 1. BILINGUAL GEMINI TTS VOICEOVERS (ENGLISH DEFAULT 'en' & FRENCH 'fr')
   // ============================================================================
 
   /**
-   * Résout un numéro d'acte (`1..7`) ou une clé (`'act1_aldric'`, `'alert_patient_zero'`, etc.)
-   * vers l'entrée correspondante dans `TTS_VOICE_CATALOG`.
+   * Returns a localized voice catalog entry (`{ speaker, voice, url, text, role, ... }`)
+   * for the given catalog key and language (`'en'` default or `'fr'`).
    *
-   * @param {number|string} actNumberOrKey
+   * @param {string} key - Catalog key (e.g. `'act1_aldric'`, `'alert_patient_zero'`).
+   * @param {'en'|'fr'} [lang=this.language] - Language code (`'en'` or `'fr'`).
    * @returns {Object|null}
    */
-  resolveVoiceEntry(actNumberOrKey) {
+  getVoiceEntry(key, lang = this.language) {
+    if (!key || !TTS_VOICE_CATALOG[key]) return null;
+    const rawEntry = TTS_VOICE_CATALOG[key];
+    const activeLang = String(lang || this.language || 'en').toLowerCase().startsWith('fr')
+      ? 'fr'
+      : 'en';
+    const isFR = activeLang === 'fr';
+    const url = isFR ? rawEntry.urlFR : rawEntry.urlEN;
+    const text = isFR ? rawEntry.textFR : rawEntry.textEN;
+    const role = isFR ? rawEntry.roleFR : rawEntry.roleEN;
+
+    return {
+      ...rawEntry,
+      language: activeLang,
+      voice: rawEntry.voiceName,
+      url,
+      text,
+      role,
+      speakerTitle: role,
+    };
+  }
+
+  /**
+   * Resolves an act number (`1..7`) or a voice key (`'act1_aldric'`, `'alert_patient_zero'`, `'gameover'`, etc.)
+   * to the localized entry from `TTS_VOICE_CATALOG` for the active language (`this.language`).
+   *
+   * @param {number|string} actNumberOrKey
+   * @param {'en'|'fr'} [lang=this.language]
+   * @returns {Object|null}
+   */
+  resolveVoiceEntry(actNumberOrKey, lang = this.language) {
     if (actNumberOrKey === null || actNumberOrKey === undefined) return null;
     if (typeof actNumberOrKey === 'number' || /^[1-7]$/.test(String(actNumberOrKey).trim())) {
       const actNum = Number(actNumberOrKey);
-      const byAct = {
-        1: TTS_VOICE_CATALOG.act1_aldric,
-        2: TTS_VOICE_CATALOG.act2_aldric,
-        3: TTS_VOICE_CATALOG.act3_aldric,
-        4: TTS_VOICE_CATALOG.act4_aldric,
-        5: TTS_VOICE_CATALOG.act5_kaelen,
-        6: TTS_VOICE_CATALOG.act6_kaelen,
-        7: TTS_VOICE_CATALOG.act7_kaelen,
+      const keyByAct = {
+        1: 'act1_aldric',
+        2: 'act2_aldric',
+        3: 'act3_aldric',
+        4: 'act4_aldric',
+        5: 'act5_kaelen',
+        6: 'act6_kaelen',
+        7: 'act7_kaelen',
       };
-      return byAct[actNum] || null;
+      const mappedKey = keyByAct[actNum];
+      return mappedKey ? this.getVoiceEntry(mappedKey, lang) : null;
     }
 
     const raw = String(actNumberOrKey).trim().toLowerCase();
-    if (TTS_VOICE_CATALOG[raw]) return TTS_VOICE_CATALOG[raw];
-    if (TTS_VOICE_CATALOG[`alert_${raw}`]) return TTS_VOICE_CATALOG[`alert_${raw}`];
+    if (TTS_VOICE_CATALOG[raw]) return this.getVoiceEntry(raw, lang);
+    if (TTS_VOICE_CATALOG[`alert_${raw}`]) return this.getVoiceEntry(`alert_${raw}`, lang);
     if (raw === 'gameover' || raw === 'game_over' || raw === 'gameover_requiem') {
-      return TTS_VOICE_CATALOG.alert_gameover_requiem;
+      return this.getVoiceEntry('alert_gameover_requiem', lang);
     }
 
     const shortActMatch = raw.match(/^act([1-7])$/);
     if (shortActMatch) {
-      return this.resolveVoiceEntry(Number(shortActMatch[1]));
+      return this.resolveVoiceEntry(Number(shortActMatch[1]), lang);
     }
     return null;
   }
 
   /**
-   * Abonne un callback aux changements d'état de prise de parole TTS (`(isSpeaking, voiceMeta) => void`).
-   * Permet au HUD d'animer les portraits Nano Banana ("simagrées") pendant que le personnage parle.
+   * Sets the active language (`'en'` default or `'fr'`) for Gemini TTS voiceovers and HUD audio telemetry.
+   * If a voiceover is currently speaking when the user switches language, it immediately switches
+   * to the newly selected language's `.wav` voiceover!
+   *
+   * @param {'en'|'fr'} lang - `'en'` (English) or `'fr'` (Français).
+   * @param {boolean} [replayIfSpeaking=true] - Replay active voice immediately in the new language if currently speaking.
+   * @returns {'en'|'fr'}
+   */
+  setLanguage(lang, replayIfSpeaking = true) {
+    const normalized = String(lang || 'en').toLowerCase().startsWith('fr') ? 'fr' : 'en';
+    const prevLang = this.language;
+    this.language = normalized;
+
+    logger.info(
+      'AUDIO',
+      `[LLM Gemini TTS] Language switched: "${prevLang}" -> "${normalized}" (${
+        normalized === 'en' ? '🇬🇧 English' : '🇫🇷 Français'
+      })`,
+      {
+        previousLanguage: prevLang,
+        language: normalized,
+        currentVoiceKey: this.currentVoiceKey,
+        isVoiceSpeaking: this.isVoiceSpeaking,
+      }
+    );
+
+    // Refresh localized status strings in adaptiveState
+    this._refreshLocalizedAdaptiveLabels();
+
+    if (replayIfSpeaking && this.isVoiceSpeaking) {
+      const keyToSwitch = this.currentVoiceKey || this.lastPlayedVoiceKey || 'act1_aldric';
+      this.playTutorialVoice(keyToSwitch, true);
+    }
+
+    return this.language;
+  }
+
+  /**
+   * Returns the currently active voiceover language (`'en'` or `'fr'`).
+   * @returns {'en'|'fr'}
+   */
+  getLanguage() {
+    return this.language;
+  }
+
+  /**
+   * Subscribes a callback to TTS speaking state changes (`(isSpeaking, voiceMeta) => void`).
    *
    * @param {Function} callback
-   * @returns {Function} Fonction de désabonnement.
+   * @returns {Function} Unsubscribe function.
    */
   onVoiceStateChange(callback) {
     if (typeof callback === 'function') {
@@ -787,14 +1061,14 @@ export class SoundManager {
   }
 
   /**
-   * Notifie les écouteurs UI et dispatch un événement DOM `genesis:voice-state`.
+   * Notifies UI listeners and dispatches a `genesis:voice-state` DOM CustomEvent.
    * @param {boolean} speaking
    * @param {Object|null} voiceMeta
    * @private
    */
   _notifyVoiceState(speaking, voiceMeta) {
     this.isVoiceSpeaking = speaking;
-    this.musicDuckMultiplier = speaking ? 0.22 : 1.0; // -12dB ducking pendant le dialogue
+    this.musicDuckMultiplier = speaking ? 0.22 : 1.0; // -12dB ducking during dialogue
 
     for (const cb of this.voiceListeners) {
       try {
@@ -814,34 +1088,47 @@ export class SoundManager {
   }
 
   /**
-   * Joue la ligne de dialogue française Gemini TTS correspondant à l'Acte du tutoriel (`1..7`)
-   * ou à une alerte (`'alert_patient_zero'`, `'alert_dragon_wrath'`, `'alert_shark_landing'`, `'alert_mole_eruption'`, `'alert_prey_crisis'`),
-   * avec atténuation automatique (`-12 dB`) de la musique Lyria pendant la prise de parole.
+   * Plays the localized Gemini TTS voiceover (`urlEN` + `textEN` when `this.language === 'en'`,
+   * `urlFR` + `textFR` when `this.language === 'fr'`) for the given Tutorial Act (`1..7`) or Alert key,
+   * with automatic `-12 dB` ducking of the Lyria background music while speaking.
    *
-   * @param {number|string} actNumberOrKey - Numéro d'acte (`1..7`) ou clé d'alerte.
-   * @param {Function} [onStart] - Callback appelé au démarrage effectif de la voix.
-   * @param {Function} [onEnd] - Callback appelé à la fin de la voix.
-   * @returns {Object|null} Métadonnées de la voix lancée.
+   * Supports both `(actOrKey, forceReplayBoolean)` and `(actOrKey, onStartCallback, onEndCallback)`.
+   *
+   * @param {number|string} actNumberOrKey - Act number (`1..7`) or alert key.
+   * @param {boolean|Function} [forceReplayOrOnStart=false] - `forceReplay` boolean or `onStart` callback.
+   * @param {Function} [onEnd] - Callback invoked when the voice finishes.
+   * @returns {Object|null} Localized voice metadata entry.
    */
-  playTutorialVoice(actNumberOrKey, onStart, onEnd) {
-    const entry = this.resolveVoiceEntry(actNumberOrKey);
+  playTutorialVoice(actNumberOrKey, forceReplayOrOnStart = false, onEnd) {
+    const forceReplay = typeof forceReplayOrOnStart === 'boolean' ? forceReplayOrOnStart : false;
+    const onStart = typeof forceReplayOrOnStart === 'function' ? forceReplayOrOnStart : undefined;
+
+    if (forceReplay) {
+      this._ensureAudioContext();
+    }
+
+    const entry = this.resolveVoiceEntry(actNumberOrKey, this.language);
     if (!entry) {
-      logger.warn('AUDIO', `Clé de voix TTS inconnue : ${String(actNumberOrKey)}`);
+      logger.warn('AUDIO', `Unknown TTS voice key: ${String(actNumberOrKey)}`);
       return null;
     }
 
     this.currentVoiceKey = entry.key;
+    this.lastPlayedVoiceKey = entry.key;
 
-    // Traçabilité stricte LLM / Gemini TTS
+    // Strict LLM / Gemini TTS Traceability (Giom's Rule)
     logger.info(
       'AUDIO',
-      `[LLM Gemini TTS] Lecture voix française "${entry.key}" (${entry.speaker} — voix ${entry.voiceName})`,
+      `[LLM Gemini TTS] Playing ${entry.language.toUpperCase()} voice "${entry.key}" (${entry.speaker} — voice ${entry.voiceName})`,
       {
         model: entry.voiceModel,
+        language: entry.language,
         voice: entry.voiceName,
         speaker: entry.speaker,
+        role: entry.role,
         url: entry.url,
         transcript: entry.text,
+        voiceVolume: this.voiceVolume,
       }
     );
 
@@ -853,14 +1140,14 @@ export class SoundManager {
 
     this.stopVoice();
 
-    if (this.muted) {
+    if (this.muted || this.voiceVolume <= 0.001) {
       this.pendingAutoplayVoiceKey = entry.key;
       return entry;
     }
 
     try {
       const audio = new Audio(entry.url);
-      audio.volume = 0.96;
+      audio.volume = Math.max(0, Math.min(1, 0.96 * this.voiceVolume));
       this.activeVoiceAudio = audio;
 
       audio.onplay = () => {
@@ -883,8 +1170,7 @@ export class SoundManager {
       const playPromise = audio.play();
       if (playPromise && typeof playPromise.catch === 'function') {
         playPromise.catch(() => {
-          // Si le navigateur bloque l'autoplay avant le 1er clic (ex: Acte 1 au chargement),
-          // on mémorise la clé pour la lancer dès la première interaction du joueur.
+          // If browser blocks autoplay before 1st gesture, queue for immediate playback on first input
           this.pendingAutoplayVoiceKey = entry.key;
           this._notifyVoiceState(false, entry);
         });
@@ -897,19 +1183,20 @@ export class SoundManager {
   }
 
   /**
-   * Réécoute la ligne de voix du tutoriel ou de l'alerte en cours (`🔈 Réécouter Voix`).
+   * Replays the current tutorial or alert voiceover in the active language (`🔈 Preview / Replay Voice`).
    * @param {Function} [onStart]
    * @param {Function} [onEnd]
    * @returns {Object|null}
    */
   replayCurrentVoice(onStart, onEnd) {
     this._ensureAudioContext();
-    const key = this.currentVoiceKey || this.pendingAutoplayVoiceKey || 'act1_aldric';
+    const key =
+      this.currentVoiceKey || this.lastPlayedVoiceKey || this.pendingAutoplayVoiceKey || 'act1_aldric';
     return this.playTutorialVoice(key, onStart, onEnd);
   }
 
   /**
-   * Interrompt immédiatement toute voix TTS en cours de lecture.
+   * Immediately stops any currently playing TTS voiceover.
    */
   stopVoice() {
     if (this.activeVoiceAudio) {
@@ -927,12 +1214,12 @@ export class SoundManager {
   }
 
   // ============================================================================
-  // 2. MUSIQUE ADAPTATIVE LYRIA REALTIME + MULTI-STEMS + SYNTHÉTISEUR ÉLÉMENTAIRE
+  // 2. ADAPTIVE MUSIC: LYRIA REALTIME + MULTI-STEMS + ELEMENTAL SYNTHESIZER
   // ============================================================================
 
   /**
-   * Enregistre l'utilisation d'un élément par un sort du joueur ou une attaque ennemie
-   * afin d'enrichir pendant quelques secondes la couche harmonique et le prompt Lyria Realtime.
+   * Registers an active elemental signature from a player spell or mutant enemy attack
+   * to enrich the WebAudio harmonic layer and Lyria Realtime prompt.
    *
    * @param {'fire'|'ice'|'venom'|'lightning'|'arcane'|'earth'} elementId
    * @param {number} [durationMs=6500]
@@ -943,26 +1230,106 @@ export class SoundManager {
   }
 
   /**
-   * Met à jour à chaque frame la musique adaptative Lyria (Stems MP3 + `LyriaRealtimeClient` + couches WebAudio)
-   * en fonction :
-   * 1. De l'état Tutoriel / Dialogue (`tutorialActive`, `isVoiceSpeaking`),
-   * 2. Du ratio de PV du joueur (`player.hp / player.maxHp`),
-   * 3. De l'état Combat vs Paix et de l'espèce / clade combattu (`greenskin`, `beast`, `mutant`, `dragon`, `shark`, `giant_mole`),
-   * 4. Des éléments actifs utilisés par les monstres et par les sorts du joueur (`fire`, `ice`, `venom`, `lightning`, `arcane`, `earth`).
+   * Recomputes the localized `modeLabelFR` and `shortStatusFR` strings in `this.adaptiveState`
+   * according to `this.language` (`'en'` or `'fr'`).
+   * @private
+   */
+  _refreshLocalizedAdaptiveLabels() {
+    const s = this.adaptiveState;
+    if (!s) return;
+    const isFR = this.language === 'fr';
+    const targetBpm = s.bpm || 92;
+
+    let modeLabel = isFR ? '🌿 Paix du Bastion (92 BPM)' : '🌿 Bastion Peace (92 BPM)';
+    if (s.isGameOver || s.stemId === 'gameover') {
+      modeLabel = isFR
+        ? '🕯️ Requiem des Cendres — Game Over (64 BPM)'
+        : '🕯️ Requiem of Ashes — Game Over (64 BPM)';
+    } else if (s.dragonWrathActive) {
+      modeLabel = isFR
+        ? '🐉 Courroux Draconique (145 BPM)'
+        : '🐉 Dragon Wrath (145 BPM)';
+    } else if (s.inCombat && (s.hasMutantNearby || s.isCriticalHp)) {
+      if (s.isCriticalHp) {
+        modeLabel = isFR
+          ? '💔 Urgence Vitale & Combat (145 BPM)'
+          : '💔 Critical Survival & Combat (145 BPM)';
+      } else if (s.dominantSpecies === 'shark') {
+        modeLabel = isFR
+          ? '🦈 Requins Marcheurs Mutants (145 BPM)'
+          : '🦈 Mutant Walking Sharks (145 BPM)';
+      } else if (s.dominantSpecies === 'giant_mole') {
+        modeLabel = isFR
+          ? '🕳️ Taupes Géantes Fouisseuses (145 BPM)'
+          : '🕳️ Burrowing Giant Moles (145 BPM)';
+      } else {
+        modeLabel = isFR
+          ? '🧬 Traque Patient Zéro (145 BPM)'
+          : '🧬 Patient Zero Hunt (145 BPM)';
+      }
+    } else if (s.inCombat) {
+      if (s.dominantSpecies === 'shark') {
+        modeLabel = isFR
+          ? `🦈 Assaut Requins Marcheurs (${targetBpm} BPM)`
+          : `🦈 Walking Shark Assault (${targetBpm} BPM)`;
+      } else if (s.dominantSpecies === 'giant_mole') {
+        modeLabel = isFR
+          ? `🕳️ Assaut Taupes Géantes (${targetBpm} BPM)`
+          : `🕳️ Giant Mole Eruption (${targetBpm} BPM)`;
+      } else if (s.dominantClade === 'greenskin') {
+        modeLabel = isFR
+          ? `⚔️ Combat Peaux-Vertes (${targetBpm} BPM)`
+          : `⚔️ Greenskin Pack Combat (${targetBpm} BPM)`;
+      } else if (s.dominantClade === 'beast') {
+        modeLabel = isFR
+          ? `🐺 Meute Bêtes Sauvages (${targetBpm} BPM)`
+          : `🐺 Wild Beast Pack (${targetBpm} BPM)`;
+      } else {
+        modeLabel = isFR
+          ? `⚔️ Escarmouche (${targetBpm} BPM)`
+          : `⚔️ Skirmish (${targetBpm} BPM)`;
+      }
+    } else if (s.isTutorialDialogue || s.stemId === 'tutorial') {
+      const speakerEntry = this.resolveVoiceEntry(this.currentVoiceKey);
+      const speakerTag =
+        this.isVoiceSpeaking && speakerEntry ? ` · 🎙️ ${speakerEntry.speaker}` : '';
+      modeLabel = isFR
+        ? `📜 Sanctuaire & Dialogue (85 BPM${speakerTag})`
+        : `📜 Sanctuary & Dialogue (85 BPM${speakerTag})`;
+    } else if (s.isCriticalHp) {
+      modeLabel = isFR
+        ? '💓 Survie Critique (132 BPM)'
+        : '💓 Critical Survival (132 BPM)';
+    }
+
+    const activeElements = Array.isArray(s.activeElements) ? s.activeElements : [];
+    const elementBadges = s.isGameOver
+      ? ''
+      : activeElements
+          .slice(0, 2)
+          .map((el) => ELEMENT_SIGNATURES[el]?.labelFR.split(' ')[0] || '')
+          .join('');
+    const shortStatus = this.muted
+      ? isFR
+        ? '🔇 Audio Muet'
+        : '🔇 Audio Muted'
+      : isFR
+      ? `🔊 Lyria : ${modeLabel}${elementBadges ? ` ${elementBadges}` : ''}`
+      : `🔊 Lyria: ${modeLabel}${elementBadges ? ` ${elementBadges}` : ''}`;
+
+    s.modeLabelFR = modeLabel;
+    s.shortStatusFR = shortStatus;
+  }
+
+  /**
+   * Updates the adaptive Lyria music engine every frame (MP3 Stems + `LyriaRealtimeClient` + WebAudio layers).
    *
    * @param {Object} [state={}]
-   * @param {Object} [state.player] - Instance `PlayerController` (`hp`, `maxHp`, `position`, `combatSystem`).
-   * @param {Array<Object>} [state.enemies] - Liste des ennemis actifs (`enemyManager.getEnemies()`).
-   * @param {boolean} [state.tutorialActive] - True si le tutoriel en 7 Actes est en cours.
-   * @param {number} [state.tutorialAct] - Numéro de l'acte actuel (`1..7`).
-   * @param {boolean} [state.isTutorialDialogue] - Force l'état dialogue si précisé.
-   * @param {boolean} [state.isModalPaused] - True si une modale (Level-Up / Codex) est ouverte.
-   * @param {boolean} [state.dragonWrathActive] - True si l'espèce Dragon est en Courroux Draconique.
    */
   updateAdaptiveMusic(state = {}) {
     const nowMs = Date.now();
 
-    // 1. Extraction de l'état de santé du joueur
+    // 1. Player health ratio
     const player = state.player || null;
     const hp = player && typeof player.hp === 'number' ? player.hp : 160;
     const maxHp = player && typeof player.maxHp === 'number' && player.maxHp > 0 ? player.maxHp : 160;
@@ -970,7 +1337,7 @@ export class SoundManager {
     const isLowHp = hpRatio < 0.45;
     const isCriticalHp = hpRatio < 0.25;
 
-    // 2. Analyse des ennemis proches (< 26m) : Clades, Espèces, Mutants Patient Zéro & Éléments
+    // 2. Nearby enemies (< 26m): Clades, Species, Mutant Patient Zero & Elements
     const enemies = Array.isArray(state.enemies) ? state.enemies : [];
     const px = player?.position?.x ?? 0;
     const pz = player?.position?.z ?? 0;
@@ -983,7 +1350,7 @@ export class SoundManager {
     let fightingDragon = Boolean(state.dragonWrathActive);
     const activeElementSet = new Set();
 
-    // Nettoyage des éléments de sorts expirés
+    // Clean up expired spell elements
     for (const [el, expMs] of this._recentPlayerElements.entries()) {
       if (expMs > nowMs) {
         activeElementSet.add(el);
@@ -992,7 +1359,7 @@ export class SoundManager {
       }
     }
 
-    // Prise en compte de l'Arme Élémentaire Légendaire équipée par le Gardien (Phase 8)
+    // Equipped Legendary Elemental Weapon (Phase 8)
     const eqWeapon = String(player?.equippedWeaponId || '').toLowerCase();
     if (eqWeapon.includes('fire')) activeElementSet.add('fire');
     else if (eqWeapon.includes('ice') || eqWeapon.includes('frost')) activeElementSet.add('ice');
@@ -1004,7 +1371,7 @@ export class SoundManager {
       if (!e || e.isDead || e.hp <= 0) continue;
       const spId = e.speciesId || e.genome?.speciesId || 'goblin';
 
-      // Les proies herbivores pacifiques (Biches / Lapins) et les Requins encore au large ne déclenchent pas le combat
+      // Peaceful herbivore prey (Deer / Rabbits) and offshore swimming Sharks do not trigger combat music
       if (
         spId === 'deer' ||
         spId === 'rabbit' ||
@@ -1022,7 +1389,7 @@ export class SoundManager {
       const dSq = dx * dx + dz * dz;
       if (dSq > combatRadiusSq) continue;
 
-      // Un dragon pacifique non provoqué ne déclenche pas la musique de combat à lui seul
+      // Peaceful unprovoked dragons do not trigger combat music on their own
       if (spId === 'dragon' && !state.dragonWrathActive && e.state !== 'attack' && e.state !== 'chase') {
         continue;
       }
@@ -1063,7 +1430,7 @@ export class SoundManager {
 
     const inCombat = nearbyEnemyCount > 0 || fightingDragon;
 
-    // Clade et espèce dominants
+    // Dominant clade & species
     let dominantClade = null;
     if (cladeCounts.apex > 0) dominantClade = 'apex';
     else if (cladeCounts.greenskin >= cladeCounts.beast && cladeCounts.greenskin > 0) {
@@ -1094,73 +1461,57 @@ export class SoundManager {
         (state.player && typeof state.player.hp === 'number' && state.player.hp <= 0)
     );
 
-    // 3. Sélection de la piste maîtresse Lyria 3 (`tutorial`, `peace`, `combat`, `boss`, `gameover`)
+    // 3. Select master Lyria 3 stem (`tutorial`, `peace`, `combat`, `boss`, `gameover`)
     let targetStemId = 'peace';
-    let modeLabelFR = '🌿 Paix du Bastion (92 BPM)';
     let targetBpm = 92;
 
     if (isGameOver) {
       targetStemId = 'gameover';
       targetBpm = 64;
-      modeLabelFR = '🕯️ Requiem des Cendres — Game Over (64 BPM)';
     } else if (fightingDragon) {
       targetStemId = 'boss';
       targetBpm = 145;
-      modeLabelFR = '🐉 Courroux Draconique (145 BPM)';
     } else if (inCombat && (hasMutantNearby || isCriticalHp)) {
       targetStemId = 'boss';
       targetBpm = 145;
-      modeLabelFR = isCriticalHp
-        ? '💔 Urgence Vitale & Combat (145 BPM)'
-        : dominantSpecies === 'shark'
-        ? '🦈 Requins Marcheurs Mutants (145 BPM)'
-        : dominantSpecies === 'giant_mole'
-        ? '🕳️ Taupes Géantes Fouisseuses (145 BPM)'
-        : '🧬 Traque Patient Zéro (145 BPM)';
     } else if (inCombat) {
       targetStemId = 'combat';
       targetBpm = isLowHp ? 136 : 128;
-      if (dominantSpecies === 'shark') {
-        modeLabelFR = `🦈 Assaut Requins Marcheurs (${targetBpm} BPM)`;
-      } else if (dominantSpecies === 'giant_mole') {
-        modeLabelFR = `🕳️ Assaut Taupes Géantes (${targetBpm} BPM)`;
-      } else if (dominantClade === 'greenskin') {
-        modeLabelFR = `⚔️ Combat Peaux-Vertes (${targetBpm} BPM)`;
-      } else if (dominantClade === 'beast') {
-        modeLabelFR = `🐺 Meute Bêtes Sauvages (${targetBpm} BPM)`;
-      } else {
-        modeLabelFR = `⚔️ Escarmouche (${targetBpm} BPM)`;
-      }
     } else if (isTutorialDialogue) {
       targetStemId = 'tutorial';
       targetBpm = 85;
-      const speakerEntry = this.resolveVoiceEntry(this.currentVoiceKey);
-      const speakerTag =
-        this.isVoiceSpeaking && speakerEntry ? ` · 🎙️ ${speakerEntry.speaker}` : '';
-      modeLabelFR = `📜 Sanctuaire & Dialogue (85 BPM${speakerTag})`;
     } else if (isCriticalHp) {
       targetStemId = 'combat';
       targetBpm = 132;
-      modeLabelFR = '💓 Survie Critique (132 BPM)';
     }
 
-    const elementBadges = isGameOver
-      ? ''
-      : activeElements
-          .slice(0, 2)
-          .map((el) => ELEMENT_SIGNATURES[el]?.labelFR.split(' ')[0] || '')
-          .join('');
-    const shortStatusFR = this.muted
-      ? '🔇 Audio Muet'
-      : `🔊 Lyria : ${modeLabelFR}${elementBadges ? ` ${elementBadges}` : ''}`;
+    this.adaptiveState = {
+      stemId: targetStemId,
+      modeLabelFR: '',
+      shortStatusFR: '',
+      bpm: targetBpm,
+      hpRatio,
+      isLowHp,
+      isCriticalHp,
+      isGameOver,
+      inCombat,
+      nearbyEnemyCount,
+      dominantClade,
+      dominantSpecies,
+      hasMutantNearby,
+      dragonWrathActive: fightingDragon,
+      activeElements,
+      isTutorialDialogue,
+    };
+    this._refreshLocalizedAdaptiveLabels();
 
-    // Changement de piste maîtresse Lyria
+    // Master stem transition logging
     if (targetStemId !== this.activeStemId) {
       const prevStem = this.activeStemId;
       this.activeStemId = targetStemId;
       logger.info(
         'AUDIO',
-        `[LLM Lyria 3 Stem] Transition musicale : "${prevStem}" -> "${targetStemId}" (${modeLabelFR})`,
+        `[LLM Lyria 3 Stem] Musical transition: "${prevStem}" -> "${targetStemId}" (${this.adaptiveState.modeLabelFR})`,
         {
           fromStem: prevStem,
           toStem: targetStemId,
@@ -1176,29 +1527,10 @@ export class SoundManager {
       this._ensureActiveStemPlaying();
     }
 
-    this.adaptiveState = {
-      stemId: targetStemId,
-      modeLabelFR,
-      shortStatusFR,
-      bpm: targetBpm,
-      hpRatio,
-      isLowHp,
-      isCriticalHp,
-      isGameOver,
-      inCombat,
-      nearbyEnemyCount,
-      dominantClade,
-      dominantSpecies,
-      hasMutantNearby,
-      dragonWrathActive: fightingDragon,
-      activeElements,
-      isTutorialDialogue,
-    };
-
-    // 4. Crossfade fluide des volumes HTMLAudio + Ducking (-12dB) pendant les voix TTS
+    // 4. Smooth HTMLAudio stem crossfade + -12dB ducking during TTS voiceovers + musicVolume scaling
     this._updateStemCrossfades(state.isModalPaused);
 
-    // 5. Battement de cœur sub-bass WebAudio si PV faibles (< 45%), mais PAS pendant le Requiem de Game Over
+    // 5. Sub-bass WebAudio heartbeat when HP < 45% (suppressed during Game Over Requiem)
     if (isLowHp && !isGameOver && !this.muted) {
       const heartbeatIntervalMs = isCriticalHp ? 460 : 760;
       if (nowMs - this._lastHeartbeatMs >= heartbeatIntervalMs) {
@@ -1207,14 +1539,14 @@ export class SoundManager {
       }
     }
 
-    // 6. Texture harmonique élémentaire WebAudio temps réel (toutes les ~1.6s si élément actif et hors Game Over)
+    // 6. Real-time WebAudio elemental harmonic texture pulse (~1.6s interval when element active)
     if (activeElements.length > 0 && !isGameOver && !this.muted && nowMs - this._lastElementalPulseMs >= 1650) {
       this._lastElementalPulseMs = nowMs;
       const chosenEl = activeElements[Math.floor(nowMs / 1650) % activeElements.length];
       this._playElementalTexturePulse(chosenEl, inCombat);
     }
 
-    // 7. Mise à jour périodique des `weightedPrompts` pour Lyria Realtime (`models/lyria-realtime-exp`)
+    // 7. Periodic `weightedPrompts` update for Lyria Realtime (`models/lyria-realtime-exp`)
     if (nowMs - this._lastStateEvalMs >= 1500) {
       this._lastStateEvalMs = nowMs;
       const weightedPrompts = this._buildLyriaWeightedPrompts();
@@ -1245,7 +1577,7 @@ export class SoundManager {
   }
 
   /**
-   * Construit le vecteur de prompts pondérés (`weightedPrompts`) envoyé à `models/lyria-realtime-exp`.
+   * Builds the `weightedPrompts` vector sent to `models/lyria-realtime-exp`.
    * @returns {Array<{text: string, weight: number}>}
    * @private
    */
@@ -1266,14 +1598,14 @@ export class SoundManager {
 
     const prompts = [];
 
-    // Couche de base selon l'état (Tutoriel / Paix / Combat / Boss)
+    // Base layer according to state (Tutorial / Peace / Combat / Boss)
     const baseStem = LYRIA_MUSIC_STEMS[s.stemId] || LYRIA_MUSIC_STEMS.peace;
     prompts.push({
       text: baseStem.prompt,
       weight: this.isVoiceSpeaking ? 0.45 : 1.0,
     });
 
-    // Couche Santé du Joueur (PV bas / critiques)
+    // Player Health layer (Low / Critical HP)
     if (s.isCriticalHp) {
       prompts.push({
         text: 'Critical Low Health, urgent survival heartbeat sub-bass, high tension 142 bpm',
@@ -1286,7 +1618,7 @@ export class SoundManager {
       });
     }
 
-    // Couche Espèce / Clade combattu
+    // Enemy Species / Clade layer
     if (s.dragonWrathActive) {
       prompts.push({
         text: 'Sovereign Dragon Wrath, apocalyptic volcanic choir, roaring brass and war drums',
@@ -1309,7 +1641,7 @@ export class SoundManager {
       });
     }
 
-    // Couches Élémentaires actives (Monstres + Sorts du Joueur)
+    // Active Elemental layers (Monsters + Player Spells)
     for (const elId of s.activeElements) {
       const elMeta = ELEMENT_SIGNATURES[elId];
       if (elMeta) {
@@ -1324,8 +1656,8 @@ export class SoundManager {
   }
 
   /**
-   * Effectue le fondu enchaîné (crossfade) entre les 5 pistes MP3 Lyria et applique le ducking `-12 dB`
-   * lorsqu'une voix française Gemini TTS est en train de parler.
+   * Crossfades between the 5 Lyria MP3 stems, applies `-12 dB` ducking while a Gemini TTS voice
+   * is speaking, and scales by `this.musicVolume`.
    *
    * @param {boolean} [isModalPaused=false]
    * @private
@@ -1348,8 +1680,10 @@ export class SoundManager {
       const audio = this.stemElements[stemId];
       if (!audio) continue;
 
-      const isTarget = stemId === this.activeStemId && !this.muted;
-      const targetVol = isTarget ? meta.baseVolume * duckMult * modalAttenuation : 0;
+      const isTarget = stemId === this.activeStemId && !this.muted && this.musicVolume > 0.001;
+      const targetVol = isTarget
+        ? meta.baseVolume * this.musicVolume * duckMult * modalAttenuation
+        : 0;
       const currentVol = this.stemVolumes[stemId] || 0;
       const nextVol = currentVol + (targetVol - currentVol) * 0.08;
       this.stemVolumes[stemId] = nextVol;
@@ -1371,15 +1705,28 @@ export class SoundManager {
   }
 
   /**
-   * Retourne l'état complet de la musique adaptative Lyria et des voix TTS pour l'affichage HUD.
+   * Returns complete adaptive music & TTS telemetry for HUD and Settings modal display.
    * @returns {Object}
    */
   getMusicTelemetryForHUD() {
     const voiceEntry = this.resolveVoiceEntry(this.currentVoiceKey);
+    const stemMeta = LYRIA_MUSIC_STEMS[this.activeStemId];
+    const activeTrackTitle = stemMeta
+      ? this.language === 'fr'
+        ? stemMeta.titleFR
+        : stemMeta.titleEN
+      : this.language === 'fr'
+      ? 'Sanctuaire'
+      : 'Sanctuary';
+
     return {
       muted: this.muted,
+      language: this.language,
+      musicVolume: this.musicVolume,
+      voiceVolume: this.voiceVolume,
+      sfxVolume: this.sfxVolume,
       activeStemId: this.activeStemId,
-      activeTrackTitle: LYRIA_MUSIC_STEMS[this.activeStemId]?.title || 'Sanctuaire',
+      activeTrackTitle,
       modeLabelFR: this.adaptiveState.modeLabelFR,
       shortStatusFR: this.adaptiveState.shortStatusFR,
       bpm: this.adaptiveState.bpm,
@@ -1401,15 +1748,15 @@ export class SoundManager {
   }
 
   /**
-   * Bascule l'état muet (`Mute / Unmute`) de l'ensemble du moteur audio.
-   * @returns {boolean} Nouvel état `muted`.
+   * Toggles master mute (`Mute / Unmute`).
+   * @returns {boolean} New `muted` state.
    */
   toggleMute() {
     return this.setMuted(!this.muted);
   }
 
   /**
-   * Définit explicitement l'état muet (`muted`).
+   * Explicitly sets master mute (`muted`).
    * @param {boolean} muted
    * @returns {boolean}
    */
@@ -1431,8 +1778,118 @@ export class SoundManager {
       this._ensureAudioContext();
       this._ensureActiveStemPlaying();
     }
-    logger.info('AUDIO', this.muted ? 'Audio mis en sourdine (Mute)' : 'Audio réactivé (Unmute)');
+    this._refreshLocalizedAdaptiveLabels();
+    logger.info('AUDIO', this.muted ? 'Audio Muted' : 'Audio Unmuted');
     return this.muted;
+  }
+
+  /**
+   * Sets the Lyria 3 music volume multiplier (`0.0` to `1.0`).
+   * @param {number} val0to1
+   * @returns {number}
+   */
+  setMusicVolume(val0to1) {
+    const clamped = Math.max(0, Math.min(1, Number(val0to1)));
+    this.musicVolume = Number.isFinite(clamped) ? clamped : 1.0;
+
+    if (this.elementalLayerGain && this.ctx) {
+      this.elementalLayerGain.gain.setValueAtTime(0.16 * this.musicVolume, this.ctx.currentTime);
+    }
+
+    // Immediately reflect on active stem volume
+    const activeMeta = LYRIA_MUSIC_STEMS[this.activeStemId];
+    const activeAudio = this.stemElements[this.activeStemId];
+    if (activeMeta && activeAudio && !this.muted) {
+      const duckMult = this.isVoiceSpeaking ? 0.22 : 1.0;
+      const targetVol = activeMeta.baseVolume * this.musicVolume * duckMult;
+      this.stemVolumes[this.activeStemId] = targetVol;
+      try {
+        activeAudio.volume = Math.max(0, Math.min(1, targetVol));
+        if (this.musicVolume <= 0.001 && !activeAudio.paused) {
+          activeAudio.pause();
+        } else if (this.musicVolume > 0.001 && activeAudio.paused && this.audioUnlocked) {
+          activeAudio.play().catch(() => {});
+        }
+      } catch (_err) {
+        // Ignore
+      }
+    }
+
+    logger.info('AUDIO', `Music volume set to ${Math.round(this.musicVolume * 100)}%`, {
+      musicVolume: this.musicVolume,
+    });
+    return this.musicVolume;
+  }
+
+  /**
+   * Sets the Gemini TTS voiceover volume multiplier (`0.0` to `1.0`).
+   * @param {number} val0to1
+   * @returns {number}
+   */
+  setVoiceVolume(val0to1) {
+    const clamped = Math.max(0, Math.min(1, Number(val0to1)));
+    this.voiceVolume = Number.isFinite(clamped) ? clamped : 1.0;
+
+    if (this.activeVoiceAudio) {
+      try {
+        this.activeVoiceAudio.volume = Math.max(0, Math.min(1, 0.96 * this.voiceVolume));
+      } catch (_err) {
+        // Ignore
+      }
+    }
+
+    logger.info('AUDIO', `Voiceover volume set to ${Math.round(this.voiceVolume * 100)}%`, {
+      voiceVolume: this.voiceVolume,
+    });
+    return this.voiceVolume;
+  }
+
+  /**
+   * Sets the procedural WebAudio Combat & World SFX volume multiplier (`0.0` to `1.0`).
+   * @param {number} val0to1
+   * @returns {number}
+   */
+  setSfxVolume(val0to1) {
+    const clamped = Math.max(0, Math.min(1, Number(val0to1)));
+    this.sfxVolume = Number.isFinite(clamped) ? clamped : 1.0;
+
+    if (this.sfxGain && this.ctx) {
+      this.sfxGain.gain.setValueAtTime(0.9 * this.sfxVolume, this.ctx.currentTime);
+    }
+
+    logger.info('AUDIO', `SFX volume set to ${Math.round(this.sfxVolume * 100)}%`, {
+      sfxVolume: this.sfxVolume,
+    });
+    return this.sfxVolume;
+  }
+
+  /**
+   * Updates multiple audio settings at once (`{ muted, language, musicVolume, voiceVolume, sfxVolume }`).
+   * @param {Object} [cfg={}]
+   * @returns {Object} Updated audio settings snapshot.
+   */
+  setAudioSettings(cfg = {}) {
+    if (!cfg || typeof cfg !== 'object') return this.getAudioSettings();
+    if (typeof cfg.muted === 'boolean') this.setMuted(cfg.muted);
+    if (typeof cfg.musicVolume === 'number') this.setMusicVolume(cfg.musicVolume);
+    if (typeof cfg.voiceVolume === 'number') this.setVoiceVolume(cfg.voiceVolume);
+    if (typeof cfg.sfxVolume === 'number') this.setSfxVolume(cfg.sfxVolume);
+    if (typeof cfg.language === 'string') this.setLanguage(cfg.language);
+    return this.getAudioSettings();
+  }
+
+  /**
+   * Returns the current audio settings snapshot for the Settings modal (`⚙️ Settings [O]`).
+   * @returns {{ muted: boolean, language: 'en'|'fr', musicVolume: number, voiceVolume: number, sfxVolume: number }}
+   */
+  getAudioSettings() {
+    return {
+      muted: this.muted,
+      language: this.language,
+      musicVolume: this.musicVolume,
+      voiceVolume: this.voiceVolume,
+      sfxVolume: this.sfxVolume,
+    };
   }
 
   // ============================================================================
@@ -1882,11 +2339,11 @@ export class SoundManager {
   }
 
   /**
-   * SFX + Musique Lyria + Voix TTS : Déclenche le Requiem de Game Over (`playGameOverRequiem`) —
-   * bascule immédiatement sur `lyria_gameover_requiem.mp3` (64 BPM), joue un glas funèbre solennel
-   * en Ré mineur (cloche grave + violoncelle synthétisé WebAudio) et lance la voix d'Aldric (`alert_gameover_requiem.wav`).
+   * SFX + Lyria Music + TTS Voice: Triggers the Game Over Requiem (`playGameOverRequiem`) —
+   * immediately switches to `lyria_gameover_requiem.mp3` (64 BPM), plays a solemn D-minor funeral bell +
+   * synthesized cello chord, and plays Aldric's voiceover (`alert_gameover_requiem.wav`) in the active language (`'en'` or `'fr'`).
    *
-   * @param {boolean} [playVoice=true] - Si false, ne lance pas la voix française TTS.
+   * @param {boolean} [playVoice=true] - If false, skips playing the TTS voiceover.
    */
   playGameOverRequiem(playVoice = true) {
     const prevStem = this.activeStemId;
@@ -1894,26 +2351,24 @@ export class SoundManager {
     this.adaptiveState.isGameOver = true;
     this.adaptiveState.stemId = 'gameover';
     this.adaptiveState.bpm = 64;
-    this.adaptiveState.modeLabelFR = '🕯️ Requiem des Cendres — Game Over (64 BPM)';
-    this.adaptiveState.shortStatusFR = this.muted
-      ? '🔇 Audio Muet'
-      : '🔊 Lyria : 🕯️ Requiem des Cendres — Game Over (64 BPM)';
+    this._refreshLocalizedAdaptiveLabels();
 
     logger.info(
       'AUDIO',
-      `[LLM Lyria 3 Stem] Transition Game Over Requiem : "${prevStem}" -> "gameover" (64 BPM)`,
+      `[LLM Lyria 3 Stem] Transition Game Over Requiem: "${prevStem}" -> "gameover" (64 BPM)`,
       {
         fromStem: prevStem,
         toStem: 'gameover',
         trackUrl: LYRIA_MUSIC_STEMS.gameover.url,
         bpm: 64,
+        language: this.language,
       }
     );
 
     this._ensureActiveStemPlaying();
     this._updateStemCrossfades(true);
 
-    // Mise à jour immédiate de Lyria Realtime (`models/lyria-realtime-exp`)
+    // Immediate update for Lyria Realtime (`models/lyria-realtime-exp`)
     this.lyriaRealtime.sendWeightedPrompts(
       [
         {
@@ -1934,7 +2389,7 @@ export class SoundManager {
       true
     );
 
-    // Glas funèbre en Ré mineur (D2=73.42, A2=110, D3=146.83, F3=174.61, A3=220)
+    // D-Minor funeral chord (D2=73.42, A2=110, D3=146.83, F3=174.61, A3=220)
     const dMinorRequiem = [73.42, 110.0, 146.83, 174.61, 220.0];
     dMinorRequiem.forEach((freq, idx) => {
       this._playTone('triangle', freq, freq * 0.985, 0.85, 0.20, idx * 0.09);
@@ -1947,9 +2402,8 @@ export class SoundManager {
   }
 
   /**
-   * SFX : Grâce Temporaire du Sanctuaire (`playReviveGrace`) lorsque le joueur choisit
-   * l'option « ✨ Continuer quand même » depuis l'écran de Game Over.
-   * Interrompt le Requiem, repasse sur la piste `peace` et joue un arpège de harpe dorée ascendant.
+   * SFX: Sanctuary's Grace (`playReviveGrace`) when the player chooses to continue from the Game Over screen.
+   * Stops the Requiem, returns to `peace` stem, and plays an ascending golden harp arpeggio.
    */
   playReviveGrace() {
     this.stopVoice();
@@ -1957,15 +2411,12 @@ export class SoundManager {
     this.activeStemId = 'peace';
     this.adaptiveState.stemId = 'peace';
     this.adaptiveState.bpm = 92;
-    this.adaptiveState.modeLabelFR = '🌿 Paix du Bastion (92 BPM)';
-    this.adaptiveState.shortStatusFR = this.muted
-      ? '🔇 Audio Muet'
-      : '🔊 Lyria : 🌿 Paix du Bastion (92 BPM)';
+    this._refreshLocalizedAdaptiveLabels();
 
     this._ensureActiveStemPlaying();
     this._updateStemCrossfades(false);
 
-    // Arpège céleste de résurrection (Ré Majeur lumineux)
+    // Ascending celestial harp arpeggio (D Major)
     const graceNotes = [293.66, 369.99, 440.0, 587.33, 739.99, 880.0, 1174.66];
     graceNotes.forEach((freq, idx) => {
       this._playTone('sine', freq, freq, 0.36, 0.20, idx * 0.055);
@@ -1974,9 +2425,8 @@ export class SoundManager {
   }
 
   /**
-   * SFX : Nouvelle Run Roguelike (`playNewRunReset`) lorsque le joueur choisit
-   * « 🔄 Repartir à Zéro (Niv. 1, Île #1) » depuis l'écran de Game Over.
-   * Interrompt le Requiem, repasse sur la piste `peace` et sonne le cor d'expédition runique.
+   * SFX: New Roguelike Run (`playNewRunReset`) when the player restarts from Level 1, Island #1.
+   * Stops the Requiem, returns to `peace` stem, and sounds the runic expedition horn.
    */
   playNewRunReset() {
     this.stopVoice();
@@ -1984,15 +2434,12 @@ export class SoundManager {
     this.activeStemId = 'peace';
     this.adaptiveState.stemId = 'peace';
     this.adaptiveState.bpm = 92;
-    this.adaptiveState.modeLabelFR = '🌿 Paix du Bastion (92 BPM)';
-    this.adaptiveState.shortStatusFR = this.muted
-      ? '🔇 Audio Muet'
-      : '🔊 Lyria : 🌿 Paix du Bastion (92 BPM)';
+    this._refreshLocalizedAdaptiveLabels();
 
     this._ensureActiveStemPlaying();
     this._updateStemCrossfades(false);
 
-    // Cor d'expédition runique (quinte héroïque ascendante : Sol3 -> Ré4 -> Sol4)
+    // Runic expedition horn (ascending heroic fifth: G3 -> D4 -> G4)
     this._playTone('sawtooth', 196.0, 196.0, 0.24, 0.22, 0);
     this._playTone('sawtooth', 293.66, 293.66, 0.26, 0.24, 0.16);
     this._playTone('triangle', 392.0, 392.0, 0.45, 0.26, 0.32);
