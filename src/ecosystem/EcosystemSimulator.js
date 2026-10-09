@@ -127,10 +127,25 @@ export class EcosystemSimulator {
     this.discoveredMutations = new Set();
 
     /** @type {number} */
+    this.generation = 1;
+
+    /** @type {number} */
+    this.tickCount = 0;
+
+    /** @type {number} */
     this.sharksLandedCount = 0;
 
     /** @type {number} */
+    this.sharkLandingsCount = 0;
+
+    /** @type {number} */
     this.molesEruptedCount = 0;
+
+    /** @type {number} */
+    this.moleEruptionsCount = 0;
+
+    /** @type {number} */
+    this.preyCrisisCount = 0;
 
     /** @type {boolean} */
     this._hadHerbivores = false;
@@ -141,12 +156,16 @@ export class EcosystemSimulator {
     /** @type {number} */
     this.mutationRateBonus = Number(options.mutationRateBonus ?? Math.max(0, (this.islandNumber - 1) * 0.04));
 
+    /** @type {number} */
+    this.islandMutationBonus = this.mutationRateBonus;
+
     /**
      * Last computed ecosystem summary statistics.
      * @type {object}
      */
     this.lastStats = {
       islandNumber: this.islandNumber,
+      generation: 1,
       totalPopulation: 0,
       adultCount: 0,
       babyCount: 0,
@@ -166,7 +185,90 @@ export class EcosystemSimulator {
       totalBiomass: 0,
     };
 
+    this.seedInitialGrid();
+  }
+
+  /**
+   * Seeds or re-seeds the `24x24` Conway's Game of Life spatial biomass grid.
+   * @returns {Array<object>} Flat array of initialized cells.
+   */
+  seedInitialGrid() {
     this._initGrid();
+    return this.cells;
+  }
+
+  /**
+   * Completely resets the ecosystem simulator back to Generation 1 on Island #1 for a brand-new
+   * Roguelike run (`🔄 Repartir à Zéro — Niv. 1, Île #1`).
+   *
+   * @returns {object} Freshly reset `lastStats`.
+   */
+  resetForNewRoguelikeRun() {
+    this.generation = 1;
+    this.tickNumber = 0;
+    this.tickCount = 0;
+    this.islandNumber = 1;
+    this.mutationRateBonus = 0;
+    this.islandMutationBonus = 0;
+    this.discoveredMutations?.clear?.();
+    this.patientZeroMap?.clear?.();
+    this.sharksLandedCount = 0;
+    this.sharkLandingsCount = 0;
+    this.molesEruptedCount = 0;
+    this.moleEruptionsCount = 0;
+    this.preyCrisisCount = 0;
+    this._hadHerbivores = false;
+    this.seedInitialGrid();
+
+    let totalBiomass = 0;
+    for (const cell of this.cells) {
+      totalBiomass += cell.biomass;
+    }
+
+    this.lastStats = {
+      islandNumber: 1,
+      generation: 1,
+      tickNumber: 0,
+      totalPopulation: 0,
+      adultCount: 0,
+      babyCount: 0,
+      gestationReadyCount: 0,
+      birthsCount: 0,
+      hybridsBorn: 0,
+      newMutationsCount: 0,
+      starvingCount: 0,
+      lonelyCount: 0,
+      optimalCount: 0,
+      activeMutants: 0,
+      activeHybrids: 0,
+      herbivoreCount: 0,
+      preyExtinctionRisk: false,
+      sharksLanded: 0,
+      molesErupted: 0,
+      averageFitness: 1.0,
+      averageGestationTime: 18.0,
+      averageAggressiveness: 0.65,
+      speciesCounts: {
+        goblin: 0,
+        orc: 0,
+        troll: 0,
+        wolf: 0,
+        lion: 0,
+        vulture: 0,
+        dragon: 0,
+        shark: 0,
+        giant_mole: 0,
+        rabbit: 0,
+        deer: 0,
+      },
+      totalBiomass: Math.round(totalBiomass),
+    };
+
+    logger.info(
+      'ECO',
+      'Réinitialisation complète de l’écosystème pour une nouvelle run Roguelike (Île #1, Génération 1)'
+    );
+    return this.lastStats;
   }
 
   /**
@@ -179,20 +281,27 @@ export class EcosystemSimulator {
    */
   resetForNextIsland(islandNumber = 1, tierSpec = {}) {
     this.islandNumber = Math.max(1, Math.floor(islandNumber || 1));
+    this.generation = this.islandNumber;
     this.mutationRateBonus =
       typeof tierSpec?.mutationRateBonus === 'number'
         ? tierSpec.mutationRateBonus
         : Math.max(0, (this.islandNumber - 1) * 0.04);
+    this.islandMutationBonus = this.mutationRateBonus;
     this.tickNumber = 0;
+    this.tickCount = 0;
     this.sharksLandedCount = 0;
+    this.sharkLandingsCount = 0;
     this.molesEruptedCount = 0;
+    this.moleEruptionsCount = 0;
+    this.preyCrisisCount = 0;
     this._hadHerbivores = false;
     this.patientZeroMap.clear();
     this.discoveredMutations.clear();
-    this._initGrid();
+    this.seedInitialGrid();
     this.lastStats = {
       ...this.lastStats,
       islandNumber: this.islandNumber,
+      generation: this.generation,
       tickNumber: 0,
       totalPopulation: 0,
       adultCount: 0,
@@ -227,6 +336,7 @@ export class EcosystemSimulator {
    */
   recordSharkLanding(count = 1) {
     this.sharksLandedCount += Math.max(0, count);
+    this.sharkLandingsCount = this.sharksLandedCount;
     this.lastStats.sharksLanded = Math.max(this.lastStats.sharksLanded || 0, this.sharksLandedCount);
   }
 
@@ -236,6 +346,7 @@ export class EcosystemSimulator {
    */
   recordMoleEruption(count = 1) {
     this.molesEruptedCount += Math.max(0, count);
+    this.moleEruptionsCount = this.molesEruptedCount;
     this.lastStats.molesErupted = Math.max(this.lastStats.molesErupted || 0, this.molesEruptedCount);
   }
 
@@ -960,12 +1071,15 @@ export class EcosystemSimulator {
     let landedSharkEntities = 0;
     let moleEntities = 0;
 
+    let maxGeneration = this.generation || 1;
+
     for (const e of liveEnemies) {
       const spId = e.genome?.speciesId || e.speciesId || 'goblin';
       speciesCounts[spId] = (speciesCounts[spId] || 0) + 1;
       fitnessSum += e.genome?.fitnessScore || 1.0;
       gestationSum += e.genome?.genes?.gestationTime ?? e.gestationTime ?? 18;
       aggressivenessSum += e.genome?.genes?.aggressiveness ?? e.aggressiveness ?? 0.65;
+      maxGeneration = Math.max(maxGeneration, e.genome?.generation || 1);
 
       if (
         e.isHerbivore ||
@@ -998,6 +1112,7 @@ export class EcosystemSimulator {
       fitnessSum += b.genome?.fitnessScore || 1.0;
       gestationSum += b.genome?.genes?.gestationTime ?? b.gestationTime ?? 18;
       aggressivenessSum += b.genome?.genes?.aggressiveness ?? b.aggressiveness ?? 0.65;
+      maxGeneration = Math.max(maxGeneration, b.genome?.generation || 1);
 
       if (
         b.clade === 'herbivore' ||
@@ -1024,6 +1139,14 @@ export class EcosystemSimulator {
     const sharksLanded = Math.max(this.sharksLandedCount || 0, landedSharkEntities);
     const molesErupted = Math.max(this.molesEruptedCount || 0, moleEntities);
 
+    this.tickCount = this.tickNumber;
+    this.generation = maxGeneration;
+    this.sharkLandingsCount = sharksLanded;
+    this.moleEruptionsCount = molesErupted;
+    if (preyExtinctionRisk) {
+      this.preyCrisisCount = (this.preyCrisisCount || 0) + 1;
+    }
+
     const averageFitness = totalPop > 0 ? Number((fitnessSum / totalPop).toFixed(3)) : 1.0;
     const averageGestationTime = totalPop > 0 ? Number((gestationSum / totalPop).toFixed(2)) : 18.0;
     const averageAggressiveness =
@@ -1035,7 +1158,10 @@ export class EcosystemSimulator {
     }
 
     this.lastStats = {
+      islandNumber: this.islandNumber,
+      generation: this.generation,
       tickNumber: this.tickNumber,
+      tickCount: this.tickCount,
       totalPopulation: totalPop,
       adultCount,
       babyCount,
