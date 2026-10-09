@@ -963,15 +963,17 @@ export class BlenderModelManager {
       if (bLimbs.rightArm && !animState.isAttacking) bLimbs.rightArm.rotation.x *= 1 - damp;
     }
 
-    // 3. Melee Attack Swing
+    // 3. Melee Attack Swing (forward +Z cleave sweep — never pitches backward to -Z)
     if (bLimbs.rightArm && (animState.isAttacking || animState.attackProgress > 0)) {
       const p =
         animState.attackProgress !== undefined
           ? animState.attackProgress
           : (Math.sin(elapsedTime * 16) + 1) * 0.5;
-      bLimbs.rightArm.rotation.x = -Math.PI * 0.75 + Math.sin(p * Math.PI) * 1.85;
-      bLimbs.rightArm.rotation.z = -Math.sin(p * Math.PI) * 0.35;
+      bLimbs.rightArm.rotation.x = -0.22 + Math.sin(p * Math.PI) * 0.95;
+      bLimbs.rightArm.rotation.y = -Math.cos(p * Math.PI) * 0.55;
+      bLimbs.rightArm.rotation.z = -Math.sin(p * Math.PI) * 0.32;
     } else if (bLimbs.rightArm) {
+      bLimbs.rightArm.rotation.y *= 0.82;
       bLimbs.rightArm.rotation.z *= 0.85;
     }
 

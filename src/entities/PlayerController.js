@@ -264,10 +264,10 @@ export class PlayerController {
       this.mesh.position.set(this.x, this.y, this.z);
       this.scene.add(this.mesh);
 
-      // 1. Animated 3D Sword Cleave Slash Arc
+      // 1. Animated 3D Sword Cleave Slash Arc (oriented toward +Z local forward)
       const arcGeo = new THREE.RingGeometry(1.4, this.cleaveRange, 24, 1, -Math.PI * 0.48, Math.PI * 0.96);
       arcGeo.rotateX(-Math.PI / 2);
-      arcGeo.rotateY(Math.PI / 2);
+      arcGeo.rotateY(-Math.PI / 2);
       const arcMat = new THREE.MeshBasicMaterial({
         color: 0x48dbfb,
         side: THREE.DoubleSide,
@@ -275,11 +275,11 @@ export class PlayerController {
         opacity: 0.0,
       });
       this.slashArcMesh = new THREE.Mesh(arcGeo, arcMat);
-      this.slashArcMesh.position.y = 0.85;
+      this.slashArcMesh.position.set(0, 0.92, 0.35);
       this.slashArcMesh.visible = false;
       this.mesh.add(this.slashArcMesh);
 
-      // 2. 3D Ground Attack Range Ring + Forward Strike Cone
+      // 2. 3D Ground Attack Range Ring + Forward Strike Cone (oriented toward +Z local forward)
       const rangeRingGeo = new THREE.RingGeometry(this.cleaveRange - 0.14, this.cleaveRange, 40);
       rangeRingGeo.rotateX(-Math.PI / 2);
       const rangeRingMat = new THREE.MeshBasicMaterial({
@@ -296,7 +296,7 @@ export class PlayerController {
 
       const coneGeo = new THREE.RingGeometry(0.9, this.cleaveRange - 0.14, 24, 1, -Math.PI * 0.42, Math.PI * 0.84);
       coneGeo.rotateX(-Math.PI / 2);
-      coneGeo.rotateY(Math.PI / 2);
+      coneGeo.rotateY(-Math.PI / 2);
       const coneMat = new THREE.MeshBasicMaterial({
         color: 0xffd166,
         side: THREE.DoubleSide,
@@ -1666,6 +1666,7 @@ export class PlayerController {
         wSpec?.slashColorHex || wSpec?.colorHex || 0x48dbfb
       );
       this.slashArcMesh.scale.setScalar(wSpec?.cleaveRangeMult || 1.0);
+      this.slashArcMesh.rotation.y = 0.28;
     }
 
     if (!enemyManager || typeof enemyManager.getEnemies !== 'function') return 0;
@@ -1698,6 +1699,9 @@ export class PlayerController {
     }
     if (closestInRange) {
       this.facingAngle = Math.atan2(closestInRange.x - this.x, closestInRange.z - this.z);
+      if (this.mesh) {
+        this.mesh.rotation.y = this.facingAngle;
+      }
     }
 
     const forwardX = Math.sin(this.facingAngle);
@@ -2791,8 +2795,10 @@ export class PlayerController {
         const progress = 1 - this.cleaveAnimTimer / 0.28;
         this.slashArcMesh.material.opacity = (1 - progress) * 0.85;
         this.slashArcMesh.scale.setScalar(0.85 + progress * 0.3);
+        this.slashArcMesh.rotation.y = (0.5 - progress) * 0.56;
         if (this.cleaveAnimTimer <= 0) {
           this.slashArcMesh.visible = false;
+          this.slashArcMesh.rotation.y = 0;
         }
       }
     }

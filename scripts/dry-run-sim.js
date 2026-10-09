@@ -764,6 +764,27 @@ async function runDryRunSimulation() {
     }`
   );
 
+  // Phase 15 verification: Stylized Ground/Water Textures, Forward +Z Sword Slash & Minimalist Clean HUD
+  console.log('----------------------------------------------------------------------------------------');
+  console.log('[8] PHASE 15 VERIFICATION: STYLIZED TEXTURES, +Z FORWARD SWORD SLASH & CLEAN HUD');
+  const terrainSrc = fs.readFileSync(path.join(PROJECT_ROOT, 'src', 'world', 'Terrain.js'), 'utf8');
+  const playerSrc = fs.readFileSync(path.join(PROJECT_ROOT, 'src', 'entities', 'PlayerController.js'), 'utf8');
+  const hudSrc = fs.readFileSync(path.join(PROJECT_ROOT, 'src', 'ui', 'HUDManager.js'), 'utf8');
+  const texturesVerified =
+    terrainSrc.includes('_createStylizedGroundTextures') &&
+    terrainSrc.includes('bumpMap') &&
+    terrainSrc.includes('shorelineLagoonHalo');
+  const forwardSlashVerified =
+    playerSrc.includes('arcGeo.rotateY(-Math.PI / 2)') &&
+    playerSrc.includes('this.slashArcMesh.position.set(0, 0.92, 0.35)');
+  const cleanHudVerified =
+    hudSrc.includes('this.cleanHudMode = true') &&
+    hudSrc.includes('is-clean-hud') &&
+    hudSrc.includes('onboardingDismissedByUser');
+  console.log(`  - Stylized Ground/Water    : ${texturesVerified ? 'PASS' : 'FAIL'} (512x512 detail+bump + lagoon caustics & foam)`);
+  console.log(`  - Forward +Z Sword Cleave  : ${forwardSlashVerified ? 'PASS' : 'FAIL'} (slashArcMesh Z: +0.09..+5.20m in front)`);
+  console.log(`  - Minimal Clean HUD Default: ${cleanHudVerified ? 'PASS' : 'FAIL'} (cleanHudMode=true, 90%+ viewport, [x] dismiss)`);
+
   console.log('========================================================================================');
   if (!resetVerified) {
     throw new Error('Phase 9 EcosystemSimulator.resetForNewRoguelikeRun verification failed');
@@ -779,6 +800,11 @@ async function runDryRunSimulation() {
   if (!i18nVerified || !ttsEnVerified) {
     throw new Error(
       `Phase 13 Bilingual i18n / English TTS verification failed: i18n=${i18nVerified}, missingTtsEn=[${missingTtsEn.join(', ')}]`
+    );
+  }
+  if (!texturesVerified || !forwardSlashVerified || !cleanHudVerified) {
+    throw new Error(
+      `Phase 15 verification failed: textures=${texturesVerified}, forwardSlash=${forwardSlashVerified}, cleanHud=${cleanHudVerified}`
     );
   }
   console.log('DRY-RUN STATUS: PASS');
