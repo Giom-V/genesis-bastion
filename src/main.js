@@ -1779,6 +1779,9 @@ export class GenesisBastionGame {
       }
       if (this.enemyManager) {
         this.enemyManager.islandShieldActive = true;
+        if (typeof this.enemyManager.pacifyAllEnemiesWithIslandShield === 'function') {
+          this.enemyManager.pacifyAllEnemiesWithIslandShield();
+        }
       }
     }
 
@@ -1825,6 +1828,9 @@ export class GenesisBastionGame {
 
     if (this.enemyManager) {
       this.enemyManager.islandShieldActive = true;
+      if (typeof this.enemyManager.pacifyAllEnemiesWithIslandShield === 'function') {
+        this.enemyManager.pacifyAllEnemiesWithIslandShield();
+      }
     }
 
     if (this.sound && typeof this.sound.playIslandShieldActivation === 'function') {
@@ -1881,7 +1887,9 @@ export class GenesisBastionGame {
 
     // 3. Transitionner EnemyManager vers la nouvelle île avec escalade de difficulté et meutes fraîches
     if (this.enemyManager) {
-      if (typeof this.enemyManager.resetForNextIsland === 'function') {
+      if (typeof this.enemyManager.startNextIslandEcosystem === 'function') {
+        this.enemyManager.startNextIslandEcosystem(nextIsland);
+      } else if (typeof this.enemyManager.resetForNextIsland === 'function') {
         this.enemyManager.resetForNextIsland(nextIsland);
       } else {
         this.enemyManager.islandNumber = nextIsland;
