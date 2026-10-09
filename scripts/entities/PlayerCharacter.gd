@@ -290,8 +290,8 @@ func _build_visual_hierarchy() -> void:
 
 	slash_arc_mesh = MeshInstance3D.new()
 	var arc_cyl := CylinderMesh.new()
-	arc_cyl.top_radius = cleave_range * 0.88
-	arc_cyl.bottom_radius = cleave_range * 0.88
+	arc_cyl.top_radius = cleave_range * 0.62
+	arc_cyl.bottom_radius = cleave_range * 0.62
 	arc_cyl.height = 0.08
 	arc_cyl.radial_segments = 16
 	slash_arc_mesh.mesh = arc_cyl
@@ -302,7 +302,8 @@ func _build_visual_hierarchy() -> void:
 	slash_mat.emission_energy_multiplier = 2.2
 	slash_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	slash_arc_mesh.material_override = slash_mat
-	slash_arc_mesh.position = Vector3(0.0, 0.95, 1.2)
+	slash_arc_mesh.position = Vector3(0.0, 0.95, 2.35)
+	slash_arc_mesh.scale = Vector3(1.12, 1.0, 0.42)
 	slash_arc_mesh.visible = false
 	visual_root.add_child(slash_arc_mesh)
 
@@ -654,17 +655,35 @@ func _animate_hero_visuals(delta: float) -> void:
 			if proc_left_arm != null:
 				proc_left_arm.rotation.x = lerpf(proc_left_arm.rotation.x, 0.0, delta * 10.0)
 
+	var p := clampf(1.0 - (cleave_anim_timer / 0.24), 0.0, 1.0) if cleave_anim_timer > 0.0 else 0.0
 	if proc_right_arm != null:
 		if cleave_anim_timer > 0.0:
-			var p := 1.0 - (cleave_anim_timer / 0.24)
-			proc_right_arm.rotation.x = -1.2 + sin(p * PI) * 2.1
+			proc_right_arm.rotation.x = -0.22 + sin(p * PI) * 0.95
+			proc_right_arm.rotation.y = -cos(p * PI) * 0.55
+			proc_right_arm.rotation.z = -sin(p * PI) * 0.32
 		else:
 			proc_right_arm.rotation.x = lerpf(proc_right_arm.rotation.x, 0.0, delta * 10.0)
+			proc_right_arm.rotation.y = lerpf(proc_right_arm.rotation.y, 0.0, delta * 10.0)
+			proc_right_arm.rotation.z = lerpf(proc_right_arm.rotation.z, 0.0, delta * 10.0)
+
+	if blender_model_node != null:
+		var b_right_arm := blender_model_node.find_child("RightArm", true, false) as Node3D
+		if b_right_arm != null:
+			if cleave_anim_timer > 0.0:
+				b_right_arm.rotation.x = -0.22 + sin(p * PI) * 0.95
+				b_right_arm.rotation.y = -cos(p * PI) * 0.55
+				b_right_arm.rotation.z = -sin(p * PI) * 0.32
+			else:
+				b_right_arm.rotation.x = lerpf(b_right_arm.rotation.x, sin(phase) * 0.45 if is_moving else 0.0, delta * 10.0)
+				b_right_arm.rotation.y = lerpf(b_right_arm.rotation.y, 0.0, delta * 10.0)
+				b_right_arm.rotation.z = lerpf(b_right_arm.rotation.z, 0.0, delta * 10.0)
 
 	if slash_arc_mesh != null:
 		slash_arc_mesh.visible = cleave_anim_timer > 0.0
 		if slash_arc_mesh.visible:
-			slash_arc_mesh.rotation.y += delta * 14.0
+			slash_arc_mesh.rotation.y = (0.5 - p) * 0.56
+		else:
+			slash_arc_mesh.rotation.y = 0.0
 
 	if spell_vfx_ring != null:
 		if spell_vfx_timer > 0.0:
@@ -801,7 +820,7 @@ func _apply_weapon_visuals() -> void:
 		smat.emission = col
 
 
-## Performs a wide 3D Cleave Attack (`Left Click` / `Space` or Auto-Melee).
+## Performs a wide 3D Cleave Attack (`Left Click` / `Space` or Auto-Melee) oriented along +Z local forward.
 func perform_melee_cleave() -> int:
 	if is_dead or cleave_cooldown > 0.0:
 		return 0
@@ -812,6 +831,17 @@ func perform_melee_cleave() -> int:
 
 	if audio_ref != null and audio_ref.has_method("play_sfx"):
 		audio_ref.call("play_sfx", "sword_slash")
+
+	if enemy_manager_ref != null and enemy_manager_ref.has_method("find_nearest_hostile"):
+		var near_target: Dictionary = enemy_manager_ref.call("find_nearest_hostile", global_position, cleave_range + 0.8, false, false)
+		if not near_target.is_empty() and near_target.has("position"):
+			var t_pos: Vector3 = near_target.get("position", global_position)
+			var dx := t_pos.x - global_position.x
+			var dz := t_pos.z - global_position.z
+			if dx * dx + dz * dz > 0.01:
+				facing_angle = atan2(dx, dz)
+				if visual_root != null:
+					visual_root.rotation.y = facing_angle
 
 	var forward_dir := Vector3(sin(facing_angle), 0.0, cos(facing_angle)).normalized()
 	emit_signal("melee_attacked", global_position, forward_dir)
