@@ -166,10 +166,22 @@ Afin d'éviter toute explosion exponentielle des multiplicateurs de dégâts en 
 
 ---
 
-## 9. Sécurité & Qualité Logicielle
+## 9. Architecture Bilingue Temps Réel (`EN` par défaut / `FR` en 2nd choix) & Menu Settings (`v0.13.0`)
+
+- **Moteur d'Internationalisation (`src/utils/i18n.js`)** :
+  - Langue par défaut : **`'en'` (`🇬🇧 English`)**, second choix : **`'fr'` (`🇫🇷 Français`)**.
+  - Expose `getLanguage()`, `setLanguage(lang)`, `onLanguageChange(cb)`, `tr(enText, frText)`, `translateString(str)` et `translateDOMTree(rootEl)`.
+  - Tous les modules de données narratives (`OnboardingSteps.js`, `BaseAndQuestsDesign.js`, `BastionProgressionConfig.js`, `RoguelikeAbilitiesAndMastery.js`, `CharacterPortraits.js`) évaluent dynamiquement la langue active afin que tout changement dans **`⚙️ Settings [O]`** se répercute immédiatement sans rechargement.
+- **Catalogue Vocal Bilingue Gemini TTS (`src/audio/SoundManager.js`)** :
+  - Chaque entrée de `TTS_VOICE_CATALOG` associe `urlEN` (`public/assets/audio/tts/en/<key>.wav`, `textEN`, `roleEN`) et `urlFR` (`public/assets/audio/tts/<key>.wav`, `textFR`, `roleFR`) avec sélection automatique selon `this.language` et contrôles de volume séparés (`musicVolume`, `voiceVolume`, `sfxVolume`).
+
+---
+
+## 10. Sécurité & Qualité Logicielle
 
 - **Politique de Sécurité du Contenu (CSP)** : Définie dans `index.html`, interdisant tout script externe non approuvé.
 - **Zéro Injection DOM** : Aucune utilisation de `innerHTML`, `outerHTML`, `insertAdjacentHTML` ou `document.write`. Toute l'interface est construite via `document.createElement` et `textContent`.
 - **Isolation Réseau Locale** : `vite.config.js` et `package.json` servent l'application de manière sécurisée avec validation stricte.
 - **Traçabilité Complète** : Tous les événements génétiques, écologiques et tactiques sont enregistrés via `src/utils/logger.js` et vérifiables en mode `--dry-run`.
+
 
