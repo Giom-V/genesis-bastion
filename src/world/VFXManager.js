@@ -727,6 +727,14 @@ export class VFXManager {
       case 'species_wrath':
         this.spawnWrathEffect(originPos, options?.colorHex || 0xff2200);
         break;
+      case 'beach_landing_splash':
+      case 'shark_landing':
+        this.spawnBeachLandingSplash(originPos, options?.colorHex || 0x1ee6ff);
+        break;
+      case 'burrow_eruption':
+      case 'mole_eruption':
+        this.spawnBurrowEruption(originPos, options?.colorHex || 0x8c6239);
+        break;
       default:
         this.spawnHitEffect(originPos, options?.colorHex || 0x44ddff);
         break;
@@ -743,6 +751,126 @@ export class VFXManager {
   spawnWrathEffect(pos, colorHex = 0xff2200) {
     this.spawnPyroNova(pos, { radius: 12.5, colorHex });
     this.spawnBirthEffect(pos, true, true, colorHex);
+  }
+
+  /**
+   * Spawns a high-energy oceanic surf splash, foam shockwaves, and amphibious DNA spiral
+   * when an Ocean Shark (`shark`) crawls onto the beach and unfolds its terrestrial legs.
+   *
+   * @param {THREE.Vector3|{x: number, y?: number, z: number}} pos - Shoreline landing position.
+   * @param {number|string} [colorHex=0x1ee6ff] - Surf splash color.
+   */
+  spawnBeachLandingSplash(pos, colorHex = 0x1ee6ff) {
+    const p = this._resolvePos(pos, 0.2);
+
+    this._spawnShockRing(p, colorHex, 0.5, 5.8, 0.62);
+    this._spawnShockRing({ x: p.x, y: p.y + 0.15, z: p.z }, 0xffffff, 0.3, 4.4, 0.48);
+    this._spawnShockRing({ x: p.x, y: p.y + 0.3, z: p.z }, 0x38f8b2, 0.4, 6.6, 0.72);
+
+    const dropCount = 20;
+    for (let i = 0; i < dropCount; i++) {
+      const angle = (i / dropCount) * Math.PI * 2 + (Math.random() - 0.5) * 0.3;
+      const speed = 3.2 + Math.random() * 6.4;
+      const vy = 4.5 + Math.random() * 6.5;
+
+      const mat = new THREE.MeshBasicMaterial({
+        color: new THREE.Color(i % 3 === 0 ? 0xffffff : colorHex),
+        transparent: true,
+        opacity: 0.95,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+      });
+      const mesh = new THREE.Mesh(this._helixNodeGeo, mat);
+      mesh.position.set(p.x, p.y + 0.3, p.z);
+      this.vfxGroup.add(mesh);
+
+      this.activeParticles.push({
+        mesh,
+        mat,
+        vx: Math.cos(angle) * speed,
+        vy,
+        vz: Math.sin(angle) * speed,
+        gravity: -14.5,
+        drag: 1.6,
+        age: 0,
+        duration: 0.55 + Math.random() * 0.3,
+        initialScale: 1.0 + Math.random() * 0.8,
+      });
+    }
+
+    // Amphibious mutation DNA helix
+    this.spawnBirthEffect(p, true, false, colorHex);
+  }
+
+  /**
+   * Spawns a subterranean earth-shattering eruption of 3D rock spikes, dirt clods, and
+   * tectonic rings when a Giant Mole (`giant_mole`) breaches the surface from underground.
+   *
+   * @param {THREE.Vector3|{x: number, y?: number, z: number}} pos - Surface breach position.
+   * @param {number|string} [colorHex=0x8c6239] - Earth/rock color.
+   */
+  spawnBurrowEruption(pos, colorHex = 0x8c6239) {
+    const p = this._resolvePos(pos, 1.8);
+
+    this._spawnShockRing(p, colorHex, 0.5, 5.6, 0.58);
+    this._spawnShockRing({ x: p.x, y: p.y + 0.15, z: p.z }, 0xe6a145, 0.4, 4.5, 0.48);
+
+    // Crater rim of 10 erupting 3D stone/earth spikes
+    const spikeCount = 10;
+    for (let i = 0; i < spikeCount; i++) {
+      const angle = (i / spikeCount) * Math.PI * 2 + (Math.random() - 0.5) * 0.25;
+      const dist = 1.4 + Math.random() * 2.2;
+      const mat = new THREE.MeshBasicMaterial({
+        color: new THREE.Color(i % 2 === 0 ? colorHex : 0x5e4b44),
+        transparent: true,
+        opacity: 0.96,
+      });
+      const spike = new THREE.Mesh(this._spikeGeo, mat);
+      spike.position.set(p.x + Math.cos(angle) * dist, p.y - 0.7, p.z + Math.sin(angle) * dist);
+      spike.rotation.set((Math.random() - 0.5) * 0.4, Math.random() * Math.PI * 2, (Math.random() - 0.5) * 0.4);
+      this.vfxGroup.add(spike);
+
+      this.activeParticles.push({
+        mesh: spike,
+        mat,
+        vx: Math.cos(angle) * 1.4,
+        vy: 5.5,
+        vz: Math.sin(angle) * 1.4,
+        gravity: -14.5,
+        drag: 2.8,
+        age: 0,
+        duration: 0.62,
+        initialScale: 0.95 + Math.random() * 0.5,
+      });
+    }
+
+    // Flying dirt clods & subterranean mineral sparks
+    const clodCount = 16;
+    for (let i = 0; i < clodCount; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const speed = 2.5 + Math.random() * 5.8;
+      const mat = new THREE.MeshBasicMaterial({
+        color: new THREE.Color(i % 4 === 0 ? 0xffbb44 : colorHex),
+        transparent: true,
+        opacity: 0.95,
+      });
+      const mesh = new THREE.Mesh(this._sparkGeo, mat);
+      mesh.position.set(p.x, p.y + 0.35, p.z);
+      this.vfxGroup.add(mesh);
+
+      this.activeParticles.push({
+        mesh,
+        mat,
+        vx: Math.cos(angle) * speed,
+        vy: 4.8 + Math.random() * 6.2,
+        vz: Math.sin(angle) * speed,
+        gravity: -16.0,
+        drag: 1.5,
+        age: 0,
+        duration: 0.55 + Math.random() * 0.3,
+        initialScale: 1.15 + Math.random() * 0.7,
+      });
+    }
   }
 
   /**
