@@ -85,7 +85,10 @@ genesis-bastion/
     │   ├── EnemyManager.js           # IA ennemie, croissance Bébé (0.5x) -> Adulte (1.0x), famine et éradication
     │   ├── PlayerController.js       # Contrôles action-roguelike du joueur, combat, récolte et améliorations
     │   └── BastionAndNPCs.js         # Sanctuaire central, cages de survivants, Gardes, Récolteurs et IA Éclaireurs
+    ├── audio/
+    │   └── SoundManager.js           # Musique adaptative Lyria Realtime + 4 stems Lyria 3, voix Gemini TTS FR & SFX WebAudio
     ├── ui/
+    │   ├── CharacterPortraitsConfig.js # 8 portraits Nano Banana (Aldric, Kaelen, Troll de Feu, Dragon) & animations Simagrées
     │   ├── HUDManager.js             # Interface tactique DOM (zéro innerHTML), Alertes Éclaireurs, Codex Phylogénétique
     │   └── Minimap.js                # Radar 2D temps réel (biomasse Conway, cônes de vue Éclaireurs, balises Mutants)
     └── styles/
