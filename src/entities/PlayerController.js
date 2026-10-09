@@ -49,6 +49,7 @@ import {
 } from '../ecosystem/BaseAndQuestsDesign.js';
 import { dist2D, clamp } from '../utils/math.js';
 import { logger } from '../utils/logger.js';
+import { tr } from '../utils/i18n.js';
 
 export { ELEMENTAL_WEAPONS_CATALOG as ELEMENTAL_WEAPONS, ELEMENTAL_WEAPONS_BY_ID, getElementalWeaponSpec };
 
@@ -586,7 +587,7 @@ export class PlayerController {
           keyLabel: `${i + 1}`,
           empty: true,
           id: null,
-          name: 'Emplacement Vide',
+          name: tr('Empty Slot', 'Emplacement Vide'),
           icon: '➕',
           level: 0,
           maxLevel: 5,
@@ -1970,20 +1971,27 @@ export class PlayerController {
       this.hp = 0;
       this.isDead = true;
       this.deathCount = (this.deathCount || 0) + 1;
+      const fallbackKiller = tr('Wild Creature', 'Créature Sauvage');
       const killerName = attackerEnemy
         ? attackerEnemy.genome?.speciesName ||
           attackerEnemy.speciesName ||
           CONFIG.SPECIES?.[attackerEnemy.genome?.speciesId]?.name ||
-          'Créature Sauvage'
-        : 'Créature Sauvage';
+          fallbackKiller
+        : fallbackKiller;
       this.lastDeathReason = 'hero_slain';
       this.lastKillerName = killerName;
 
-      logger.alert(`💀 GAME OVER : Le Gardien est tombé face à [${killerName}] !`, {
-        killerName,
-        level: this.level,
-        deathCount: this.deathCount,
-      });
+      logger.alert(
+        tr(
+          `💀 GAME OVER: The Guardian has fallen to [${killerName}]!`,
+          `💀 GAME OVER : Le Gardien est tombé face à [${killerName}] !`
+        ),
+        {
+          killerName,
+          level: this.level,
+          deathCount: this.deathCount,
+        }
+      );
 
       if (typeof this.onPlayerDeath === 'function') {
         this.onPlayerDeath({
@@ -2383,10 +2391,14 @@ export class PlayerController {
       if (relic) {
         const nextCount = (bastionAndNpcs.collectedRelicFragments || 0) + 1;
         const maxCount = bastionAndNpcs.maxRelicFragments || 3;
+        const relicNameEN = relic.nameEN || relic.name;
         this.nearestPrompt = {
           type: 'relic',
           keyHint: '[E]',
-          label: `🏛️ [E] Collecter ${relic.name} (${nextCount}/${maxCount} Reliques d'Éden)`,
+          label: tr(
+            `🏛️ [E] Collect ${relicNameEN} (${nextCount}/${maxCount} Relics of Eden)`,
+            `🏛️ [E] Collecter ${relic.name} (${nextCount}/${maxCount} Reliques d'Éden)`
+          ),
           worldPos: new THREE.Vector3(relic.x, (relic.y || 2) + 3.2, relic.z),
           entity: relic,
           dist: dist2D(this.x, this.z, relic.x, relic.z),
@@ -2404,12 +2416,20 @@ export class PlayerController {
       if (shrine) {
         const wSpec = getElementalWeaponSpec(shrine.weaponId);
         const isAlreadyEquipped = this.equippedWeaponId === shrine.weaponId;
+        const wNameEN = wSpec.nameEN || wSpec.name;
+        const wPassiveEN = wSpec.passiveSummaryEN || wSpec.passiveSummary || wSpec.passiveSummaryFR;
         this.nearestPrompt = {
           type: 'weapon_shrine',
-          keyHint: isAlreadyEquipped ? '⚔️ ÉQUIPÉE' : '[E]',
+          keyHint: isAlreadyEquipped ? tr('⚔️ EQUIPPED', '⚔️ ÉQUIPÉE') : '[E]',
           label: isAlreadyEquipped
-            ? `${wSpec.icon} ${wSpec.name} (Déjà équipée • [K] Armurerie)`
-            : `[E] Forger & Équiper : ${wSpec.icon} ${wSpec.name} (${wSpec.passiveSummaryFR})`,
+            ? tr(
+                `${wSpec.icon} ${wNameEN} (Already equipped • [K] Armory)`,
+                `${wSpec.icon} ${wSpec.name} (Déjà équipée • [K] Armurerie)`
+              )
+            : tr(
+                `[E] Forge & Equip: ${wSpec.icon} ${wNameEN} (${wPassiveEN})`,
+                `[E] Forger & Équiper : ${wSpec.icon} ${wSpec.name} (${wSpec.passiveSummaryFR})`
+              ),
           worldPos: new THREE.Vector3(shrine.x, (shrine.y || 2) + 2.8, shrine.z),
           entity: shrine,
           dist: dist2D(this.x, this.z, shrine.x, shrine.z),
@@ -2426,7 +2446,7 @@ export class PlayerController {
           this.nearestPrompt = {
             type: 'rescue',
             keyHint: '[E]',
-            label: '[E] Libérer le Survivant',
+            label: tr('[E] Rescue Survivor', '[E] Libérer le Survivant'),
             worldPos: new THREE.Vector3(cage.x, (cage.y || 2) + 2.6, cage.z),
             entity: cage,
             dist: dCage,
@@ -2440,9 +2460,11 @@ export class PlayerController {
     if (!this.nearestPrompt && peacefulDragon && peacefulDragonDist <= 14.0) {
       this.nearestPrompt = {
         type: 'warning_dragon',
-        keyHint: '⚠️ PACIFIQUE',
-        label:
-          "⚠️ [DRAGON SOUVERAIN — PACIFIQUE] Ne pas attaquer ou toute l'espèce rasera votre Bastion !",
+        keyHint: tr('⚠️ PEACEFUL', '⚠️ PACIFIQUE'),
+        label: tr(
+          '[Peaceful Dragon — Do Not Attack!] Attacking will provoke the entire species to raze your Bastion!',
+          "⚠️ [DRAGON SOUVERAIN — PACIFIQUE] Ne pas attaquer ou toute l'espèce rasera votre Bastion !"
+        ),
         worldPos: new THREE.Vector3(
           peacefulDragon.x,
           (peacefulDragon.y || 2) + 3.2,
@@ -2459,12 +2481,12 @@ export class PlayerController {
       const isAuto = this.combatMode === 'vampire_survivors';
       this.nearestPrompt = {
         type: 'attack',
-        keyHint: isAuto ? '[AUTO]' : '[Clic Gauche / Espace]',
+        keyHint: isAuto ? '[AUTO]' : tr('[Left Click / Space]', '[Clic Gauche / Espace]'),
         label: isAuto
-          ? 'Frappe & Sorts Auto actifs !'
+          ? tr('Auto-Strike & Spells active!', 'Frappe & Sorts Auto actifs !')
           : inReach
-            ? '[Clic Gauche / Espace : Frapper !]'
-            : 'Approchez pour frapper [Clic Gauche]',
+            ? tr('[Left Click / Space] Strike!', '[Clic Gauche / Espace : Frapper !]')
+            : tr('Move closer to strike [Left Click]', 'Approchez pour frapper [Clic Gauche]'),
         worldPos: new THREE.Vector3(
           nearestEnemy.x,
           (nearestEnemy.y || 2) + 2.2,
@@ -2487,7 +2509,9 @@ export class PlayerController {
         this.nearestPrompt = {
           type: 'build',
           keyHint: '[E]',
-          label: pad.worldPromptText,
+          label:
+            pad.worldPromptText ||
+            tr('[E] Activate Sanctuary', '[E] Activer le Sanctuaire'),
           worldPos: new THREE.Vector3(pad.x, py + 2.6, pad.z),
           entity: pad,
           dist: pad.dist,
@@ -2503,12 +2527,20 @@ export class PlayerController {
       const foodGain = spDef?.foodYield || (spId === 'deer' ? 35 : 18);
       const healGain = spDef?.healYield || (spId === 'deer' ? 25 : 12);
       const sparesPrey = Boolean(this.equippedWeapon?.sparesHerbivores);
+      const preyNameFR = nearestPrey.genome?.speciesName || 'Proie';
+      const preyNameEN = spId === 'deer' ? 'Forest Deer' : spId === 'rabbit' ? 'Plains Rabbit' : 'Prey';
       this.nearestPrompt = {
         type: 'hunt_prey',
-        keyHint: sparesPrey ? '🧪 ÉPARGNÉ' : '🍖 CHASSE',
+        keyHint: sparesPrey ? tr('🧪 SPARED', '🧪 ÉPARGNÉ') : tr('🍖 HUNT', '🍖 CHASSE'),
         label: sparesPrey
-          ? `🧪 [Faux d'Émeraude] ${nearestPrey.genome?.speciesName || 'Proie'} protégée des dégâts collatéraux !`
-          : `[Clic Gauche] Chasser ${nearestPrey.genome?.speciesName || 'Proie'} (+${foodGain} Vivres 🍖, +${healGain} PV — Attention à l'extinction !)`,
+          ? tr(
+              `🧪 [Emerald Scythe] ${preyNameEN} protected from collateral damage!`,
+              `🧪 [Faux d'Émeraude] ${preyNameFR} protégée des dégâts collatéraux !`
+            )
+          : tr(
+              `[Left Click] Hunt ${preyNameEN} (+${foodGain} Food 🍖, +${healGain} HP — Beware extinction!)`,
+              `[Clic Gauche] Chasser ${preyNameFR} (+${foodGain} Vivres 🍖, +${healGain} PV — Attention à l'extinction !)`
+            ),
         worldPos: new THREE.Vector3(
           nearestPrey.x,
           (nearestPrey.y || 2) + 2.0,
@@ -2527,18 +2559,30 @@ export class PlayerController {
     ) {
       const node = this.terrain.getNearestResourceNode(this.x, this.z, 7.0);
       if (node) {
-        const resName = node.type === 'crystal' ? 'Cristal' : 'Bois';
+        const label =
+          node.type === 'crystal'
+            ? tr('[E] Harvest (Crystal)', '[E] Récolter (Cristal)')
+            : node.type === 'stone'
+              ? tr('[E] Harvest (Stone)', '[E] Récolter (Pierre)')
+              : tr('[E] Harvest (Wood)', '[E] Récolter (Bois)');
         const ny = this.terrain.getHeightAt(node.x, node.z);
         this.nearestPrompt = {
           type: 'harvest',
           keyHint: '[E]',
-          label: `[E] Récolter (${resName})`,
+          label,
           worldPos: new THREE.Vector3(node.x, ny + 2.0, node.z),
           entity: node,
           dist: dist2D(this.x, this.z, node.x, node.z),
         };
       }
     }
+  }
+
+  /**
+   * Alias for `_updateTacticalIndicators` for contextual prompt refresh.
+   */
+  _updateContextualPrompts(elapsedTime, enemyManager, bastionAndNpcs) {
+    return this._updateTacticalIndicators(elapsedTime, enemyManager, bastionAndNpcs);
   }
 
   /**
