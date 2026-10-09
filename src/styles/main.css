@@ -1,0 +1,1123 @@
+/**
+ * @file src/styles/main.css
+ * @description Feuille de style principale pour Genesis Bastion.
+ *
+ * Direction artistique : "Expédition Biologique & Cartographie Tactique Sombre"
+ * - Ardoise / Obsidienne translucide (#0d131a, #141d26) pour les panneaux HUD
+ * - Ivoire parchemin chaud (#f0ead6) et gris minéral (#9fb1c1) pour la typographie
+ * - Or ambré (#e6a145) pour le Bastion, les structures et les accents royaux
+ * - Émeraude biomasse (#38c172) pour l'équilibre écologique (Jeu de la Vie de Conway)
+ * - Cramoisi mutation (#ff4757) pour les Patients Zéro et alertes épidémiques
+ * - Cyan éclaireur (#1e90ff / #2ed573) pour la reconnaissance et les sondes génétiques
+ *
+ * Architecture CSS :
+ * 1. Variables CSS (:root) & Reset global
+ * 2. Conteneur 3D (#app) & Racine HUD (#hud-root)
+ * 3. Barre supérieure : Survie, Horloge Solaire, Eco-Tick & Ressources
+ * 4. Bannière centrale d'alerte prioritaire Éclaireur (Patient Zéro & Éradication)
+ * 5. Panneau gauche : Bastion, Rôles PNJ, Constructions & Laboratoire de Simulation
+ * 6. Panneau droit : Radar Génétique & Suivi des Lignées Mutantes / Hybrides
+ * 7. Zone inférieure : Journal d'évolution en direct, Barre d'actions & Minimap
+ * 8. Modales : Codex Phylogénétique (Arbre SVG + Catalogue) & Level-Up Roguelike
+ */
+
+:root {
+  /* Palette principale */
+  --bg-obsidian: #0d131a;
+  --bg-obsidian-glass: rgba(13, 19, 26, 0.84);
+  --bg-slate-panel: rgba(20, 29, 38, 0.88);
+  --bg-slate-elevated: rgba(29, 42, 54, 0.92);
+  --bg-card-hover: rgba(40, 57, 73, 0.95);
+
+  /* Typographie */
+  --text-parchment: #f0ead6;
+  --text-secondary: #b2c2cf;
+  --text-muted: #768999;
+
+  /* Accents sémantiques */
+  --accent-amber: #e6a145;
+  --accent-amber-dim: rgba(230, 161, 69, 0.22);
+  --accent-biomass: #38c172;
+  --accent-biomass-dim: rgba(56, 193, 114, 0.22);
+  --accent-threat: #ff4757;
+  --accent-threat-dim: rgba(255, 71, 87, 0.24);
+  --accent-scout-cyan: #1e90ff;
+  --accent-scout-emerald: #2ed573;
+  --accent-scout-dim: rgba(30, 144, 255, 0.22);
+
+  /* Bordures & Ombres */
+  --border-subtle: rgba(240, 234, 214, 0.14);
+  --border-amber: rgba(230, 161, 69, 0.48);
+  --border-threat: rgba(255, 71, 87, 0.65);
+  --border-biomass: rgba(56, 193, 114, 0.5);
+  --shadow-panel: 0 10px 28px rgba(0, 0, 0, 0.65), inset 0 1px 0 rgba(240, 234, 214, 0.08);
+  --shadow-glow-threat: 0 0 22px rgba(255, 71, 87, 0.45);
+  --shadow-glow-amber: 0 0 18px rgba(230, 161, 69, 0.35);
+
+  /* Polices */
+  --font-display: 'Cinzel', Georgia, serif;
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+
+  /* Rayons */
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+}
+
+/* ============================================================================
+   1. RESET & BASE
+   ============================================================================ */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background-color: var(--bg-obsidian);
+  color: var(--text-parchment);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 1.4;
+  user-select: none;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ============================================================================
+   2. CONTENEUR 3D & RACINE HUD
+   ============================================================================ */
+#app {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: 1;
+  overflow: hidden;
+  cursor: crosshair;
+}
+
+#app canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+#hud-root {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: 10;
+  pointer-events: none;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  grid-template-columns: 310px 1fr 330px;
+  padding: 12px 14px;
+  gap: 10px;
+}
+
+.hud-interactive {
+  pointer-events: auto;
+}
+
+/* ============================================================================
+   3. BARRE SUPÉRIEURE (SURVIE, ECO-TICK & RESSOURCES)
+   ============================================================================ */
+.hud-top-bar {
+  grid-column: 1 / -1;
+  grid-row: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  background: var(--bg-obsidian-glass);
+  backdrop-filter: blur(10px);
+  border: 1px solid var(--border-subtle);
+  border-bottom: 2px solid var(--border-amber);
+  border-radius: var(--radius-md);
+  padding: 8px 14px;
+  box-shadow: var(--shadow-panel);
+  pointer-events: auto;
+}
+
+.hud-brand-group {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.hud-brand-title {
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  color: var(--accent-amber);
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.hud-clock-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 9px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-slate-elevated);
+  border: 1px solid var(--border-subtle);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--text-parchment);
+}
+
+.hud-clock-badge.is-night {
+  border-color: var(--accent-scout-cyan);
+  color: #8ecaff;
+}
+
+/* Eco-Tick Progress Section */
+.hud-ecotick-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 215px;
+}
+
+.hud-ecotick-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.hud-ecotick-label {
+  font-weight: 600;
+  color: var(--accent-biomass);
+  letter-spacing: 0.03em;
+}
+
+.hud-ecotick-timer {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  color: var(--text-parchment);
+}
+
+.hud-progress-track {
+  width: 100%;
+  height: 7px;
+  background: rgba(10, 15, 20, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 99px;
+  overflow: hidden;
+  position: relative;
+}
+
+.hud-progress-fill {
+  height: 100%;
+  width: 0%;
+  border-radius: 99px;
+  transition: width 0.15s linear;
+}
+
+.hud-progress-fill.eco-fill {
+  background: linear-gradient(90deg, #218c53, var(--accent-biomass));
+}
+
+.hud-progress-fill.hp-fill {
+  background: linear-gradient(90deg, #b82835, var(--accent-threat));
+}
+
+.hud-progress-fill.xp-fill {
+  background: linear-gradient(90deg, #b37724, var(--accent-amber));
+}
+
+.hud-progress-fill.bastion-fill {
+  background: linear-gradient(90deg, #2575b8, var(--accent-scout-cyan));
+}
+
+/* Métriques mondiales & Joueur */
+.hud-stats-cluster {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.hud-stat-pill {
+  display: flex;
+  flex-direction: column;
+  padding: 3px 9px;
+  background: var(--bg-slate-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+}
+
+.hud-stat-pill-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+}
+
+.hud-stat-pill-value {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-parchment);
+}
+
+.hud-stat-pill.threat-active {
+  border-color: var(--border-threat);
+  background: var(--accent-threat-dim);
+}
+
+.hud-stat-pill.threat-active .hud-stat-pill-value {
+  color: #ff7682;
+}
+
+/* Barres PV & XP du joueur */
+.hud-player-vitals {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.hud-vital-box {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 125px;
+}
+
+.hud-vital-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  font-family: var(--font-mono);
+}
+
+/* Ressources */
+.hud-resources-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.hud-resource-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  background: var(--bg-slate-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.hud-resource-badge.res-wood {
+  border-left: 3px solid #c98a4b;
+}
+
+.hud-resource-badge.res-crystal {
+  border-left: 3px solid #34ace0;
+}
+
+.hud-resource-badge.res-biomass {
+  border-left: 3px solid var(--accent-biomass);
+}
+
+/* ============================================================================
+   4. BANNIÈRE D'ALERTE PRIORITAIRE ÉCLAIREUR (CENTRE-HAUT)
+   ============================================================================ */
+.hud-center-column {
+  grid-column: 2;
+  grid-row: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  pointer-events: none;
+  padding-top: 4px;
+  gap: 8px;
+}
+
+.hud-scout-alert-banner {
+  pointer-events: auto;
+  max-width: 660px;
+  width: 100%;
+  background: rgba(24, 12, 16, 0.94);
+  border: 2px solid var(--accent-threat);
+  border-radius: var(--radius-md);
+  padding: 12px 16px;
+  box-shadow: var(--shadow-glow-threat), var(--shadow-panel);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  animation: alertPulseBorder 1.8s infinite ease-in-out;
+  transition: opacity 0.25s ease, transform 0.25s ease;
+}
+
+.hud-scout-alert-banner.is-hidden {
+  display: none;
+}
+
+.hud-scout-alert-banner.is-eradicated {
+  background: rgba(14, 29, 22, 0.94);
+  border-color: var(--accent-biomass);
+  box-shadow: 0 0 22px rgba(56, 193, 114, 0.4), var(--shadow-panel);
+  animation: none;
+}
+
+@keyframes alertPulseBorder {
+  0%, 100% {
+    border-color: rgba(255, 71, 87, 0.95);
+    box-shadow: 0 0 18px rgba(255, 71, 87, 0.4), var(--shadow-panel);
+  }
+  50% {
+    border-color: rgba(230, 161, 69, 0.95);
+    box-shadow: 0 0 28px rgba(255, 71, 87, 0.72), var(--shadow-panel);
+  }
+}
+
+.hud-alert-icon-wrap {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  background: var(--accent-threat-dim);
+  border: 1px solid var(--accent-threat);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  flex-shrink: 0;
+}
+
+.hud-scout-alert-banner.is-eradicated .hud-alert-icon-wrap {
+  background: var(--accent-biomass-dim);
+  border-color: var(--accent-biomass);
+}
+
+.hud-alert-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.hud-alert-title {
+  font-family: var(--font-display);
+  font-size: 13px;
+  font-weight: 700;
+  color: #ff8a93;
+  letter-spacing: 0.04em;
+}
+
+.hud-scout-alert-banner.is-eradicated .hud-alert-title {
+  color: #68e39b;
+}
+
+.hud-alert-desc {
+  font-size: 12px;
+  color: var(--text-parchment);
+}
+
+.hud-alert-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+/* ============================================================================
+   5. PANNEAUX LATÉRAUX (GAUCHE : BASTION & LABO / DROITE : RADAR GÉNÉTIQUE)
+   ============================================================================ */
+.hud-side-panel {
+  background: var(--bg-obsidian-glass);
+  backdrop-filter: blur(10px);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 11px 12px;
+  box-shadow: var(--shadow-panel);
+  pointer-events: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: calc(100vh - 180px);
+  overflow-y: auto;
+}
+
+.hud-left-panel {
+  grid-column: 1;
+  grid-row: 2;
+  align-self: start;
+}
+
+.hud-right-panel {
+  grid-column: 3;
+  grid-row: 2;
+  align-self: start;
+}
+
+.hud-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--border-subtle);
+  padding-bottom: 6px;
+}
+
+.hud-panel-title {
+  font-family: var(--font-display);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--accent-amber);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.hud-panel-subtitle {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.hud-section-block {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 4px;
+}
+
+.hud-section-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-secondary);
+}
+
+/* Lignes de rôles PNJ */
+.hud-role-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.hud-role-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 8px;
+  background: var(--bg-slate-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+}
+
+.hud-role-row.role-scout {
+  border-left: 3px solid var(--accent-scout-cyan);
+}
+
+.hud-role-row.role-guard {
+  border-left: 3px solid var(--accent-amber);
+}
+
+.hud-role-row.role-harvester {
+  border-left: 3px solid var(--accent-biomass);
+}
+
+.hud-role-info {
+  display: flex;
+  flex-direction: column;
+}
+
+.hud-role-name {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-parchment);
+}
+
+.hud-role-meta {
+  font-size: 10.5px;
+  color: var(--text-muted);
+}
+
+.hud-role-controls {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.hud-role-count {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 700;
+  min-width: 20px;
+  text-align: center;
+  color: var(--accent-amber);
+}
+
+/* Boutons génériques */
+.hud-btn {
+  appearance: none;
+  background: var(--bg-slate-elevated);
+  color: var(--text-parchment);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 5px 9px;
+  font-family: var(--font-sans);
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, transform 0.08s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+}
+
+.hud-btn:hover {
+  background: var(--bg-card-hover);
+  border-color: var(--accent-amber);
+}
+
+.hud-btn:active {
+  transform: translateY(1px);
+}
+
+.hud-btn-sm {
+  padding: 3px 7px;
+  font-size: 11px;
+  font-family: var(--font-mono);
+}
+
+.hud-btn-amber {
+  background: rgba(230, 161, 69, 0.16);
+  border-color: var(--border-amber);
+  color: #ffd285;
+}
+
+.hud-btn-amber:hover {
+  background: rgba(230, 161, 69, 0.28);
+  border-color: var(--accent-amber);
+}
+
+.hud-btn-threat {
+  background: rgba(255, 71, 87, 0.2);
+  border-color: var(--border-threat);
+  color: #ff9aa3;
+}
+
+.hud-btn-threat:hover {
+  background: rgba(255, 71, 87, 0.34);
+  border-color: var(--accent-threat);
+}
+
+.hud-btn-biomass {
+  background: rgba(56, 193, 114, 0.16);
+  border-color: var(--border-biomass);
+  color: #82f0b1;
+}
+
+.hud-btn-biomass:hover {
+  background: rgba(56, 193, 114, 0.28);
+  border-color: var(--accent-biomass);
+}
+
+.hud-btn-scout {
+  background: rgba(30, 144, 255, 0.18);
+  border-color: rgba(30, 144, 255, 0.55);
+  color: #9cd0ff;
+}
+
+.hud-btn-scout:hover {
+  background: rgba(30, 144, 255, 0.3);
+  border-color: var(--accent-scout-cyan);
+}
+
+/* Grille de construction du Bastion */
+.hud-build-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 5px;
+}
+
+.hud-build-btn {
+  justify-content: space-between;
+  width: 100%;
+  text-align: left;
+  padding: 6px 9px;
+}
+
+.hud-build-cost {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--accent-amber);
+}
+
+/* Labo de simulation & tests */
+.hud-sim-lab {
+  background: rgba(16, 26, 36, 0.9);
+  border: 1px dashed rgba(30, 144, 255, 0.45);
+  border-radius: var(--radius-sm);
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* ============================================================================
+   6. PANNEAU DROIT : RADAR GÉNÉTIQUE & LIGNÉES MUTANTES
+   ============================================================================ */
+.hud-lineage-list {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.hud-lineage-empty {
+  padding: 12px;
+  background: var(--bg-slate-elevated);
+  border: 1px dashed var(--border-subtle);
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  font-size: 11.5px;
+  text-align: center;
+}
+
+.hud-lineage-card {
+  padding: 8px 10px;
+  background: var(--bg-slate-elevated);
+  border: 1px solid var(--border-subtle);
+  border-left: 4px solid var(--accent-amber);
+  border-radius: var(--radius-sm);
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  cursor: pointer;
+  transition: background 0.15s ease, transform 0.1s ease;
+}
+
+.hud-lineage-card:hover {
+  background: var(--bg-card-hover);
+  transform: translateX(-2px);
+}
+
+.hud-lineage-card.is-selected {
+  outline: 1px solid var(--accent-amber);
+  box-shadow: var(--shadow-glow-amber);
+}
+
+.hud-lineage-card.status-patient-zero {
+  border-left-color: var(--accent-threat);
+  background: rgba(45, 18, 24, 0.85);
+}
+
+.hud-lineage-card.status-spreading,
+.hud-lineage-card.status-dominant {
+  border-left-color: #ff6b35;
+}
+
+.hud-lineage-card.status-eradicated {
+  border-left-color: var(--accent-biomass);
+  opacity: 0.68;
+}
+
+.hud-lineage-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.hud-lineage-name {
+  font-weight: 700;
+  font-size: 12px;
+  color: var(--text-parchment);
+}
+
+.hud-lineage-badge {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 3px;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.hud-lineage-badge.badge-pz {
+  background: var(--accent-threat-dim);
+  color: #ff8590;
+  border: 1px solid var(--border-threat);
+}
+
+.hud-lineage-badge.badge-spread {
+  background: rgba(230, 161, 69, 0.22);
+  color: #ffd080;
+  border: 1px solid var(--border-amber);
+}
+
+.hud-lineage-badge.badge-eradicated {
+  background: var(--accent-biomass-dim);
+  color: #7ef0ae;
+  border: 1px solid var(--border-biomass);
+}
+
+.hud-lineage-meta {
+  display: flex;
+  justify-content: space-between;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.hud-lineage-warning {
+  font-size: 11px;
+  color: #ff9aa2;
+  font-style: italic;
+}
+
+/* Résumé écologique Conway dans le panneau droit */
+.hud-conway-summary {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+}
+
+.hud-conway-cell {
+  background: var(--bg-slate-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 5px 6px;
+  text-align: center;
+}
+
+.hud-conway-cell-val {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.hud-conway-cell-lbl {
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+/* ============================================================================
+   7. ZONE INFÉRIEURE : JOURNAL EN DIRECT, CONTRÔLES & MINIMAP
+   ============================================================================ */
+.hud-bottom-left {
+  grid-column: 1;
+  grid-row: 3;
+  align-self: end;
+  background: var(--bg-obsidian-glass);
+  backdrop-filter: blur(8px);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 8px 10px;
+  box-shadow: var(--shadow-panel);
+  pointer-events: auto;
+  max-height: 155px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.hud-log-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  overflow-y: auto;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  max-height: 115px;
+}
+
+.hud-log-item {
+  padding: 2px 4px;
+  border-radius: 3px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.hud-log-item.log-evolution {
+  color: #7ef0ae;
+  background: rgba(56, 193, 114, 0.1);
+}
+
+.hud-log-item.log-alert {
+  color: #ff8a93;
+  background: rgba(255, 71, 87, 0.14);
+  font-weight: 600;
+}
+
+.hud-log-item.log-warn {
+  color: #ffd285;
+}
+
+.hud-bottom-center {
+  grid-column: 2;
+  grid-row: 3;
+  align-self: end;
+  justify-self: center;
+  background: var(--bg-obsidian-glass);
+  backdrop-filter: blur(8px);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 7px 14px;
+  box-shadow: var(--shadow-panel);
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.hud-hotkey-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11.5px;
+  color: var(--text-secondary);
+}
+
+.hud-kbd {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 700;
+  padding: 2px 6px;
+  background: var(--bg-slate-elevated);
+  border: 1px solid var(--border-amber);
+  border-radius: 3px;
+  color: var(--accent-amber);
+}
+
+/* Minimap (Bas-Droite) */
+.hud-bottom-right {
+  grid-column: 3;
+  grid-row: 3;
+  align-self: end;
+  justify-self: end;
+  background: var(--bg-obsidian-glass);
+  backdrop-filter: blur(10px);
+  border: 1px solid var(--border-amber);
+  border-radius: var(--radius-md);
+  padding: 8px;
+  box-shadow: var(--shadow-panel);
+  pointer-events: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.minimap-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.minimap-title {
+  font-family: var(--font-display);
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--accent-amber);
+  text-transform: uppercase;
+}
+
+.minimap-canvas-wrap {
+  position: relative;
+  width: 220px;
+  height: 220px;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  border: 1px solid var(--border-subtle);
+  background: #070c12;
+}
+
+.minimap-canvas {
+  display: block;
+  width: 220px;
+  height: 220px;
+  cursor: pointer;
+}
+
+.minimap-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 10px;
+  color: var(--text-secondary);
+}
+
+.minimap-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.minimap-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+/* ============================================================================
+   8. MODALES (CODEX PHYLOGÉNÉTIQUE & LEVEL-UP ROGUELIKE)
+   ============================================================================ */
+.hud-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  background: rgba(6, 10, 15, 0.82);
+  backdrop-filter: blur(6px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  pointer-events: auto;
+}
+
+.hud-modal-backdrop.is-hidden {
+  display: none;
+}
+
+.hud-modal-dialog {
+  width: min(980px, 95vw);
+  max-height: 88vh;
+  background: #101821;
+  border: 1px solid var(--border-amber);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 22px 60px rgba(0, 0, 0, 0.85), var(--shadow-glow-amber);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.hud-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 20px;
+  background: rgba(20, 29, 38, 0.95);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.hud-modal-title {
+  font-family: var(--font-display);
+  font-size: 18px;
+  font-weight: 800;
+  color: var(--accent-amber);
+  letter-spacing: 0.05em;
+}
+
+.hud-modal-body {
+  padding: 18px 20px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+/* Graphe Phylogénétique SVG */
+.phylo-graph-container {
+  background: #0a1017;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.phylo-svg {
+  width: 100%;
+  height: 280px;
+  display: block;
+}
+
+/* Grille du catalogue de mutations & hybrides */
+.codex-catalog-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 10px;
+}
+
+.codex-item-card {
+  background: var(--bg-slate-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.codex-item-title {
+  font-weight: 700;
+  font-size: 13px;
+  color: var(--text-parchment);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.codex-item-desc {
+  font-size: 11.5px;
+  color: var(--text-secondary);
+}
+
+.codex-item-stats {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--accent-amber);
+}
+
+/* Modale Roguelike Level-Up */
+.levelup-cards-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 14px;
+}
+
+.levelup-card {
+  background: var(--bg-slate-elevated);
+  border: 1px solid var(--border-amber);
+  border-radius: var(--radius-md);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 12px;
+  cursor: pointer;
+  transition: transform 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
+}
+
+.levelup-card:hover {
+  background: var(--bg-card-hover);
+  transform: translateY(-4px);
+  box-shadow: var(--shadow-glow-amber);
+}
+
+.levelup-card-title {
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--accent-amber);
+}
+
+.levelup-card-desc {
+  font-size: 12.5px;
+  color: var(--text-parchment);
+}
