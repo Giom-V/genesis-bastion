@@ -606,6 +606,11 @@ async function runDryRunSimulation() {
   console.log('----------------------------------------------------------------------------------------');
   console.log('[4] PHASE 9 VERIFICATION: ROGUELIKE GAME OVER & FULL RUN RESET');
   let resetVerified = true;
+  const preResetFireGiantRatio = Number(
+    ecoSim?.lastStats?.fireGiantRatio ??
+      finalMutants.length / Math.max(1, population.length)
+  );
+  const preResetScale = Number(ecoSim?.islandEvolutionaryScale ?? 1.0);
   if (ecoSim && typeof ecoSim.resetForNewRoguelikeRun === 'function') {
     ecoSim.resetForNewRoguelikeRun();
     resetVerified =
@@ -785,6 +790,38 @@ async function runDryRunSimulation() {
   console.log(`  - Forward +Z Sword Cleave  : ${forwardSlashVerified ? 'PASS' : 'FAIL'} (slashArcMesh Z: +0.09..+5.20m in front)`);
   console.log(`  - Minimal Clean HUD Default: ${cleanHudVerified ? 'PASS' : 'FAIL'} (cleanHudMode=true, 90%+ viewport, [x] dismiss)`);
 
+  // Phase 16 verification: Hardcore Balance, Harvester Depletion & Prey Hunting, Mortal NPC SOS, Giant Fire Attractor & Nighttime Undead
+  console.log('----------------------------------------------------------------------------------------');
+  console.log('[9] PHASE 16 VERIFICATION: HARDCORE BALANCE, HARVESTERS/SOS, GIANT FIRE EVOLUTION & NIGHT UNDEAD');
+  const bastionSrc = fs.readFileSync(path.join(PROJECT_ROOT, 'src', 'entities', 'BastionAndNPCs.js'), 'utf8');
+  const enemySrc = fs.readFileSync(path.join(PROJECT_ROOT, 'src', 'entities', 'EnemyManager.js'), 'utf8');
+  const mainSrc = fs.readFileSync(path.join(PROJECT_ROOT, 'src', 'main.js'), 'utf8');
+  const nodeDepletionVerified =
+    terrainSrc.includes('harvestResourceNode') &&
+    terrainSrc.includes('node.depleted = true') &&
+    playerSrc.includes('harvestResourceNode') &&
+    mainSrc.includes('6A_SCOUTING');
+  const harvesterAndSosVerified =
+    bastionSrc.includes('harvestResourceNode') &&
+    bastionSrc.includes('hunting_prey') &&
+    bastionSrc.includes('onNpcUnderAttack') &&
+    bastionSrc.includes('onNpcKilled') &&
+    CONFIG.SCOUT?.SPEED <= 7.0;
+  const fireGiantRatio = preResetFireGiantRatio;
+  const fireAttractorVerified =
+    CONFIG.MUTATIONS?.pyro_gland?.fitnessBonus >= 1.3 &&
+    CONFIG.MUTATIONS?.titan_growth?.fitnessBonus >= 1.2 &&
+    fireGiantRatio >= 0.4;
+  const nightUndeadVerified =
+    Boolean(CONFIG.SPECIES?.undead) &&
+    enemySrc.includes('spawnNightUndeadWave') &&
+    enemySrc.includes('daytimeMonsterPeak') &&
+    mainSrc.includes('onNightfall');
+  console.log(`  - Resource Depletion & Act6: ${nodeDepletionVerified ? 'PASS' : 'FAIL'} (harvestResourceNode -> 0 scale + 6A_SCOUTING delay)`);
+  console.log(`  - Harvesters, Hunt & SOS   : ${harvesterAndSosVerified ? 'PASS' : 'FAIL'} (chop+hunt_prey + 90 HP mortal NPCs + Scout=${CONFIG.SCOUT?.SPEED}m/s)`);
+  console.log(`  - Giant Fire Evolution     : ${fireAttractorVerified ? 'PASS' : 'FAIL'} (fireGiantRatio=${(fireGiantRatio * 100).toFixed(1)}%, scale=${preResetScale.toFixed(2)}x)`);
+  console.log(`  - Nighttime Undead Rising  : ${nightUndeadVerified ? 'PASS' : 'FAIL'} (speciesId='undead' scaled by daytimeMonsterPeak)`);
+
   console.log('========================================================================================');
   if (!resetVerified) {
     throw new Error('Phase 9 EcosystemSimulator.resetForNewRoguelikeRun verification failed');
@@ -805,6 +842,11 @@ async function runDryRunSimulation() {
   if (!texturesVerified || !forwardSlashVerified || !cleanHudVerified) {
     throw new Error(
       `Phase 15 verification failed: textures=${texturesVerified}, forwardSlash=${forwardSlashVerified}, cleanHud=${cleanHudVerified}`
+    );
+  }
+  if (!nodeDepletionVerified || !harvesterAndSosVerified || !fireAttractorVerified || !nightUndeadVerified) {
+    throw new Error(
+      `Phase 16 verification failed: depletion=${nodeDepletionVerified}, harvesterSos=${harvesterAndSosVerified}, fire=${fireAttractorVerified}, undead=${nightUndeadVerified}`
     );
   }
   console.log('DRY-RUN STATUS: PASS');
