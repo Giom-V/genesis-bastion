@@ -77,6 +77,28 @@ export class EnemyManager {
     this.onPreyEcologicalCrisis = null;
     /** @type {Function|null} Optional callback `(tierSpec, enemyManager)` when transitioning to a new Island Tier */
     this.onIslandTransitioned = null;
+    /** @type {Function|null} Optional callback `(spawnedUndead, undeadCount)` when Nocturnal Undead rise at night */
+    this.onNightUndeadSpawned = null;
+
+    /** @type {number} Peak living monster count recorded during the current daytime phase */
+    this.daytimeMonsterPeak = 0;
+    /** @type {number} Number of monsters slain during the current daytime phase */
+    this.daytimeKills = 0;
+    /** @type {boolean} Current night state for Undead rising & dawn sunlight disintegration */
+    this.isNightTime = false;
+    /** @type {boolean} Whether the nightfall undead wave has already spawned this night */
+    this.nightUndeadSpawnedTonight = false;
+    /** @type {boolean} Whether the midnight reinforcement wave has spawned this night */
+    this.midnightUndeadSpawnedTonight = false;
+    /** @type {number} Seconds elapsed during the current night */
+    this.nightWaveTimer = 0;
+
+    /** @type {number} Active burn DoT timer on the player from Pyro/Baby Fire Troll attacks */
+    this.playerBurnTimer = 0;
+    /** @type {number} Active burn DoT DPS on the player */
+    this.playerBurnDps = 0;
+    /** @type {number} Tick accumulator for player burn DoT */
+    this.playerBurnTickAccum = 0;
 
     /** @type {number} Current campaign island number (`1, 2, 3...`) */
     this.islandNumber = 1;
@@ -104,7 +126,7 @@ export class EnemyManager {
 
     /**
      * Per-species repopulation timers in seconds when a foundational species drops below `< 2` individuals.
-     * Note: `deer` and `rabbit` have `autoRepopulate: false` and NEVER repopulate automatically!
+     * Note: `deer`, `rabbit`, and `undead` have `autoRepopulate: false` and NEVER repopulate automatically!
      * @type {Record<string, number>}
      */
     this.repopulationTimers = {
@@ -119,6 +141,7 @@ export class EnemyManager {
       giant_mole: 0,
       deer: 0,
       rabbit: 0,
+      undead: 0,
     };
 
     /** @type {boolean} Whether the 7-Act Guided Onboarding tutorial mode is active */
@@ -296,8 +319,8 @@ export class EnemyManager {
   }
 
   /**
-   * Returns a dictionary of living counts for all 11 species (`goblin`, `orc`, `troll`, `wolf`,
-   * `lion`, `vulture`, `dragon`, `shark`, `giant_mole`, `deer`, `rabbit`).
+   * Returns a dictionary of living counts for all 12 species (`goblin`, `orc`, `troll`, `wolf`,
+   * `lion`, `vulture`, `dragon`, `shark`, `giant_mole`, `deer`, `rabbit`, `undead`).
    * @returns {Record<string, number>}
    */
   getSpeciesLivingCounts() {
@@ -313,6 +336,7 @@ export class EnemyManager {
       giant_mole: 0,
       deer: 0,
       rabbit: 0,
+      undead: 0,
     };
     for (const e of this.enemies) {
       if (!e || e.hp <= 0) continue;
@@ -627,6 +651,126 @@ export class EnemyManager {
   }
 
   /**
+   * Updates the Day/Night state (`isNight`) and triggers `onNightfall()` when transitioning from Day to Night,
+   * or resets daytime monster peak/kills when transitioning from Night to Dawn.
+   *
+   * @param {boolean} isNight
+   */
+  setNightState(isNight) {
+    const nextNight = Boolean(isNight);
+    const wasNight = Boolean(this.isNightTime);
+    this.isNightTime = nextNight;
+
+    if (!wasNight && nextNight) {
+      if (!this.nightUndeadSpawnedTonight && !this.tutorialMode && !this.islandShieldActive) {
+        this.onNightfall();
+      }
+    } else if (wasNight && !nextNight) {
+      this.daytimeMonsterPeak = this.enemies.length;
+      this.daytimeKills = 0;
+      this.nightUndeadSpawnedTonight = false;
+      this.midnightUndeadSpawnedTonight = false;
+      this.nightWaveTimer = 0;
+    }
+  }
+
+  /**
+   * Triggered when Night falls (`isNight` transitions from `false -> true`).
+   * Spawns a Nocturnal Undead Revenant wave whose size scales with the daytime monster peak & kills!
+   *
+   * @param {Object} [options={}]
+   * @returns {Array<Object>} Spawned Undead Revenant entities.
+   */
+  onNightfall(options = {}) {
+    this.isNightTime = true;
+    this.nightUndeadSpawnedTonight = true;
+    this.nightWaveTimer = 0;
+    return this.spawnNightUndeadWave(options);
+  }
+
+  /**
+   * Spawns a Nocturnal Undead Revenant wave (`speciesId: 'undead'`, `clade: 'undead'`) rising from the ground
+   * around `35m..68m` from the Bastion, scaled by `daytimeMonsterPeak` and `daytimeKills`:
+   *   `daytimeMonsterFactor = Math.max(this.getEnemies().length, this.daytimeMonsterPeak) + this.daytimeKills * 1.2`
+   *   `undeadCount = clamp(Math.round(daytimeMonsterFactor * 0.28), 3, 16)`
+   *
+   * @param {Object} [options={}] - Optional `{ countOverride?: number, forceMutant?: boolean }`.
+   * @returns {Array<Object>} Spawned Undead Revenant entities.
+   */
+  spawnNightUndeadWave(options = {}) {
+    const livingCount = this.getEnemies().length;
+    const peak = Math.max(livingCount, this.daytimeMonsterPeak || 0);
+    const kills = this.daytimeKills || 0;
+    const daytimeMonsterFactor = peak + kills * 1.2;
+    const undeadCount =
+      typeof options.countOverride === 'number'
+        ? clamp(Math.round(options.countOverride), 1, 24)
+        : clamp(Math.round(daytimeMonsterFactor * 0.28), 3, 16);
+
+    const grantBonusMutation = Boolean(options.forceMutant || kills >= 4 || peak >= 15);
+    const undeadMutPool = ['pyro_gland', 'osteo_plating', 'vampiric_maw'];
+    const spawnedUndead = [];
+
+    for (let i = 0; i < undeadCount; i++) {
+      const angle = (i / Math.max(1, undeadCount)) * Math.PI * 2 + (Math.random() - 0.5) * 0.45;
+      const dist = 35 + Math.random() * 33; // 35m..68m from the Bastion
+      const ux = Math.cos(angle) * dist;
+      const uz = Math.sin(angle) * dist;
+
+      const genome = this._createSafeGenome('undead');
+      genome.speciesId = 'undead';
+      genome.clade = 'undead';
+      genome.speciesName = CONFIG.SPECIES?.undead?.name || 'Revenant Maudit';
+      genome.aggroStance = 'hostile';
+
+      if (grantBonusMutation && (i % 2 === 0 || options.forceMutant)) {
+        const mutId = undeadMutPool[i % undeadMutPool.length];
+        this._applyMutationToGenome(genome, mutId);
+      }
+
+      const revenant = this.spawnEnemy(ux, uz, genome, [], {
+        lifeStage: 'adult',
+        isAdult: true,
+        aggroStance: 'hostile',
+        aggressiveness: 0.98,
+        aggroBastionForced: true,
+        isNocturnalUndead: true,
+      });
+
+      if (this.vfx) {
+        if (typeof this.vfx.spawnBurrowEruption === 'function') {
+          this.vfx.spawnBurrowEruption(new THREE.Vector3(revenant.x, revenant.y + 0.2, revenant.z));
+        } else if (typeof this.vfx.spawnBirthEffect === 'function') {
+          this.vfx.spawnBirthEffect(
+            new THREE.Vector3(revenant.x, revenant.y + 0.4, revenant.z),
+            grantBonusMutation,
+            false,
+            0x00f5d4
+          );
+        }
+      }
+
+      spawnedUndead.push(revenant);
+    }
+
+    logger.alert(
+      `💀 NUIT DES MORTS-VIVANTS : ${undeadCount} Revenants Maudits surgissent des corps de la journée !`,
+      {
+        undeadCount,
+        daytimeMonsterPeak: peak,
+        daytimeKills: kills,
+        daytimeMonsterFactor: +daytimeMonsterFactor.toFixed(1),
+      }
+    );
+
+    if (typeof this.onNightUndeadSpawned === 'function') {
+      this.onNightUndeadSpawned(spawnedUndead, undeadCount);
+    }
+
+    return spawnedUndead;
+  }
+
+  /**
    * Bio-Lab / Sanctuary Ecological Restoration Action: spends `25 Biomasse` (`playerResources.biomass`)
    * to reintroduce breeding herds of Sylvestrian Deer (`3` adults) and Plains Rabbits (`4` adults)
    * when overhunting or collateral AoE spell damage has decimated the island's herbivore prey!
@@ -742,19 +886,25 @@ export class EnemyManager {
    * @param {string} mutationId - Key from `CONFIG.MUTATIONS`.
    */
   _applyMutationToGenome(genome, mutationId) {
-    const mutDef = CONFIG.MUTATIONS?.[mutationId];
+    const resolvedMutId =
+      mutationId === 'chitin_shell'
+        ? 'osteo_plating'
+        : mutationId === 'vampiric_fangs'
+          ? 'vampiric_maw'
+          : mutationId;
+    const mutDef = CONFIG.MUTATIONS?.[resolvedMutId];
     if (!mutDef || !genome) return;
 
     if (typeof genome.addMutation === 'function') {
-      genome.addMutation(mutationId);
+      genome.addMutation(resolvedMutId);
       return;
     }
 
     if (!Array.isArray(genome.mutations)) {
       genome.mutations = [];
     }
-    if (!genome.mutations.includes(mutationId)) {
-      genome.mutations.push(mutationId);
+    if (!genome.mutations.includes(resolvedMutId)) {
+      genome.mutations.push(resolvedMutId);
     }
 
     if (typeof genome.syncMutations === 'function') {
@@ -1138,6 +1288,12 @@ export class EnemyManager {
       hasLandLegs,
       isAmphibiousLanded,
       isPrey,
+      isNocturnalUndead: Boolean(
+        options.isNocturnalUndead || safeGenome.speciesId === 'undead' || spDef.isNocturnalUndead
+      ),
+      fireballCooldown: typeof options.fireballCooldown === 'number' ? options.fireballCooldown : null,
+      burnOnHitDps: typeof options.burnOnHitDps === 'number' ? options.burnOnHitDps : 0,
+      burnOnHitDuration: typeof options.burnOnHitDuration === 'number' ? options.burnOnHitDuration : 0,
       _wrathSpeedApplied: enraged,
       starving: false,
       lonely: false,
@@ -1184,6 +1340,7 @@ export class EnemyManager {
     };
 
     this.enemies.push(enemy);
+    this.daytimeMonsterPeak = Math.max(this.daytimeMonsterPeak || 0, this.enemies.length);
     return enemy;
   }
 
@@ -1216,8 +1373,8 @@ export class EnemyManager {
   }
 
   /**
-   * Act 2A Tutorial Spawner: Spawns a single slow, low-HP "Gobelin Égaré" near the Bastion
-   * so the player can practice the melee Cleave Attack (`Clic Gauche` / `[Espace]`).
+   * Act 2A Tutorial Spawner: Spawns a tougher "Gobelin Égaré" near the Bastion
+   * (`65 HP`, `10 dmg`, `5.2 speed`, requiring 3 cleave hits to defeat).
    * @param {number} [x=12]
    * @param {number} [z=8]
    * @returns {Object} Spawned Goblin entity.
@@ -1226,9 +1383,9 @@ export class EnemyManager {
     const genome = this._createSafeGenome('goblin');
     genome.speciesName = 'Gobelin Égaré';
     const goblin = this.spawnEnemy(x, z, genome, [], {
-      hpOverride: 34,
-      damageOverride: 3.5,
-      speedOverride: 4.0,
+      hpOverride: 65,
+      damageOverride: 10,
+      speedOverride: 5.2,
       xpRewardOverride: 25,
       tutorialTag: 'act2_goblin',
     });
@@ -1237,7 +1394,8 @@ export class EnemyManager {
   }
 
   /**
-   * Act 2B Tutorial Spawner: Spawns an "Orc Maraudeur" whose defeat awards enough XP (`105 XP`)
+   * Act 2B Tutorial Spawner: Spawns an "Orc Maraudeur" (`135 HP`, `16 dmg`, `5.8 speed`,
+   * requiring 6–7 cleave hits + dash-dodges) whose defeat awards enough XP (`105 XP`)
    * to trigger Level 2 and open the Roguelike Upgrade Modal in Act 2C.
    * @param {number} [x=-14]
    * @param {number} [z=10]
@@ -1247,9 +1405,9 @@ export class EnemyManager {
     const genome = this._createSafeGenome('orc');
     genome.speciesName = 'Orc Maraudeur';
     const orc = this.spawnEnemy(x, z, genome, [], {
-      hpOverride: 72,
-      damageOverride: 7.0,
-      speedOverride: 5.2,
+      hpOverride: 135,
+      damageOverride: 16,
+      speedOverride: 5.8,
       xpRewardOverride: 105,
       tutorialTag: 'act2_orc',
     });
@@ -1286,14 +1444,15 @@ export class EnemyManager {
 
   /**
    * Act 6 Tutorial Spawner: Spawns the Juvenile Baby Fire Troll (`Patient Zéro Juvénile`,
-   * `pyro_gland`, `lifeStage: 'baby'`, `isAdult: false`) at `{ x: 46, z: -46 }` with maturation
-   * frozen at 80% until the player approaches within 14m, guaranteeing the player experiences
-   * hunting a juvenile Patient Zero before adulthood!
-   * @param {number} [x=46]
-   * @param {number} [z=-46]
+   * `pyro_gland`, `lifeStage: 'baby'`, `isAdult: false`) at `~64m` in the Volcanic Caldera (`(-46, 44)`)
+   * with `360 HP`, `24 damage`, `6.8 speed`, `2.2s` fireball cooldown, and `6 DPS` burn DoT on hit
+   * so the Scout at speed `6.8` takes `~7–9 seconds` to trek across the map and spot it, and the
+   * final duel is a tense, nail-biting close-call boss fight!
+   * @param {number} [x=-46]
+   * @param {number} [z=44]
    * @returns {Object} Spawned Juvenile Patient Zero entity.
    */
-  spawnTutorialBabyFireTroll(x = 46, z = -46) {
+  spawnTutorialBabyFireTroll(x = -46, z = 44) {
     const genome = this._createSafeGenome('troll');
     this._applyMutationToGenome(genome, 'pyro_gland');
     genome.isPatientZero = true;
@@ -1305,9 +1464,19 @@ export class EnemyManager {
       age: 4,
       maturationTime: 36,
       freezeMaturationAt80: true,
+      hpOverride: 360,
+      damageOverride: 24,
+      speedOverride: 6.8,
+      fireballCooldown: 2.2,
+      burnOnHitDps: 6,
+      burnOnHitDuration: 3.0,
       xpRewardOverride: 120,
       tutorialTag: 'act6_baby_fire_troll',
     });
+
+    if (babyTroll.mesh) {
+      babyTroll.mesh.scale.setScalar(0.65);
+    }
 
     if (this.vfx && typeof this.vfx.spawnBirthEffect === 'function') {
       this.vfx.spawnBirthEffect(
@@ -1319,8 +1488,8 @@ export class EnemyManager {
     }
 
     logger.evolution(
-      `Acte 6 : Apparition d'un Patient Zéro Juvénile [Troll — Glande Pyroclastique] (Stade: BÉBÉ) en (${Math.round(x)}, ${Math.round(z)}) !`,
-      { enemyId: babyTroll.id, lifeStage: babyTroll.lifeStage, x: Math.round(x), z: Math.round(z) }
+      `Acte 6 : Apparition d'un Patient Zéro Juvénile [Troll — Glande Pyroclastique] (Stade: BÉBÉ, 360 PV) en (${Math.round(x)}, ${Math.round(z)}) !`,
+      { enemyId: babyTroll.id, lifeStage: babyTroll.lifeStage, hp: babyTroll.hp, x: Math.round(x), z: Math.round(z) }
     );
     return babyTroll;
   }
@@ -1336,6 +1505,7 @@ export class EnemyManager {
     if (this.enemies.length < 12) {
       this.spawnInitialPopulation(count);
     }
+    this.daytimeMonsterPeak = Math.max(this.daytimeMonsterPeak || 0, this.enemies.length);
     logger.alert('🌍 Mode Survie Ouvert activé : Cycles Éco-Tick en temps réel et meutes sauvages déployées !');
   }
 
@@ -1409,6 +1579,12 @@ export class EnemyManager {
     this.molesErupted = false;
     this.sharkReinforceTimer = 0;
     this.moleReinforceTimer = 0;
+    this.daytimeMonsterPeak = 0;
+    this.daytimeKills = 0;
+    this.isNightTime = false;
+    this.nightUndeadSpawnedTonight = false;
+    this.midnightUndeadSpawnedTonight = false;
+    this.nightWaveTimer = 0;
     if (this.repopulationTimers && typeof this.repopulationTimers === 'object') {
       for (const k of Object.keys(this.repopulationTimers)) {
         this.repopulationTimers[k] = 0;
@@ -1490,6 +1666,14 @@ export class EnemyManager {
     this.survivalElapsedSec = 0;
     this.sharkReinforceTimer = 0;
     this.moleReinforceTimer = 0;
+    this.daytimeMonsterPeak = 0;
+    this.daytimeKills = 0;
+    this.isNightTime = false;
+    this.nightUndeadSpawnedTonight = false;
+    this.midnightUndeadSpawnedTonight = false;
+    this.nightWaveTimer = 0;
+    this.playerBurnTimer = 0;
+    this.playerBurnDps = 0;
     if (this.repopulationTimers && typeof this.repopulationTimers === 'object') {
       for (const k of Object.keys(this.repopulationTimers)) {
         this.repopulationTimers[k] = 0;
@@ -1504,6 +1688,7 @@ export class EnemyManager {
     }
 
     this.spawnInitialPopulation(count);
+    this.daytimeMonsterPeak = this.enemies.length;
 
     logger.info(
       'ECO',
@@ -1954,8 +2139,9 @@ export class EnemyManager {
    * @param {Object} player - PlayerController instance.
    * @param {Object} bastionAndNpcs - BastionAndNPCs instance.
    * @param {Function} [onLineageEradicated] - Callback `(mutationId, enemy)` when a mutant lineage hits 0 carriers.
+   * @param {boolean} [isNightOverride] - Optional night state flag from SceneManager.
    */
-  update(dt, elapsedTime, player, bastionAndNpcs, onLineageEradicated) {
+  update(dt, elapsedTime, player, bastionAndNpcs, onLineageEradicated, isNightOverride) {
     if (typeof onLineageEradicated === 'function') {
       this.onLineageEradicated = onLineageEradicated;
     }
@@ -1964,6 +2150,41 @@ export class EnemyManager {
     }
     if (bastionAndNpcs) {
       this.bastionRef = bastionAndNpcs;
+    }
+
+    // 0a. Sync Day/Night state & Track Daytime Monster Peak / Night Undead Waves
+    if (typeof isNightOverride === 'boolean') {
+      this.setNightState(isNightOverride);
+    }
+
+    if (!this.isNightTime) {
+      this.daytimeMonsterPeak = Math.max(this.daytimeMonsterPeak || 0, this.enemies.length);
+    } else if (!this.tutorialMode && !this.islandShieldActive) {
+      this.nightWaveTimer = (this.nightWaveTimer || 0) + dt;
+      if (!this.nightUndeadSpawnedTonight) {
+        this.onNightfall();
+      } else if (this.nightWaveTimer >= 22.5 && !this.midnightUndeadSpawnedTonight) {
+        this.midnightUndeadSpawnedTonight = true;
+        this.spawnNightUndeadWave();
+      }
+    }
+
+    // 0b. Tick Player Burn DoT from Pyroclastic / Baby Fire Troll strikes
+    if ((this.playerBurnTimer || 0) > 0 && player && player.hp > 0) {
+      this.playerBurnTimer = Math.max(0, this.playerBurnTimer - dt);
+      this.playerBurnTickAccum = (this.playerBurnTickAccum || 0) + dt;
+      if (this.playerBurnTickAccum >= 0.5) {
+        const tickSpan = this.playerBurnTickAccum;
+        this.playerBurnTickAccum = 0;
+        const burnDmg = +((this.playerBurnDps || 6) * tickSpan).toFixed(1);
+        if (typeof player.takeDamage === 'function') {
+          player.takeDamage(burnDmg, true, { speciesName: 'Brûlure Pyroclastique' }, 'fire');
+        } else {
+          player.hp = Math.max(0, player.hp - burnDmg);
+        }
+      }
+    } else {
+      this.playerBurnTickAccum = 0;
     }
 
     // 0. Tick Collective Species Wrath Timers (e.g. 'dragon')
@@ -2061,6 +2282,17 @@ export class EnemyManager {
         enemy.genome?.clade === 'herbivore' ||
         spId === 'deer' ||
         spId === 'rabbit';
+
+      // Nocturnal Undead (`isNocturnalUndead: true` / `speciesId === 'undead'`): burn & crumble in Dawn sunlight at 55 DPS!
+      if ((enemy.isNocturnalUndead || spId === 'undead') && !this.isNightTime) {
+        const sunDrain = (CONFIG.SPECIES?.undead?.sunlightBurnDps || 55) * dt;
+        enemy.hp -= sunDrain;
+        enemy.hitFlash = Math.max(enemy.hitFlash, 0.5);
+        if (enemy.hp <= 0) {
+          this._removeEnemyAtIndex(i, false, this.onLineageEradicated);
+          continue;
+        }
+      }
 
       // Offshore Ocean Sharks (`isAquatic === true`): swim in the coastal ocean ring (`radius: 88..104m`)
       if (enemy.isAquatic) {
@@ -2269,7 +2501,7 @@ export class EnemyManager {
             }
           }
 
-          // Starving enemies or forced Act 4 Raiders migrate/charge toward the Bastion
+          // Starving enemies, Nocturnal Undead, or forced Act 4 Raiders migrate/charge toward the Bastion
           const distToBastion = Math.hypot(enemy.x, enemy.z);
           if (
             !targetType &&
@@ -2392,7 +2624,12 @@ export class EnemyManager {
           // Ranged Pyroclastic Fireball!
           enemy.state = 'attack';
           isAttacking = true;
-          enemy.attackCooldown = isDragon && enemy.enraged ? 1.55 : 2.2;
+          enemy.attackCooldown =
+            typeof enemy.fireballCooldown === 'number'
+              ? enemy.fireballCooldown
+              : isDragon && enemy.enraged
+                ? 1.55
+                : 2.2;
           this._spawnFireball(enemy, targetX, targetZ);
         } else {
           // Chase target
@@ -2470,6 +2707,14 @@ export class EnemyManager {
       // Sync 3D Mesh & Animation (with Phase 12 Distance Culling > 95m & 4x Animation LOD > 48m)
       if (enemy.mesh) {
         enemy.mesh.position.set(enemy.x, Math.max(enemy.y, waterLevel + 0.1), enemy.z);
+
+        // Act 6 Juvenile Baby Fire Troll dynamic scale growth (0.65 -> 0.95 as fight progresses)
+        if (enemy.tutorialTag === 'act6_baby_fire_troll' && !enemy.isAdult) {
+          const hpLostFrac = 1 - clamp(enemy.hp / Math.max(1, enemy.maxHp), 0, 1);
+          const ageFrac = clamp(((enemy.age || 4) - 4) / 24, 0, 1);
+          const dynamicScale = 0.65 + 0.30 * Math.max(hpLostFrac, ageFrac);
+          enemy.mesh.scale.setScalar(dynamicScale);
+        }
 
         // Keep 3D sky beacon locked onto moving spotted mutant/Patient Zero regardless of distance
         if (enemy.spottedByScout && this.vfx && typeof this.vfx.setPatientZeroBeacon === 'function') {
@@ -2578,9 +2823,13 @@ export class EnemyManager {
       } else {
         targetEntity.hp = Math.max(0, targetEntity.hp - effDamage);
       }
+      if ((enemy.burnOnHitDps || 0) > 0) {
+        this.playerBurnDps = Math.max(this.playerBurnDps || 0, enemy.burnOnHitDps);
+        this.playerBurnTimer = Math.max(this.playerBurnTimer || 0, enemy.burnOnHitDuration || 3.0);
+      }
     } else if (targetType === 'npc' && targetEntity && bastionAndNpcs) {
       if (typeof bastionAndNpcs.damageNpc === 'function') {
-        bastionAndNpcs.damageNpc(targetEntity.id, effDamage);
+        bastionAndNpcs.damageNpc(targetEntity.id, effDamage, enemy);
       } else {
         targetEntity.hp = Math.max(0, targetEntity.hp - effDamage);
       }
@@ -2649,8 +2898,29 @@ export class EnemyManager {
         } else {
           player.hp = Math.max(0, player.hp - p.damage);
         }
+        if (p.ownerEnemy && (p.ownerEnemy.burnOnHitDps || 0) > 0) {
+          this.playerBurnDps = Math.max(this.playerBurnDps || 0, p.ownerEnemy.burnOnHitDps);
+          this.playerBurnTimer = Math.max(
+            this.playerBurnTimer || 0,
+            p.ownerEnemy.burnOnHitDuration || 3.0
+          );
+        }
         hit = true;
-      } else if (bastionAndNpcs && Math.hypot(p.x, p.z) < (CONFIG.BASTION?.RADIUS || 14)) {
+      } else if (bastionAndNpcs && Array.isArray(bastionAndNpcs.npcs)) {
+        for (const npc of bastionAndNpcs.npcs) {
+          if (npc && npc.hp > 0 && dist2D(p.x, p.z, npc.x, npc.z) < 1.4) {
+            if (typeof bastionAndNpcs.damageNpc === 'function') {
+              bastionAndNpcs.damageNpc(npc.id, p.damage, p.ownerEnemy || null);
+            } else {
+              npc.hp = Math.max(0, npc.hp - p.damage);
+            }
+            hit = true;
+            break;
+          }
+        }
+      }
+
+      if (!hit && bastionAndNpcs && Math.hypot(p.x, p.z) < (CONFIG.BASTION?.RADIUS || 14)) {
         if (typeof bastionAndNpcs.damageBastion === 'function') {
           bastionAndNpcs.damageBastion(p.damage);
         }
@@ -2729,6 +2999,9 @@ export class EnemyManager {
     if (enemy.hp <= 0) {
       const spId = enemy.genome?.speciesId || 'goblin';
       const spDef = CONFIG.SPECIES[spId] || CONFIG.SPECIES.goblin;
+      if (!this.isNightTime && spId !== 'undead') {
+        this.daytimeKills = (this.daytimeKills || 0) + 1;
+      }
       const isPrey =
         Boolean(enemy.isPrey) ||
         enemy.aggroStance === 'prey_pacifist' ||

@@ -37,6 +37,7 @@ const CANONICAL_SPECIES_ORDER = Object.freeze([
   'rabbit',
   'deer',
   'storm_harpy',
+  'undead',
 ]);
 
 /**
@@ -47,51 +48,55 @@ const CANONICAL_SPECIES_ORDER = Object.freeze([
 const FALLBACK_PHYLOGENY_DIST = Object.freeze({
   goblin: {
     goblin: 0.0, orc: 0.18, troll: 0.32, wolf: 0.62, lion: 0.72, vulture: 0.78, dragon: 0.85,
-    shark: 0.72, giant_mole: 0.44, rabbit: 0.85, deer: 0.84, storm_harpy: 0.76,
+    shark: 0.72, giant_mole: 0.44, rabbit: 0.85, deer: 0.84, storm_harpy: 0.76, undead: 0.34,
   },
   orc: {
     goblin: 0.18, orc: 0.0, troll: 0.22, wolf: 0.44, lion: 0.60, vulture: 0.72, dragon: 0.75,
-    shark: 0.64, giant_mole: 0.36, rabbit: 0.88, deer: 0.86, storm_harpy: 0.72,
+    shark: 0.64, giant_mole: 0.36, rabbit: 0.88, deer: 0.86, storm_harpy: 0.72, undead: 0.28,
   },
   troll: {
     goblin: 0.32, orc: 0.22, troll: 0.0, wolf: 0.58, lion: 0.64, vulture: 0.68, dragon: 0.42,
-    shark: 0.38, giant_mole: 0.28, rabbit: 0.90, deer: 0.88, storm_harpy: 0.68,
+    shark: 0.38, giant_mole: 0.28, rabbit: 0.90, deer: 0.88, storm_harpy: 0.68, undead: 0.30,
   },
   wolf: {
     goblin: 0.62, orc: 0.44, troll: 0.58, wolf: 0.0, lion: 0.20, vulture: 0.40, dragon: 0.74,
-    shark: 0.34, giant_mole: 0.39, rabbit: 0.84, deer: 0.82, storm_harpy: 0.52,
+    shark: 0.34, giant_mole: 0.39, rabbit: 0.84, deer: 0.82, storm_harpy: 0.52, undead: 0.42,
   },
   lion: {
     goblin: 0.72, orc: 0.60, troll: 0.64, wolf: 0.20, lion: 0.0, vulture: 0.35, dragon: 0.62,
-    shark: 0.58, giant_mole: 0.56, rabbit: 0.86, deer: 0.80, storm_harpy: 0.46,
+    shark: 0.58, giant_mole: 0.56, rabbit: 0.86, deer: 0.80, storm_harpy: 0.46, undead: 0.54,
   },
   vulture: {
     goblin: 0.78, orc: 0.72, troll: 0.68, wolf: 0.40, lion: 0.35, vulture: 0.0, dragon: 0.38,
-    shark: 0.70, giant_mole: 0.76, rabbit: 0.82, deer: 0.82, storm_harpy: 0.24,
+    shark: 0.70, giant_mole: 0.76, rabbit: 0.82, deer: 0.82, storm_harpy: 0.24, undead: 0.40,
   },
   dragon: {
     goblin: 0.85, orc: 0.75, troll: 0.42, wolf: 0.74, lion: 0.62, vulture: 0.38, dragon: 0.0,
-    shark: 0.42, giant_mole: 0.68, rabbit: 0.92, deer: 0.90, storm_harpy: 0.32,
+    shark: 0.42, giant_mole: 0.68, rabbit: 0.92, deer: 0.90, storm_harpy: 0.32, undead: 0.44,
   },
   shark: {
     goblin: 0.72, orc: 0.64, troll: 0.38, wolf: 0.34, lion: 0.58, vulture: 0.70, dragon: 0.42,
-    shark: 0.0, giant_mole: 0.66, rabbit: 0.88, deer: 0.86, storm_harpy: 0.68,
+    shark: 0.0, giant_mole: 0.66, rabbit: 0.88, deer: 0.86, storm_harpy: 0.68, undead: 0.62,
   },
   giant_mole: {
     goblin: 0.44, orc: 0.36, troll: 0.28, wolf: 0.39, lion: 0.56, vulture: 0.76, dragon: 0.68,
-    shark: 0.66, giant_mole: 0.0, rabbit: 0.82, deer: 0.84, storm_harpy: 0.78,
+    shark: 0.66, giant_mole: 0.0, rabbit: 0.82, deer: 0.84, storm_harpy: 0.78, undead: 0.42,
   },
   rabbit: {
     goblin: 0.85, orc: 0.88, troll: 0.90, wolf: 0.84, lion: 0.86, vulture: 0.82, dragon: 0.92,
-    shark: 0.88, giant_mole: 0.82, rabbit: 0.0, deer: 0.24, storm_harpy: 0.86,
+    shark: 0.88, giant_mole: 0.82, rabbit: 0.0, deer: 0.24, storm_harpy: 0.86, undead: 0.95,
   },
   deer: {
     goblin: 0.84, orc: 0.86, troll: 0.88, wolf: 0.82, lion: 0.80, vulture: 0.82, dragon: 0.90,
-    shark: 0.86, giant_mole: 0.84, rabbit: 0.24, deer: 0.0, storm_harpy: 0.84,
+    shark: 0.86, giant_mole: 0.84, rabbit: 0.24, deer: 0.0, storm_harpy: 0.84, undead: 0.95,
   },
   storm_harpy: {
     goblin: 0.76, orc: 0.72, troll: 0.68, wolf: 0.52, lion: 0.46, vulture: 0.24, dragon: 0.32,
-    shark: 0.68, giant_mole: 0.78, rabbit: 0.86, deer: 0.84, storm_harpy: 0.0,
+    shark: 0.68, giant_mole: 0.78, rabbit: 0.86, deer: 0.84, storm_harpy: 0.0, undead: 0.58,
+  },
+  undead: {
+    goblin: 0.34, orc: 0.28, troll: 0.30, wolf: 0.42, lion: 0.54, vulture: 0.40, dragon: 0.44,
+    shark: 0.62, giant_mole: 0.42, rabbit: 0.95, deer: 0.95, storm_harpy: 0.58, undead: 0.0,
   },
 });
 
@@ -373,6 +378,34 @@ const FALLBACK_SPECIES = Object.freeze({
     xpReward: 10,
     description: 'Herbivore grégaire pacifique qui régénère la biomasse (+6/tick) et fournit +35 Rations.',
   },
+  undead: {
+    id: 'undead',
+    name: 'Revenant Maudit',
+    clade: 'undead',
+    isNocturnalUndead: true,
+    burnsInSunlight: true,
+    baseHp: 115,
+    baseSpeed: 7.4,
+    baseDamage: 19,
+    baseSize: 1.05,
+    baseGestationTime: 16,
+    baseMaturationTime: 14,
+    baseAggressiveness: 0.95,
+    aggroStance: 'hostile',
+    autoRepopulate: false,
+    repopulationCooldown: 0,
+    repopulationHabitatLabel: 'cryptes nocturnes',
+    color: '#3a4f41',
+    accentColor: '#6eff9b',
+    colorHex: 0x3a4f41,
+    accentHex: 0x6eff9b,
+    preferredBiome: 'highlands',
+    metabolism: 2.5,
+    fertility: 1.0,
+    aggroRadius: 28,
+    xpReward: 38,
+    description: 'Guerrier squelettique réanimé à la tombée de la nuit qui brûle à l’aube.',
+  },
 });
 
 /**
@@ -414,7 +447,61 @@ const CURATED_HYBRID_NAMES = Object.freeze({
   storm_harpy_vulture: 'Harpie Charognarde',
   dragon_storm_harpy: 'Vouivre des Tempêtes',
   storm_harpy_dragon: 'Vouivre des Tempêtes',
+  // Phase 16 Giant Fire & Undead cross-clade hybrids
+  goblin_wolf: 'Traqueur Lupin',
+  wolf_goblin: 'Traqueur Lupin',
+  goblin_lion: 'Chimère Férale',
+  lion_goblin: 'Chimère Férale',
+  orc_lion: 'Seigneur Manticore',
+  lion_orc: 'Seigneur Manticore',
+  troll_wolf: 'Béhémoth Lycan',
+  wolf_troll: 'Béhémoth Lycan',
+  troll_lion: 'Titan Crinière-de-Braise',
+  lion_troll: 'Titan Crinière-de-Braise',
+  orc_dragon: 'Drak-Orc Pyroclastique',
+  dragon_orc: 'Drak-Orc Pyroclastique',
+  lion_dragon: 'Chimère Draconique',
+  dragon_lion: 'Chimère Draconique',
+  wolf_dragon: 'Loup-Drake Cendré',
+  dragon_wolf: 'Loup-Drake Cendré',
+  orc_undead: 'Saccageur Revenant',
+  undead_orc: 'Saccageur Revenant',
+  troll_undead: 'Colosse Ossuaire',
+  undead_troll: 'Colosse Ossuaire',
 });
+
+/**
+ * Checks whether a species argument (genome, entity, or config object) carries
+ * the dominant `pyro_gland` or `titan_growth` mutations that unlock cross-clade hybridization.
+ *
+ * @param {string|object} speciesOrEntity - Species ID string, Genome, or entity object.
+ * @returns {boolean} True if carrying `pyro_gland` or `titan_growth`.
+ */
+function hasFireOrTitanMutation(speciesOrEntity) {
+  if (!speciesOrEntity || typeof speciesOrEntity !== 'object') return false;
+  const muts = Array.isArray(speciesOrEntity.mutations)
+    ? speciesOrEntity.mutations
+    : Array.isArray(speciesOrEntity.genome?.mutations)
+      ? speciesOrEntity.genome.mutations
+      : [];
+  return muts.includes('pyro_gland') || muts.includes('titan_growth');
+}
+
+/**
+ * Checks whether a normalized species ID belongs to a non-hybridizable peaceful herbivore clade
+ * when paired with a carnivore.
+ *
+ * @param {string} id - Normalized species ID.
+ * @returns {boolean} True if herbivore (`rabbit`, `deer`, `rabbit_deer`, `deer_rabbit`).
+ */
+function isHerbivoreSpeciesId(id) {
+  return (
+    id === 'rabbit' ||
+    id === 'deer' ||
+    id === 'rabbit_deer' ||
+    id === 'deer_rabbit'
+  );
+}
 
 /**
  * Normalizes a species identifier or species object into a lowercase species ID string.
@@ -431,6 +518,9 @@ function normalizeSpeciesId(speciesOrId) {
   if (typeof speciesOrId === 'object') {
     if (typeof speciesOrId.speciesId === 'string') {
       return speciesOrId.speciesId.trim().toLowerCase();
+    }
+    if (typeof speciesOrId.genome?.speciesId === 'string') {
+      return speciesOrId.genome.speciesId.trim().toLowerCase();
     }
     if (typeof speciesOrId.id === 'string') {
       return speciesOrId.id.trim().toLowerCase();
@@ -614,10 +704,11 @@ export function getPhylogeneticDistance(speciesA, speciesB) {
 
 /**
  * Determines whether two distinct species are evolutionarily close enough to interbreed
- * and produce viable hybrid offspring (`speciesA !== speciesB` and distance `<= CONFIG.ECO.HYBRID_MAX_DIST`).
+ * and produce viable hybrid offspring (`speciesA !== speciesB` and distance `<= CONFIG.ECO.HYBRID_MAX_DIST`,
+ * OR when either terrestrial parent carries `pyro_gland` or `titan_growth` in Phase 16).
  *
- * @param {string|object} speciesA - First species ID or object.
- * @param {string|object} speciesB - Second species ID or object.
+ * @param {string|object} speciesA - First species ID or Genome/entity object.
+ * @param {string|object} speciesB - Second species ID or Genome/entity object.
  * @returns {boolean} True if the two species can hybridize.
  */
 export function canHybridize(speciesA, speciesB) {
@@ -635,6 +726,16 @@ export function canHybridize(speciesA, speciesB) {
     if (pairA === pairB) return false;
   }
 
+  // Phase 16: Any non-herbivore terrestrial species carrying pyro_gland or titan_growth
+  // can cross-breed with any other non-herbivore species to spread Giant Fire genes across the island!
+  if (
+    !isHerbivoreSpeciesId(idA) &&
+    !isHerbivoreSpeciesId(idB) &&
+    (hasFireOrTitanMutation(speciesA) || hasFireOrTitanMutation(speciesB))
+  ) {
+    return true;
+  }
+
   const maxDist = CONFIG?.ECO?.HYBRID_MAX_DIST ?? 0.45;
   const dist = getPhylogeneticDistance(speciesA, speciesB);
   return dist > 0 && dist <= maxDist;
@@ -644,22 +745,18 @@ export function canHybridize(speciesA, speciesB) {
  * Computes the probability `[0.0, 1.0]` that two adjacent creatures of different species will
  * hybridize during an optimal reproduction tick.
  *
- * When compatible (`canHybridize(speciesA, speciesB) === true`), the hybridization probability is
- * strictly higher than the spontaneous de novo mutation rate (`CONFIG.ECO.MUTATION_RATE = 0.08`)
- * and scales inversely with phylogenetic distance:
- * - Close sister species (e.g., `goblin` + `orc`, dist `0.18`) -> `~0.22` (22%)
- * - `wolf` + `lion` (dist `0.20`) -> `~0.21` (21%)
- * - `orc` + `troll` (dist `0.22`) -> `~0.20` (20%)
- * - Cross-clade boundary pairs (e.g., `orc` + `wolf`, dist `0.44`) -> `~0.11` (11%, still > 8% mutation rate)
- * - Incompatible distant pairs (e.g., `goblin` + `dragon`, dist `0.85`) -> `0.0` (0%)
- *
- * @param {string|object} speciesA - First species ID or object.
- * @param {string|object} speciesB - Second species ID or object.
+ * @param {string|object} speciesA - First species ID or Genome/entity object.
+ * @param {string|object} speciesB - Second species ID or Genome/entity object.
  * @returns {number} Hybridization probability in `[0.0, 1.0]`.
  */
 export function getHybridProbability(speciesA, speciesB) {
   if (!canHybridize(speciesA, speciesB)) {
     return 0.0;
+  }
+
+  // Phase 16: Elevated cross-species hybridization probability when either parent carries pyro_gland or titan_growth
+  if (hasFireOrTitanMutation(speciesA) || hasFireOrTitanMutation(speciesB)) {
+    return 0.44;
   }
 
   const dist = getPhylogeneticDistance(speciesA, speciesB);

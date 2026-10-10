@@ -209,8 +209,8 @@ export const ONBOARDING_ACTS = [
       },
     ],
     spawnSpec: {
-      strayGoblin: { speciesId: 'goblin', x: 10, z: 10, hp: 36, damage: 5, speed: 5.2, xpReward: 45 },
-      marauderOrc: { speciesId: 'orc', x: 13, z: -9, hp: 70, damage: 10, speed: 5.8, xpReward: 80 },
+      strayGoblin: { speciesId: 'goblin', x: 10, z: 10, hp: 65, damage: 10, speed: 5.2, xpReward: 45 },
+      marauderOrc: { speciesId: 'orc', x: 13, z: -9, hp: 135, damage: 16, speed: 5.8, xpReward: 80 },
     },
     unlockedHud: {
       topEcoBar: false,
@@ -448,23 +448,23 @@ export const ONBOARDING_ACTS = [
     timeWindow: '6:45 – 8:30',
     ecoPaused: true,
     instructionTextEN:
-      '🦅 SCOUT ALERT! Your Scout spotted a Baby Fire Troll (Pyroclastic Gland mutation) in the North-East! It was just born: while still a BABY (0.5x size), it cannot reproduce. Eliminate it before it becomes an ADULT, then open the Codex [Tab]!',
+      '🦅 SCOUT IN RECONNAISSANCE! Your Scout is patrolling the North-East wilderness (~8s) and will spot a Juvenile Fire Troll (Pyroclastic Gland mutation)! ⚠️ CLOSE-CALL BOSS FIGHT (360 HP, Fireballs): use [Shift] to dodge its fireballs and unleash your Spells [1..4] + Cleave before it becomes an ADULT, then open the Codex [Tab]!',
     instructionTextFR:
-      '🦅 ALERTE ÉCLAIREUR ! Votre Éclaireur a repéré au Nord-Est un Bébé Troll de Feu (mutation Glande Pyroclastique) ! Ce monstre vient de naître : c’est encore un BÉBÉ (taille 0.5x, incapable de se reproduire). Éliminez-le avant qu’il ne devienne ADULTE, puis ouvrez le Codex [Tab] !',
+      '🦅 ÉCLAIREUR EN RECONNAISSANCE ! Votre Éclaireur patrouille au Nord-Est (~8s) et va repérer un Bébé Troll de Feu (mutation Glande Pyroclastique) ! ⚠️ DUEL PÉRILLEUX (360 PV, Boules de Feu) : esquivez avec [Shift] et enchaînez vos Sorts [1..4] + Fente avant qu’il ne devienne ADULTE, puis ouvrez le Codex [Tab] !',
     whyItMattersEN:
-      'In Genesis Bastion, mutations are Mendelian and dominant (78% inheritance). Slaying a Patient Zero while it is still a BABY eradicates the lineage before its first reproductive cycle!',
+      'In Genesis Bastion, fire and gigantism mutations are hyper-dominant (92%–99% inheritance). Slaying a Patient Zero while it is still a BABY is a perilous duel, but it eradicates an entire Fire Titan lineage before its first reproductive cycle!',
     whyItMattersFR:
-      'Dans Genesis Bastion, les mutations sont mendéliennes et dominantes (78% de transmission). Tuer un Patient Zéro tant qu’il est encore BÉBÉ éradique la lignée avant son 1er cycle de reproduction !',
+      'Dans Genesis Bastion, les mutations de feu et de gigantisme sont hyper-dominantes (92%–99% de transmission). Terrasser un Patient Zéro tant qu’il est BÉBÉ est un duel périlleux, mais cela éradique une lignée entière de Titans de Feu avant son 1er cycle de reproduction !',
     keysEN: ['Sprint / Shift', 'Left Click / Spells 1..4', 'Tab (Genetic Codex)'],
     keysFR: ['Sprint / Shift', 'Clic Gauche / Sorts 1..4', 'Tab (Codex Génétique)'],
     keyBadgesEN: [
-      { keys: ['Shift'], altKeys: ['W/A/S/D'], label: 'Sprint toward the red beacon (North-East)' },
-      { keys: ['Left Click', '1..4'], altKeys: ['Auto'], label: 'Eliminate the Baby Fire Troll' },
+      { keys: ['Shift'], altKeys: ['W/A/S/D'], label: 'Sprint & Dodge Fireballs (North-East)' },
+      { keys: ['Left Click', '1..4'], altKeys: ['Auto'], label: 'Eliminate the Baby Fire Troll (360 HP)' },
       { keys: ['Tab'], altKeys: [], label: 'Open Phylogenetic Tree & Codex' },
     ],
     keyBadgesFR: [
-      { keys: ['Shift'], altKeys: ['Z/Q/S/D'], label: 'Foncer vers le faisceau rouge (Nord-Est)' },
-      { keys: ['Clic Gauche', '1..4'], altKeys: ['Auto'], label: 'Éliminer le Bébé Troll de Feu' },
+      { keys: ['Shift'], altKeys: ['Z/Q/S/D'], label: 'Foncer & Esquiver les Boules de Feu (Nord-Est)' },
+      { keys: ['Clic Gauche', '1..4'], altKeys: ['Auto'], label: 'Éliminer le Bébé Troll de Feu (360 PV)' },
       { keys: ['Tab'], altKeys: [], label: 'Ouvrir l’Arbre Phylogénétique & Codex' },
     ],
     objectiveLabelEN: 'Eliminate the Baby Fire Troll (Patient Zero) in the North-East, then press [Tab]',
@@ -473,13 +473,13 @@ export const ONBOARDING_ACTS = [
     progressLabelTemplateFR: 'Traque Génétique : {current}/{target}',
     targetCount: 2,
     targetWorldPos: { x: 46, z: -46 },
-    contextPromptEN: '🔥 BABY PATIENT ZERO — Eliminate before adulthood!',
-    contextPromptFR: '🔥 BÉBÉ PATIENT ZÉRO — Éliminez-le avant l’âge adulte !',
+    contextPromptEN: '🔥 BABY PATIENT ZERO — Perilous Duel (Dodge with [Shift])!',
+    contextPromptFR: '🔥 BÉBÉ PATIENT ZÉRO — Duel Périlleux (Esquivez avec [Shift]) !',
     subObjectivesBilingual: [
       {
         id: 'kill_baby_fire_troll',
-        labelEN: '6A. Follow the red sky beam North-East and eliminate the Baby Fire Troll',
-        labelFR: '6A. Suivre le faisceau rouge au Nord-Est et éliminer le Bébé Troll de Feu',
+        labelEN: '6A. Wait for the Scout alert (~8s), sprint North-East, and defeat the Baby Fire Troll (360 HP)',
+        labelFR: '6A. Attendre l’alerte de l’Éclaireur (~8s), foncer au Nord-Est et vaincre le Bébé Troll de Feu (360 PV)',
         targetPos: { x: 46, z: -46 },
       },
       {
@@ -498,8 +498,11 @@ export const ONBOARDING_ACTS = [
         lifeStage: 'baby',
         isAdult: false,
         freezeMaturationCap: 0.8,
-        hp: 95,
-        damage: 13,
+        hp: 360,
+        damage: 24,
+        speed: 6.8,
+        fireballCooldown: 2.2,
+        scoutDelaySec: 8.5,
       },
     },
     unlockedHud: {

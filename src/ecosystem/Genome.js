@@ -272,9 +272,52 @@ const SPECIES_CYCLE_DEFAULTS = Object.freeze({
     aggroRadius: 26,
     autoRepopulate: true,
   },
+  undead: {
+    id: 'undead',
+    name: 'Revenant Maudit',
+    clade: 'undead',
+    isNocturnalUndead: true,
+    burnsInSunlight: true,
+    baseHp: 115,
+    baseDamage: 19,
+    baseSpeed: 7.4,
+    baseSize: 1.05,
+    baseGestationTime: 16,
+    baseMaturationTime: 14,
+    baseAggressiveness: 0.95,
+    aggroStance: 'hostile',
+    metabolism: 2.5,
+    fertility: 1.0,
+    aggroRadius: 28,
+    autoRepopulate: false,
+  },
 });
 
 const FALLBACK_MUTATIONS = Object.freeze({
+  pyro_gland: {
+    id: 'pyro_gland',
+    name: 'Glande Pyroclastique',
+    shortLabel: 'Pyro',
+    element: 'fire',
+    dominant: true,
+    colorHex: 0xff4500,
+    colorCss: '#ff4500',
+    statMultipliers: { maxHp: 1.35, speed: 1.08, strength: 1.45, size: 1.24 },
+    metabolismCost: 1.0,
+    fitnessBonus: 1.45,
+  },
+  titan_growth: {
+    id: 'titan_growth',
+    name: 'Gigantisme Titanesque',
+    shortLabel: 'Titan',
+    element: 'physical',
+    dominant: true,
+    colorHex: 0xff9f1c,
+    colorCss: '#ff9f1c',
+    statMultipliers: { maxHp: 1.55, speed: 1.02, strength: 1.42, size: 1.52 },
+    metabolismCost: 1.0,
+    fitnessBonus: 1.35,
+  },
   amphibious_lungs: {
     id: 'amphibious_lungs',
     name: 'Pattes & Branchies Amphibies',
@@ -548,11 +591,25 @@ export class Genome {
       const mut = catalog[mutId];
       if (!mut) continue;
       const sm = mut.statMultipliers || {};
-      multMaxHp *= sm.maxHp ?? 1.0;
-      multStrength *= sm.strength ?? 1.0;
-      multSpeed *= sm.speed ?? 1.0;
-      multSize *= sm.size ?? 1.0;
-      multMetabolism *= mut.metabolismCost ?? 1.0;
+      if (mutId === 'pyro_gland') {
+        multMaxHp *= Math.max(sm.maxHp ?? 1.0, 1.35);
+        multStrength *= Math.max(sm.strength ?? 1.0, 1.45);
+        multSpeed *= Math.max(sm.speed ?? 1.0, 1.08);
+        multSize *= Math.max(sm.size ?? 1.0, 1.24);
+        // Phase 16: Zero metabolic famine penalty for pyro_gland
+      } else if (mutId === 'titan_growth') {
+        multMaxHp *= Math.max(sm.maxHp ?? 1.0, 1.55);
+        multStrength *= Math.max(sm.strength ?? 1.0, 1.42);
+        multSpeed *= Math.max(sm.speed ?? 1.0, 1.02);
+        multSize *= Math.max(sm.size ?? 1.0, 1.52);
+        // Phase 16: Zero metabolic famine penalty for titan_growth
+      } else {
+        multMaxHp *= sm.maxHp ?? 1.0;
+        multStrength *= sm.strength ?? 1.0;
+        multSpeed *= sm.speed ?? 1.0;
+        multSize *= sm.size ?? 1.0;
+        multMetabolism *= mut.metabolismCost ?? 1.0;
+      }
     }
 
     const baseline = resolveSpeciesBaseline(this.speciesId, this.hybridParents);
@@ -804,7 +861,7 @@ export class Genome {
     let hybridSpec = null;
 
     if (parentA.speciesId !== parentB.speciesId) {
-      if (canHybridize(parentA.speciesId, parentB.speciesId)) {
+      if (canHybridize(parentA, parentB)) {
         hybridSpec = createHybridSpec(parentA.speciesId, parentB.speciesId);
         childSpeciesId = hybridSpec.id;
         childSpeciesName = hybridSpec.name;
@@ -827,19 +884,30 @@ export class Genome {
       childBaseline.clade === 'herbivore' ||
       childBaseline.aggroStance === 'prey_pacifist';
 
-    // 2. Scope-Expanding Crossover: uniform([min(Dad, Mom), max(Dad, Mom)]) * uniform(0.90, 1.10)
+    // 2. Scope-Expanding Crossover with Phase 16 Directional Bias toward Giant Fire Monsters
     const genesA = parentA.baseGenes || parentA.genes;
     const genesB = parentB.baseGenes || parentB.genes;
+    const hasEliteOrMutantParent =
+      !isHerbivore &&
+      ((parentA.mutations?.length || 0) > 0 ||
+        (parentB.mutations?.length || 0) > 0 ||
+        (parentA.fitnessScore || 1.0) > 1.18 ||
+        (parentB.fitnessScore || 1.0) > 1.18);
 
-    const crossoverTrait = (valA, valB, fallbackVal) => {
+    const crossoverTrait = (valA, valB, fallbackVal, biasUpward = false) => {
       const a = typeof valA === 'number' && Number.isFinite(valA) ? valA : fallbackVal;
       const b = typeof valB === 'number' && Number.isFinite(valB) ? valB : fallbackVal;
       const minVal = Math.min(a, b);
       const maxVal = Math.max(a, b);
-      const u1 = sampleUniform(rng);
+      const rawU1 = sampleUniform(rng);
+      const u1 =
+        biasUpward || hasEliteOrMutantParent ? Math.pow(rawU1, 0.55) : rawU1;
       const vBetween = minVal + u1 * (maxVal - minVal);
       const u2 = sampleUniform(rng);
-      const driftFactor = 0.90 + u2 * 0.20; // [-10%, +10%]
+      const driftFactor =
+        biasUpward || hasEliteOrMutantParent
+          ? 0.96 + u2 * 0.18 // [-4%, +14%] upward evolutionary drift
+          : 0.90 + u2 * 0.20; // [-10%, +10%]
       return vBetween * driftFactor;
     };
 
@@ -856,14 +924,14 @@ export class Genome {
     const childBaseGenes = {
       size: Number(
         clamp(
-          crossoverTrait(genesA.size, genesB.size, refSize),
+          crossoverTrait(genesA.size, genesB.size, refSize, !isHerbivore),
           refSize * 0.35,
           refSize * 4.5
         ).toFixed(3)
       ),
       speed: Number(
         clamp(
-          crossoverTrait(genesA.speed, genesB.speed, refSpeed),
+          crossoverTrait(genesA.speed, genesB.speed, refSpeed, false),
           refSpeed * 0.35,
           refSpeed * 4.5
         ).toFixed(2)
@@ -872,7 +940,7 @@ export class Genome {
         ? 0
         : Number(
             clamp(
-              crossoverTrait(genesA.strength, genesB.strength, refStr),
+              crossoverTrait(genesA.strength, genesB.strength, refStr, true),
               refStr * 0.35,
               refStr * 4.5
             ).toFixed(2)
@@ -881,7 +949,7 @@ export class Genome {
         12,
         Math.round(
           clamp(
-            crossoverTrait(genesA.maxHp, genesB.maxHp, refHp),
+            crossoverTrait(genesA.maxHp, genesB.maxHp, refHp, !isHerbivore),
             refHp * 0.35,
             refHp * 4.5
           )
@@ -889,7 +957,7 @@ export class Genome {
       ),
       gestationTime: Number(
         clamp(
-          crossoverTrait(genesA.gestationTime, genesB.gestationTime, refGest),
+          crossoverTrait(genesA.gestationTime, genesB.gestationTime, refGest, false),
           Math.max(3.5, refGest * 0.35),
           refGest * 3.0
         ).toFixed(2)
@@ -898,28 +966,28 @@ export class Genome {
         ? 0.0
         : Number(
             clamp(
-              crossoverTrait(genesA.aggressiveness, genesB.aggressiveness, refAggro),
+              crossoverTrait(genesA.aggressiveness, genesB.aggressiveness, refAggro, false),
               0.02,
               1.0
             ).toFixed(3)
           ),
       fertility: Number(
         clamp(
-          crossoverTrait(genesA.fertility, genesB.fertility, refFert),
+          crossoverTrait(genesA.fertility, genesB.fertility, refFert, false),
           refFert * 0.35,
           refFert * 4.0
         ).toFixed(3)
       ),
       metabolism: Number(
         clamp(
-          crossoverTrait(genesA.metabolism, genesB.metabolism, refMetab),
+          crossoverTrait(genesA.metabolism, genesB.metabolism, refMetab, false),
           refMetab * 0.35,
           refMetab * 4.0
         ).toFixed(2)
       ),
       aggroRadius: Number(
         clamp(
-          crossoverTrait(genesA.aggroRadius, genesB.aggroRadius, refRadius),
+          crossoverTrait(genesA.aggroRadius, genesB.aggroRadius, refRadius, false),
           refRadius * 0.4,
           refRadius * 3.5
         ).toFixed(2)
@@ -927,8 +995,9 @@ export class Genome {
     };
 
     // 3. Mendelian Dominant Inheritance for Existing Parental Mutations
-    const singleParentProb = CONFIG?.ECO?.DOMINANT_INHERITANCE_SINGLE ?? 0.78;
-    const bothParentsProb = CONFIG?.ECO?.DOMINANT_INHERITANCE_BOTH ?? 0.92;
+    // Phase 16: pyro_gland & titan_growth inherit at 92% (single parent) and 99% (both parents)
+    const singleParentProb = CONFIG?.ECO?.DOMINANT_INHERITANCE_SINGLE ?? 0.92;
+    const bothParentsProb = CONFIG?.ECO?.DOMINANT_INHERITANCE_BOTH ?? 0.99;
 
     const parentMutationsUnion = new Set([
       ...(parentA.mutations || []),
@@ -939,26 +1008,76 @@ export class Genome {
     for (const mutId of parentMutationsUnion) {
       const inA = parentA.hasMutation(mutId);
       const inB = parentB.hasMutation(mutId);
-      const inheritChance = inA && inB ? bothParentsProb : singleParentProb;
+      const isFireOrGiant = mutId === 'pyro_gland' || mutId === 'titan_growth';
+      const inheritChance =
+        inA && inB
+          ? isFireOrGiant
+            ? Math.max(bothParentsProb, 0.99)
+            : bothParentsProb
+          : isFireOrGiant
+            ? Math.max(singleParentProb, 0.92)
+            : singleParentProb;
       if (sampleUniform(rng) < inheritChance) {
         childMutations.push(mutId);
       }
     }
 
-    // 4. De Novo Spontaneous Mutation Roll (CONFIG.ECO.MUTATION_RATE = 8% + optional island bonus for combat clades)
+    // 4. De Novo Spontaneous Mutation Roll (CONFIG.ECO.MUTATION_RATE = 16% + optional island bonus)
+    // Phase 16: pyro_gland and titan_growth are weighted at 70% combined probability (35% each, 30% others)
     const rateBonus = Math.max(0, Number(options?.mutationRateBonus ?? 0));
+    const baseMutRate = Math.max(CONFIG?.ECO?.MUTATION_RATE ?? 0.16, 0.16);
     const deNovoRate = isHerbivore
       ? 0.0
-      : clamp((CONFIG?.ECO?.MUTATION_RATE ?? 0.08) + rateBonus, 0.0, 0.65);
+      : clamp(baseMutRate + rateBonus, 0.0, 0.75);
     let newMutationId = null;
 
     if (deNovoRate > 0 && sampleUniform(rng) < deNovoRate) {
-      const allMutationKeys = Object.keys(CONFIG?.MUTATIONS || {});
-      const candidateKeys = allMutationKeys.filter((k) => !parentMutationsUnion.has(k) && !childMutations.includes(k));
+      const allMutationKeys = Object.keys({
+        ...FALLBACK_MUTATIONS,
+        ...(CONFIG?.MUTATIONS || {}),
+      });
+      const candidateKeys = allMutationKeys.filter(
+        (k) => !parentMutationsUnion.has(k) && !childMutations.includes(k)
+      );
       if (candidateKeys.length > 0) {
-        const idx = Math.floor(sampleUniform(rng) * candidateKeys.length);
-        newMutationId = candidateKeys[idx];
-        childMutations.push(newMutationId);
+        const hasPyroCand = candidateKeys.includes('pyro_gland');
+        const hasTitanCand = candidateKeys.includes('titan_growth');
+        const otherCands = candidateKeys.filter(
+          (k) => k !== 'pyro_gland' && k !== 'titan_growth'
+        );
+        const roll = sampleUniform(rng);
+
+        if (hasPyroCand && hasTitanCand) {
+          if (roll < 0.35) {
+            newMutationId = 'pyro_gland';
+          } else if (roll < 0.70 || otherCands.length === 0) {
+            newMutationId = 'titan_growth';
+          } else {
+            const idx = Math.floor(sampleUniform(rng) * otherCands.length);
+            newMutationId = otherCands[idx];
+          }
+        } else if (hasPyroCand) {
+          if (roll < 0.70 || otherCands.length === 0) {
+            newMutationId = 'pyro_gland';
+          } else {
+            const idx = Math.floor(sampleUniform(rng) * otherCands.length);
+            newMutationId = otherCands[idx];
+          }
+        } else if (hasTitanCand) {
+          if (roll < 0.70 || otherCands.length === 0) {
+            newMutationId = 'titan_growth';
+          } else {
+            const idx = Math.floor(sampleUniform(rng) * otherCands.length);
+            newMutationId = otherCands[idx];
+          }
+        } else {
+          const idx = Math.floor(sampleUniform(rng) * candidateKeys.length);
+          newMutationId = candidateKeys[idx];
+        }
+
+        if (newMutationId) {
+          childMutations.push(newMutationId);
+        }
       }
     }
 

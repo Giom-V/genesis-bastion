@@ -653,35 +653,19 @@ export class GenesisBastionGame {
       this.tutState.spawnedEnemies = [orcGuard];
       this._updateTutorialWaypointAndArrow({ x: 0, z: -38 }, 0x00d8ff);
     } else if (act.actNumber === 6) {
-      this.tutorialSubStep = '6A';
+      this.tutorialSubStep = '6A_SCOUTING';
       this.tutState.codexOpenedInAct6 = false;
-      const babyTroll =
-        typeof this.enemyManager.spawnTutorialBabyFireTroll === 'function'
-          ? this.enemyManager.spawnTutorialBabyFireTroll(46, -46)
-          : this._spawnTutorialCreature({
-              speciesId: 'troll',
-              mutationId: 'pyro_gland',
-              isPatientZero: true,
-              lifeStage: 'baby',
-              isAdult: false,
-              x: 46,
-              z: -46,
-              hp: 88,
-              damage: 9,
-              speed: 4.5,
-              maturationTime: 40,
-            });
-      this.tutState.babyTroll = babyTroll;
-      this.tutState.spawnedEnemies = [babyTroll];
+      this.tutState.babyTroll = null;
+      this.tutState.spawnedEnemies = [];
 
-      // Diriger l'Éclaireur directement vers le secteur Nord-Est (46, -46) pour qu'il le repère rapidement
+      // Diriger l'Éclaireur vers le secteur Nord-Est (46, -46) à sa vitesse normale (6.8 m/s)
       const scouts = this.bastionAndNpcs.getScouts ? this.bastionAndNpcs.getScouts() : [];
       for (const s of scouts) {
-        s.targetX = 42;
-        s.targetZ = -42;
-        s.waypointTimer = 20;
+        s.targetX = 46;
+        s.targetZ = -46;
+        s.waypointTimer = 25;
       }
-      this._updateTutorialWaypointAndArrow({ x: babyTroll.x, z: babyTroll.z }, 0xff4757);
+      this._updateTutorialWaypointAndArrow({ x: 46, z: -46 }, 0xf59e0b);
     } else if (act.actNumber === 7) {
       this.tutorialSubStep = '7A';
       this.ecoPaused = false;
@@ -1016,19 +1000,70 @@ export class GenesisBastionGame {
       }
     }
 
-    // Acte 6 : 6A (Éclaireur repère Bébé Troll de Feu Patient Zéro -> Éradiquer avant âge adulte) -> 6B (Ouvrir Codex [Tab])
+    // Acte 6 : 6A_SCOUTING (Éclaireur patrouille vers le Nord-Est) -> 6A (Bébé Troll de Feu Patient Zéro repéré -> Éradiquer) -> 6B (Ouvrir Codex [Tab])
     else if (this.tutorialAct === 6) {
-      if (this.tutorialSubStep === '6A') {
+      if (this.tutorialSubStep === '6A_SCOUTING') {
+        const scouts = this.bastionAndNpcs?.getScouts ? this.bastionAndNpcs.getScouts() : [];
+        let scoutClose = false;
+        for (const s of scouts) {
+          s.targetX = 46;
+          s.targetZ = -46;
+          if (Math.hypot((s.x || 0) - 46, (s.z || 0) - (-46)) <= 18) {
+            scoutClose = true;
+          }
+        }
+        if (this.tutState.actTimer >= 8.5 || scoutClose) {
+          const babyTroll =
+            typeof this.enemyManager.spawnTutorialBabyFireTroll === 'function'
+              ? this.enemyManager.spawnTutorialBabyFireTroll(46, -46)
+              : this._spawnTutorialCreature({
+                  speciesId: 'troll',
+                  mutationId: 'pyro_gland',
+                  isPatientZero: true,
+                  lifeStage: 'baby',
+                  isAdult: false,
+                  x: 46,
+                  z: -46,
+                  hp: 360,
+                  damage: 24,
+                  speed: 6.8,
+                  maturationTime: 45,
+                });
+          this.tutState.babyTroll = babyTroll;
+          this.tutState.spawnedEnemies = [babyTroll];
+          this.tutorialSubStep = '6A';
+
+          const scout = scouts[0] || { id: 'npc_scout', name: 'Kaelen' };
+          if (babyTroll) {
+            babyTroll.spottedByScout = true;
+            if (this.ecoSim && typeof this.ecoSim.markMutationDiscovered === 'function') {
+              this.ecoSim.markMutationDiscovered('pyro_gland', babyTroll.id);
+            }
+            if (this.vfx && typeof this.vfx.setPatientZeroBeacon === 'function' && babyTroll.mesh) {
+              this.vfx.setPatientZeroBeacon(babyTroll.id, babyTroll.mesh.position, 0xff4500, true);
+            }
+            this.handleScoutDiscovery({
+              scout,
+              enemy: babyTroll,
+              mutations: ['pyro_gland'],
+              isHybrid: false,
+              speciesName: babyTroll.genome?.speciesName || 'Troll',
+              lifeStage: 'baby',
+              isAdult: false,
+            });
+            this._updateTutorialWaypointAndArrow({ x: babyTroll.x, z: babyTroll.z }, 0xff4757);
+          }
+        }
+      } else if (this.tutorialSubStep === '6A') {
         const baby = this.tutState.babyTroll;
         const isAlive = baby && baby.hp > 0 && this.enemyManager.enemies.includes(baby);
         if (isAlive) {
           // Plafonner la maturation à 80% pendant le tutoriel pour garantir que le joueur expérimente la fenêtre Juvénile
-          const maxTutAge = (baby.maturationTime || 40) * 0.8;
+          const maxTutAge = (baby.maturationTime || 45) * 0.8;
           if (baby.age > maxTutAge) {
             baby.age = maxTutAge;
           }
-          // Si l'Éclaireur met plus de 3.5s à l'atteindre, déclencher le repérage automatiquement
-          if (!baby.spottedByScout && this.tutState.actTimer > 3.5) {
+          if (!baby.spottedByScout && this.tutState.actTimer > 10.0) {
             const scouts = this.bastionAndNpcs.getScouts ? this.bastionAndNpcs.getScouts() : [];
             const scout = scouts[0] || { id: 'npc_scout', name: 'Kaelen' };
             baby.spottedByScout = true;
@@ -1175,10 +1210,16 @@ export class GenesisBastionGame {
         progressText = tr('Step 2 / 2', 'Étape 2 / 2');
       }
     } else if (this.tutorialAct === 6) {
-      if (this.tutorialSubStep === '6A') {
+      if (this.tutorialSubStep === '6A_SCOUTING') {
         objectiveText = tr(
-          'Track and eliminate the Juvenile Fire Troll [Patient Zero] in the North-East (46, -46) before adulthood!',
-          'Traquez et éliminez le Bébé Troll de Feu [Patient Zéro] au Nord-Est (46, -46) avant son âge adulte !'
+          'Wait for your Scout to reconnoiter the North-East Volcanic sector (46, -46)...',
+          'Patientez pendant que votre Éclaireur explore le secteur volcanique Nord-Est (46, -46)...'
+        );
+        progressText = tr('Scout Patrolling 🧭', 'Éclaireur en patrouille 🧭');
+      } else if (this.tutorialSubStep === '6A') {
+        objectiveText = tr(
+          'Track and eliminate the Juvenile Fire Troll [Patient Zero] in the North-East (46, -46) — Dodge [Shift] its fireballs!',
+          'Traquez et éliminez le Bébé Troll de Feu [Patient Zéro] au Nord-Est (46, -46) — Esquivez [Shift] ses boules de feu !'
         );
         progressText = tr('Juvenile Patient Zero 🐣', 'Patient Zéro Juvénile 🐣');
       } else {
@@ -1472,6 +1513,122 @@ export class GenesisBastionGame {
         this.hud?.refreshLogFeed?.();
       };
       this.bastionAndNpcs.onBastionDestroyed = (deathInfo) => this.handleGameOver(deathInfo);
+
+      /**
+       * Helper to display a custom urgent alert banner on the HUD (SOS NPC distress, NPC death, Nightfall Undead).
+       */
+      this._showCustomAlertBanner = ({
+        titleEN = '',
+        titleFR = '',
+        descEN = '',
+        descFR = '',
+        icon = '🆘',
+        x = 0,
+        z = 0,
+        durationMs = 8000,
+      }) => {
+        if (!this.hud) return;
+        if (typeof this.hud._resetAlertBannerVariantClasses === 'function') {
+          this.hud._resetAlertBannerVariantClasses();
+        }
+        if (this.hud.alertBannerEl) {
+          this.hud.alertBannerEl.classList.add('is-visible');
+          this.hud.alertBannerEl.style.display = 'flex';
+        }
+        if (this.hud.alertIconWrap) {
+          this.hud.alertIconWrap.textContent = icon;
+        }
+        if (this.hud.alertTitleEl) {
+          this.hud.alertTitleEl.textContent = tr(titleEN, titleFR);
+        }
+        if (this.hud.alertDescEl) {
+          this.hud.alertDescEl.textContent = tr(descEN, descFR);
+        }
+        this.hud.currentAlertTarget = { x, z };
+        if (this.hud.trackPatientZeroBtn) {
+          this.hud.trackPatientZeroBtn.className = 'hud-btn hud-btn-threat';
+          this.hud.trackPatientZeroBtn.textContent = tr('🎯 RUSH TO LOCATION', '🎯 REJOINDRE LA ZONE');
+          this.hud.trackPatientZeroBtn.style.display = 'inline-flex';
+        }
+        if (this.hud.alertTimeoutId) {
+          clearTimeout(this.hud.alertTimeoutId);
+        }
+        this.hud.alertTimeoutId = window.setTimeout(() => {
+          if (typeof this.hud.hideAlertBanner === 'function') {
+            this.hud.hideAlertBanner();
+          }
+        }, durationMs);
+      };
+
+      this.bastionAndNpcs.onNpcUnderAttack = (npc, attackerEnemy, direction = 'Nord') => {
+        const nx = npc?.x ?? 0;
+        const nz = npc?.z ?? 0;
+        const npcName = npc?.name || 'Allié';
+        const roleLabelFR =
+          npc?.role === 'harvester' ? 'Récolteur' : npc?.role === 'scout' ? 'Éclaireur' : 'Garde';
+        const roleLabelEN =
+          npc?.role === 'harvester' ? 'Harvester' : npc?.role === 'scout' ? 'Scout' : 'Guard';
+        const enemyName =
+          attackerEnemy?.genome?.speciesName ||
+          CONFIG.SPECIES?.[attackerEnemy?.speciesId]?.name ||
+          'Monstre';
+        const hpCur = Math.max(1, Math.round(npc?.hp ?? 45));
+        const hpMax = Math.round(npc?.maxHp ?? 90);
+
+        if (this.sound && typeof this.sound.playScoutAlert === 'function') {
+          this.sound.playScoutAlert(false);
+        }
+        if (this.minimap && typeof this.minimap.pingLocation === 'function') {
+          this.minimap.pingLocation(nx, nz, tr('ALLY SOS', 'SOS ALLIÉ'), 7000);
+        }
+        if (!this.tutorialActive && this.player && typeof this.player.setTargetWorldPos === 'function') {
+          this.player.setTargetWorldPos({ x: nx, z: nz }, 0xff4757);
+        }
+        this._showCustomAlertBanner({
+          icon: '🆘',
+          x: nx,
+          z: nz,
+          titleEN: `🆘 HELP! ${npcName.toUpperCase()} (${roleLabelEN}) IS UNDER ATTACK!`,
+          titleFR: `🆘 À L'AIDE ! ${npcName.toUpperCase()} (${roleLabelFR}) EST ATTAQUÉ !`,
+          descEN: `🆘 HELP! ${npcName} (${roleLabelEN}) is under attack by [${enemyName}] in the ${direction} (${hpCur}/${hpMax} HP)! Hurry to save them!`,
+          descFR: `🆘 À L'AIDE ! ${npcName} (${roleLabelFR}) est attaqué par [${enemyName}] au ${direction} (${hpCur}/${hpMax} PV) ! Vite, venez le sauver !`,
+          durationMs: 7500,
+        });
+        this.hud?.refreshLogFeed?.();
+      };
+
+      this.bastionAndNpcs.onNpcKilled = (npc, attackerEnemy) => {
+        const nx = npc?.x ?? 0;
+        const nz = npc?.z ?? 0;
+        const npcName = npc?.name || 'Allié';
+        const roleLabelFR =
+          npc?.role === 'harvester' ? 'Récolteur' : npc?.role === 'scout' ? 'Éclaireur' : 'Garde';
+        const roleLabelEN =
+          npc?.role === 'harvester' ? 'Harvester' : npc?.role === 'scout' ? 'Scout' : 'Guard';
+        const enemyName =
+          attackerEnemy?.genome?.speciesName ||
+          CONFIG.SPECIES?.[attackerEnemy?.speciesId]?.name ||
+          'Monstre';
+
+        if (this.vfx && typeof this.vfx.spawnDeathExplosion === 'function') {
+          this.vfx.spawnDeathExplosion(
+            { x: nx, y: (npc?.y || 1) + 0.8, z: nz },
+            0xff4757,
+            true
+          );
+        }
+        this._showCustomAlertBanner({
+          icon: '💀',
+          x: nx,
+          z: nz,
+          titleEN: `💀 ALLY SLAIN: ${npcName.toUpperCase()} (${roleLabelEN}) HAS FALLEN!`,
+          titleFR: `💀 ALLIÉ TUÉ : ${npcName.toUpperCase()} (${roleLabelFR}) EST TOMBÉ !`,
+          descEN: `💀 ${npcName} (${roleLabelEN}) was killed by [${enemyName}]! Rescue more survivors or protect your remaining workers!`,
+          descFR: `💀 ${npcName} (${roleLabelFR}) a été tué par [${enemyName}] ! Libérez d'autres survivants et protégez vos travailleurs !`,
+          durationMs: 8500,
+        });
+        this.hud?.refreshLogFeed?.();
+      };
     }
 
     /**
@@ -2988,7 +3145,41 @@ export class GenesisBastionGame {
         // 3. Progression du Tutoriel Guidé en 7 Actes & Bulles Contextuelles 3D->2D
         this._updateTutorialAndWorldPrompts(dt);
 
-        // 4. Mise à jour des Créatures Sauvages, Meutes, Croissance Bébé -> Adulte & Eco-Ticks
+        // 4. Mise à jour des Créatures Sauvages, Meutes, Croissance Bébé -> Adulte, Cycle Jour/Nuit & Morts-Vivants
+        const isNightNow =
+          typeof this.sceneManager?.isNight === 'function'
+            ? Boolean(this.sceneManager.isNight())
+            : Boolean(this.sceneManager?.isNightTime);
+        if (this.enemyManager) {
+          this.enemyManager.isNight = isNightNow;
+        }
+        if (isNightNow && !this._wasNightLastFrame && !this.tutorialActive) {
+          let spawnedUndead = [];
+          if (typeof this.enemyManager?.onNightfall === 'function') {
+            spawnedUndead = this.enemyManager.onNightfall(this.bastionAndNpcs) || [];
+          } else if (typeof this.enemyManager?.spawnNightUndeadWave === 'function') {
+            spawnedUndead = this.enemyManager.spawnNightUndeadWave(this.bastionAndNpcs) || [];
+          }
+          const undeadCount = Array.isArray(spawnedUndead)
+            ? spawnedUndead.length
+            : typeof spawnedUndead === 'number'
+              ? spawnedUndead
+              : 0;
+          if (undeadCount > 0 && typeof this._showCustomAlertBanner === 'function') {
+            this._showCustomAlertBanner({
+              icon: '💀',
+              x: 0,
+              z: -42,
+              titleEN: `🌙 NIGHT OF THE UNDEAD: ${undeadCount} CURSED REVENANTS RISE!`,
+              titleFR: `🌙 NUIT DES MORTS-VIVANTS : ${undeadCount} REVENANTS MAUDITS SURGISSENT !`,
+              descEN: `Night has fallen! Scaled by today's monster count, ${undeadCount} Undead Revenants rise from the island's graves to assault your Harvesters and Bastion!`,
+              descFR: `La nuit tombe ! Proportionnellement aux monstres de la journée, ${undeadCount} Morts-Vivants surgissent pour attaquer vos Récolteurs et le Bastion !`,
+              durationMs: 8000,
+            });
+          }
+        }
+        this._wasNightLastFrame = isNightNow;
+
         this.enemyManager.update(
           dt,
           this.elapsedTime,
