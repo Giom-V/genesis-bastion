@@ -55,6 +55,7 @@ export const BALANCE = {
   MATURATION_BY_SPECIES: {
     rabbit: 9.5,
     goblin: 12,
+    undead: 14,
     wolf: 15,
     vulture: 17,
     deer: 17,
@@ -76,6 +77,7 @@ export const BALANCE = {
     wolf: 13,
     vulture: 15,
     deer: 15,
+    undead: 16,
     orc: 18,
     giant_mole: 20,
     shark: 22,
@@ -95,6 +97,7 @@ export const BALANCE = {
    *   enrichissent la biomasse et fuient les prédateurs ou le joueur.
    */
   AGGRESSIVENESS_BY_SPECIES: {
+    undead: 0.95,
     orc: 0.88,
     shark: 0.86,
     wolf: 0.82,
@@ -109,6 +112,7 @@ export const BALANCE = {
   },
 
   AGGRO_STANCE_BY_SPECIES: {
+    undead: 'hostile',
     orc: 'hostile',
     shark: 'hostile',
     wolf: 'hostile',
@@ -200,6 +204,14 @@ export const BALANCE = {
       spawnCount: 2,
       habitatLabel: 'les galeries souterraines profondes',
       messageFR: 'Des Taupes Géantes Fouisseuses jaillissent des galeries souterraines !',
+    },
+    undead: {
+      autoRepopulate: false,
+      cooldown: 0,
+      minThreshold: 0,
+      spawnCount: 0,
+      habitatLabel: 'les cryptes nocturnes (émergence uniquement la Nuit)',
+      messageFR: 'Des Revenants Maudits surgissent des terres désolées sous la lune !',
     },
     rabbit: {
       autoRepopulate: false,
@@ -910,24 +922,40 @@ export function computeDetailedFitness(
     sizeRatio * weights.size +
     aggroRatio * weights.aggroRadius;
 
+  const validMutations = Array.isArray(mutations) ? mutations : [];
+  const hasFireOrGiant =
+    validMutations.includes('pyro_gland') || validMutations.includes('titan_growth');
+
   const actualMetabolism = Math.max(0.8, genes.metabolism ?? refMetab);
-  const metabolicEfficiency = clamp(
-    Math.pow(refMetab / actualMetabolism, weights.metabolicExponent),
-    0.76,
-    1.26
-  );
+  // Phase 16: Giant Fire Monsters (pyro_gland / titan_growth) suffer ZERO metabolic efficiency penalty
+  const metabolicEfficiency = hasFireOrGiant
+    ? 1.24
+    : clamp(
+        Math.pow(refMetab / actualMetabolism, weights.metabolicExponent),
+        0.76,
+        1.26
+      );
 
   const statsScore = Number((rawPolygenicOutput * metabolicEfficiency).toFixed(3));
 
-  // Calcul des bonus de mutations dominantes + synergie multi-mutations
+  // Calcul des bonus de mutations dominantes + synergie multi-mutations (Attracteur Géants de Feu Phase 16)
   let mutationsScore = 0;
-  const validMutations = Array.isArray(mutations) ? mutations : [];
   const catalog = CONFIG?.MUTATIONS || {};
   for (const mutId of validMutations) {
     const mutDef = catalog[mutId];
-    if (mutDef) {
-      mutationsScore += mutDef.fitnessBonus ?? 0.35;
+    const cfgBonus = mutDef?.fitnessBonus ?? 0.35;
+    if (mutId === 'pyro_gland') {
+      mutationsScore += Math.max(cfgBonus, 1.45);
+    } else if (mutId === 'titan_growth') {
+      mutationsScore += Math.max(cfgBonus, 1.35);
+    } else if (mutDef) {
+      mutationsScore += cfgBonus;
+    } else {
+      mutationsScore += 0.35;
     }
+  }
+  if (validMutations.includes('pyro_gland') && validMutations.includes('titan_growth')) {
+    mutationsScore += 0.65;
   }
   if (validMutations.length >= 2) {
     mutationsScore += (validMutations.length - 1) * weights.polyMutationSynergy;
@@ -938,7 +966,7 @@ export function computeDetailedFitness(
   const isAdaptedToBiome =
     Boolean(currentBiome) &&
     (currentBiome === baseline.preferredBiome ||
-      (validMutations.includes('pyro_gland') && currentBiome === 'volcanic') ||
+      validMutations.includes('pyro_gland') ||
       (validMutations.includes('cryo_blood') && currentBiome === 'highlands'));
   const biomeBonus = isAdaptedToBiome ? weights.preferredBiomeBonus : 0.0;
 
@@ -947,13 +975,14 @@ export function computeDetailedFitness(
   const hybridBonus = isHybrid ? weights.hybridVigorBonus : 0.0;
 
   const total = Number(
-    clamp(statsScore + mutationsScore + biomeBonus + hybridBonus, 0.25, 4.5).toFixed(3)
+    clamp(statsScore + mutationsScore + biomeBonus + hybridBonus, 0.25, 8.5).toFixed(3)
   );
 
-  // Indice de risque de famine locale : combien d'individus de ce type suffisent à dépasser
-  // la régénération naturelle de biomasse d'une cellule standard (18 biomasse / tick)
+  // Indice de risque de famine locale : les porteurs de pyro_gland / titan_growth n'ont aucune pénalité de famine
   const regenPerTick = CONFIG?.ECO?.BIOMASS_REGEN || 18;
-  const starvationRiskIndex = Number(clamp(actualMetabolism / (regenPerTick / 3.5), 0.2, 3.0).toFixed(2));
+  const starvationRiskIndex = hasFireOrGiant
+    ? 0.0
+    : Number(clamp(actualMetabolism / (regenPerTick / 3.5), 0.2, 3.0).toFixed(2));
 
   return {
     total,

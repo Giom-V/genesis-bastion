@@ -160,6 +160,18 @@ export class EcosystemSimulator {
     this.islandMutationBonus = this.mutationRateBonus;
 
     /**
+     * Dominant island-wide evolutionary attractors (Phase 16: Giant Fire Monsters).
+     * @type {string[]}
+     */
+    this.dominantIslandMutations = ['pyro_gland', 'titan_growth'];
+
+    /**
+     * Progressive island evolutionary scale factor (`1.0 -> 2.8+`) as Giant Fire genes sweep the island.
+     * @type {number}
+     */
+    this.islandEvolutionaryScale = 1.0;
+
+    /**
      * Last computed ecosystem summary statistics.
      * @type {object}
      */
@@ -183,6 +195,10 @@ export class EcosystemSimulator {
       molesErupted: 0,
       averageFitness: 1.0,
       totalBiomass: 0,
+      dominantIslandMutations: [...this.dominantIslandMutations],
+      islandEvolutionaryScale: 1.0,
+      fireGiantCount: 0,
+      fireGiantRatio: 0.0,
     };
 
     this.seedInitialGrid();
@@ -210,6 +226,8 @@ export class EcosystemSimulator {
     this.islandNumber = 1;
     this.mutationRateBonus = 0;
     this.islandMutationBonus = 0;
+    this.dominantIslandMutations = ['pyro_gland', 'titan_growth'];
+    this.islandEvolutionaryScale = 1.0;
     this.discoveredMutations?.clear?.();
     this.patientZeroMap?.clear?.();
     this.sharksLandedCount = 0;
@@ -248,6 +266,10 @@ export class EcosystemSimulator {
       averageFitness: 1.0,
       averageGestationTime: 18.0,
       averageAggressiveness: 0.65,
+      dominantIslandMutations: [...this.dominantIslandMutations],
+      islandEvolutionaryScale: 1.0,
+      fireGiantCount: 0,
+      fireGiantRatio: 0.0,
       speciesCounts: {
         goblin: 0,
         orc: 0,
@@ -260,6 +282,7 @@ export class EcosystemSimulator {
         giant_mole: 0,
         rabbit: 0,
         deer: 0,
+        undead: 0,
       },
       totalBiomass: Math.round(totalBiomass),
     };
@@ -287,6 +310,8 @@ export class EcosystemSimulator {
         ? tierSpec.mutationRateBonus
         : Math.max(0, (this.islandNumber - 1) * 0.04);
     this.islandMutationBonus = this.mutationRateBonus;
+    this.dominantIslandMutations = ['pyro_gland', 'titan_growth'];
+    this.islandEvolutionaryScale = 1.0;
     this.tickNumber = 0;
     this.tickCount = 0;
     this.sharksLandedCount = 0;
@@ -318,6 +343,10 @@ export class EcosystemSimulator {
       preyExtinctionRisk: false,
       sharksLanded: 0,
       molesErupted: 0,
+      dominantIslandMutations: [...this.dominantIslandMutations],
+      islandEvolutionaryScale: 1.0,
+      fireGiantCount: 0,
+      fireGiantRatio: 0.0,
     };
     return this.lastStats;
   }
@@ -720,11 +749,22 @@ export class EcosystemSimulator {
           clamp(cell.biomass + enrichment, 0, cell.maxBiomass + 24).toFixed(2)
         );
       } else {
-        // Metabolic biomass consumption (0.5x metabolic weight for babies!)
-        const rawMetabolism = enemy.genome.genes?.metabolism ?? 4.0;
-        const metabolicWeight = isBaby ? 0.5 : 1.0;
-        const consumed = rawMetabolism * metabolicWeight * 0.72;
-        cell.biomass = Math.max(0, Number((cell.biomass - consumed).toFixed(2)));
+        const hasFireOrGiant = Boolean(
+          enemy.genome?.hasMutation?.('pyro_gland') ||
+            enemy.genome?.hasMutation?.('titan_growth')
+        );
+        if (hasFireOrGiant) {
+          // Phase 16: Giant Fire Monsters suffer ZERO metabolic famine penalty and enrich volcanic ash energy
+          cell.biomass = Number(
+            clamp(Math.max(cell.biomass, 26), 0, cell.maxBiomass + 18).toFixed(2)
+          );
+        } else {
+          // Metabolic biomass consumption (0.5x metabolic weight for babies!)
+          const rawMetabolism = enemy.genome.genes?.metabolism ?? 4.0;
+          const metabolicWeight = isBaby ? 0.5 : 1.0;
+          const consumed = rawMetabolism * metabolicWeight * 0.72;
+          cell.biomass = Math.max(0, Number((cell.biomass - consumed).toFixed(2)));
+        }
       }
     }
 
@@ -762,6 +802,12 @@ export class EcosystemSimulator {
           e.genome?.clade === 'herbivore' ||
           e.aggroStance === 'prey_pacifist'
       );
+      const hasFireOrGiant =
+        !isHerbivore &&
+        Boolean(
+          e.genome?.hasMutation?.('pyro_gland') ||
+            e.genome?.hasMutation?.('titan_growth')
+        );
 
       // Count neighbors within radius 22 (`CONFIG.ECO.NEIGHBOR_RADIUS`)
       let neighborCount = 0;
@@ -783,9 +829,21 @@ export class EcosystemSimulator {
       const effectiveNeighborCap = maxDensity + 2 + herbivoreBuffer * 2;
       const famineBiomassThreshold = herbivoreBuffer > 0 ? 4 : 10;
 
-      // Rule 2: Overpopulation / Famine
-      if (
+      // Phase 16: Carriers of pyro_gland or titan_growth NEVER suffer metabolic famine or Allee loneliness
+      if (hasFireOrGiant && neighborCount >= 1) {
+        e.lonely = false;
+        e.starving = false;
+        if (e.id) optimalIds.push(e.id);
+        const isAdult = e.isAdult !== false && e.lifeStage !== 'baby';
+        const reqGestation = Math.max(3.0, (e.gestationTime || 18) * 0.45);
+        e.reproTimer = Math.max(e.reproTimer ?? reqGestation, reqGestation);
+        if (isAdult) {
+          optimalAdults.push(e);
+        }
+      } else if (
+        // Rule 2: Overpopulation / Famine
         !isHerbivore &&
+        !hasFireOrGiant &&
         (cell.enemyCount > effectiveMaxDensity ||
           neighborCount > effectiveNeighborCap ||
           cell.biomass <= famineBiomassThreshold)
@@ -793,7 +851,7 @@ export class EcosystemSimulator {
         e.starving = true;
         e.lonely = false;
         if (e.id) starvingIds.push(e.id);
-      } else if (neighborCount < minDensity) {
+      } else if (neighborCount < minDensity && !hasFireOrGiant) {
         // Rule 1: Underpopulation / Allee Effect (< 2 neighbors within radius 22)
         e.lonely = true;
         e.starving = false;
@@ -851,24 +909,36 @@ export class EcosystemSimulator {
       const ax = parentA.x ?? parentA.mesh?.position?.x ?? 0;
       const az = parentA.z ?? parentA.mesh?.position?.z ?? 0;
       const cellA = this.getCellAt(ax, az);
+      const parentAHasFireOrGiant = Boolean(
+        parentA.genome?.hasMutation?.('pyro_gland') ||
+          parentA.genome?.hasMutation?.('titan_growth')
+      );
 
-      // Require sufficient cell biomass for reproduction
-      if (cellA.biomass < Math.min(16, birthBiomassCost * 0.75)) continue;
+      // Require sufficient cell biomass for reproduction (bypassed by Giant Fire mutants)
+      if (!parentAHasFireOrGiant && cellA.biomass < Math.min(16, birthBiomassCost * 0.75)) continue;
 
       // Gather compatible unmated adult candidates within mating radius
       const sameSpeciesCandidates = [];
       const hybridCandidates = [];
+      const effectiveSearchRadius = parentAHasFireOrGiant
+        ? matingSearchRadius * 1.65
+        : matingSearchRadius;
 
       for (const candidate of optimalAdults) {
         if (candidate === parentA || matedThisTick.has(candidate)) continue;
         const cx = candidate.x ?? candidate.mesh?.position?.x ?? 0;
         const cz = candidate.z ?? candidate.mesh?.position?.z ?? 0;
         const d = dist2D(ax, az, cx, cz);
-        if (d > matingSearchRadius) continue;
+        if (d > effectiveSearchRadius) continue;
 
         const candFitness = candidate.genome?.fitnessScore || 1.0;
         // Quadratic fitness weighting ensures strong Darwinian selection for beneficial mutations
-        const fitnessWeight = Math.pow(candFitness, 2.1);
+        const fitnessWeight = Math.pow(candFitness, 2.2);
+        const eitherMutant =
+          (parentA.genome?.mutations?.length || 0) > 0 ||
+          (candidate.genome?.mutations?.length || 0) > 0;
+        // Phase 16: Increase inter-species mating weight for mutants by 3.0x
+        const mutantInterSpeciesMult = eitherMutant ? 3.0 : 1.0;
 
         if (candidate.genome.speciesId === parentA.genome.speciesId) {
           sameSpeciesCandidates.push({
@@ -877,15 +947,12 @@ export class EcosystemSimulator {
             isInterSpecies: false,
             hybridProb: 0,
           });
-        } else if (canHybridize(parentA.genome.speciesId, candidate.genome.speciesId)) {
-          const hybProb = getHybridProbability(
-            parentA.genome.speciesId,
-            candidate.genome.speciesId
-          );
+        } else if (canHybridize(parentA.genome, candidate.genome)) {
+          const hybProb = getHybridProbability(parentA.genome, candidate.genome);
           if (hybProb > 0) {
             hybridCandidates.push({
               enemy: candidate,
-              weight: fitnessWeight * (0.85 + hybProb * 2.0),
+              weight: fitnessWeight * (0.85 + hybProb * 2.0) * mutantInterSpeciesMult,
               isInterSpecies: true,
               hybridProb: hybProb,
             });
@@ -901,7 +968,10 @@ export class EcosystemSimulator {
       let chosenPartner = null;
       if (hybridCandidates.length > 0 && sameSpeciesCandidates.length > 0) {
         const bestHybProb = Math.max(...hybridCandidates.map((c) => c.hybridProb));
-        if (this._rand() < bestHybProb) {
+        const effectiveHybChance = parentAHasFireOrGiant
+          ? Math.min(0.85, bestHybProb * 1.6)
+          : bestHybProb;
+        if (this._rand() < effectiveHybChance) {
           chosenPartner = this._selectWeightedMate(hybridCandidates);
         } else {
           chosenPartner = this._selectWeightedMate(sameSpeciesCandidates);
@@ -911,7 +981,7 @@ export class EcosystemSimulator {
       } else if (hybridCandidates.length > 0) {
         // When only a compatible sister species is nearby in optimal density, hybridize at elevated rate
         const maxHybProb = Math.max(...hybridCandidates.map((c) => c.hybridProb));
-        if (this._rand() < Math.min(0.65, maxHybProb * 2.2)) {
+        if (this._rand() < Math.min(0.88, maxHybProb * 2.4)) {
           chosenPartner = this._selectWeightedMate(hybridCandidates);
         }
       }
@@ -926,14 +996,22 @@ export class EcosystemSimulator {
       const hasMutantParent =
         (parentA.genome?.mutations?.length || 0) > 0 ||
         (chosenPartner.genome?.mutations?.length || 0) > 0;
+      const hasFireOrGiantPair =
+        parentAHasFireOrGiant ||
+        Boolean(
+          chosenPartner.genome?.hasMutation?.('pyro_gland') ||
+            chosenPartner.genome?.hasMutation?.('titan_growth')
+        );
 
       const meanFertility = (fertA + fertB) * 0.5;
       const meanFitness = (fitA + fitB) * 0.5;
-      const reproChance = clamp(
-        0.52 * meanFertility * Math.pow(meanFitness, 0.65) * (hasMutantParent ? 1.25 : 1.0),
-        0.25,
-        0.95
-      );
+      const reproChance = hasFireOrGiantPair
+        ? 0.98
+        : clamp(
+            0.55 * meanFertility * Math.pow(meanFitness, 0.65) * (hasMutantParent ? 1.35 : 1.0),
+            0.28,
+            0.96
+          );
 
       if (this._rand() > reproChance) continue;
 
@@ -945,11 +1023,15 @@ export class EcosystemSimulator {
       chosenPartner.reproTimer = 0;
       chosenPartner._reproTimerAtLastEcoTick = 0;
 
-      // Consume cell biomass for gestation/birth (herbivores consume half birth cost)
+      // Consume cell biomass for gestation/birth (Giant Fire mutants do not deplete cell biomass)
       const isChildHerbivore =
         parentA.isHerbivore || parentA.genome?.clade === 'herbivore';
-      const effectiveBirthCost = isChildHerbivore ? birthBiomassCost * 0.45 : birthBiomassCost;
-      cellA.biomass = Number(Math.max(11, cellA.biomass - effectiveBirthCost).toFixed(1));
+      const effectiveBirthCost = hasFireOrGiantPair
+        ? 0
+        : isChildHerbivore
+          ? birthBiomassCost * 0.45
+          : birthBiomassCost;
+      cellA.biomass = Number(Math.max(12, cellA.biomass - effectiveBirthCost).toFixed(1));
 
       // Perform genetic crossover, Mendelian dominant inheritance, and de novo mutation roll
       const { genome: childGenome, newMutationId, becameHybrid } = Genome.crossover(
@@ -1033,6 +1115,67 @@ export class EcosystemSimulator {
       births.push(birthRecord);
     }
 
+    // 4b. Phase 16 Directional Island Convergence toward Giant Fire Monsters (Ticks 3+ when unchecked)
+    if (this.tickNumber >= 3) {
+      const nonHerbivoreLive = liveEnemies.filter(
+        (e) =>
+          !e.isHerbivore &&
+          e.clade !== 'herbivore' &&
+          e.genome?.clade !== 'herbivore' &&
+          e.aggroStance !== 'prey_pacifist'
+      );
+      const activeFireOrGiantCarriers = [
+        ...nonHerbivoreLive,
+        ...births,
+      ].filter(
+        (e) =>
+          e.genome?.hasMutation?.('pyro_gland') ||
+          e.genome?.hasMutation?.('titan_growth')
+      );
+
+      // If left unchecked (or if volcanic caldera spores ignite at tick >= 3), spread dominant Giant Fire mutations
+      if (activeFireOrGiantCarriers.length > 0 || this.tickNumber >= 4) {
+        const sweepProbability = clamp(0.32 + (this.tickNumber - 2) * 0.22, 0.35, 0.96);
+        for (const e of nonHerbivoreLive) {
+          if (!e.genome) continue;
+          if (this._rand() < sweepProbability) {
+            if (!e.genome.hasMutation('pyro_gland')) {
+              e.genome.addMutation('pyro_gland');
+              newMutationsThisTick += 1;
+            }
+            if (!e.genome.hasMutation('titan_growth') && this._rand() < sweepProbability) {
+              e.genome.addMutation('titan_growth');
+              newMutationsThisTick += 1;
+            }
+            // Progressive volcanic hypertrophy on base size & strength across unchecked ticks
+            if (e.genome.baseGenes) {
+              e.genome.baseGenes.size = Number(
+                clamp(e.genome.baseGenes.size * 1.08, 0.5, 4.8).toFixed(3)
+              );
+              e.genome.baseGenes.strength = Number(
+                clamp(e.genome.baseGenes.strength * 1.08, 4.0, 260.0).toFixed(2)
+              );
+            }
+            e.genome.syncMutations();
+            this._ensureLineageTracked(e, false);
+          }
+        }
+        for (const b of births) {
+          if (!b.genome || b.clade === 'herbivore') continue;
+          if (this._rand() < sweepProbability) {
+            if (!b.genome.hasMutation('pyro_gland')) {
+              b.genome.addMutation('pyro_gland');
+            }
+            if (!b.genome.hasMutation('titan_growth')) {
+              b.genome.addMutation('titan_growth');
+            }
+            b.mutations = [...b.genome.mutations];
+            this._ensureLineageTracked(b, false);
+          }
+        }
+      }
+    }
+
     // 5. Compile Ecosystem, Species Population, Herbivore & Emerging Species Telemetry Stats
     const totalPop = liveEnemies.length + births.length;
     const adultCount = liveEnemies.filter(
@@ -1062,12 +1205,16 @@ export class EcosystemSimulator {
       giant_mole: 0,
       rabbit: 0,
       deer: 0,
+      undead: 0,
     };
 
     let fitnessSum = 0;
     let gestationSum = 0;
     let aggressivenessSum = 0;
+    let sizeSum = 0;
     let herbivoreCount = 0;
+    let nonHerbivoreCount = 0;
+    let fireGiantCount = 0;
     let landedSharkEntities = 0;
     let moleEntities = 0;
 
@@ -1079,18 +1226,28 @@ export class EcosystemSimulator {
       fitnessSum += e.genome?.fitnessScore || 1.0;
       gestationSum += e.genome?.genes?.gestationTime ?? e.gestationTime ?? 18;
       aggressivenessSum += e.genome?.genes?.aggressiveness ?? e.aggressiveness ?? 0.65;
+      sizeSum += e.genome?.genes?.size ?? 1.0;
       maxGeneration = Math.max(maxGeneration, e.genome?.generation || 1);
 
-      if (
+      const isHerb =
         e.isHerbivore ||
         e.clade === 'herbivore' ||
         e.genome?.clade === 'herbivore' ||
         spId === 'deer' ||
         spId === 'rabbit' ||
         spId === 'deer_rabbit' ||
-        spId === 'rabbit_deer'
-      ) {
+        spId === 'rabbit_deer';
+
+      if (isHerb) {
         herbivoreCount += 1;
+      } else {
+        nonHerbivoreCount += 1;
+        if (
+          e.genome?.hasMutation?.('pyro_gland') ||
+          e.genome?.hasMutation?.('titan_growth')
+        ) {
+          fireGiantCount += 1;
+        }
       }
 
       if (
@@ -1112,17 +1269,27 @@ export class EcosystemSimulator {
       fitnessSum += b.genome?.fitnessScore || 1.0;
       gestationSum += b.genome?.genes?.gestationTime ?? b.gestationTime ?? 18;
       aggressivenessSum += b.genome?.genes?.aggressiveness ?? b.aggressiveness ?? 0.65;
+      sizeSum += b.genome?.genes?.size ?? 1.0;
       maxGeneration = Math.max(maxGeneration, b.genome?.generation || 1);
 
-      if (
+      const isHerb =
         b.clade === 'herbivore' ||
         b.genome?.clade === 'herbivore' ||
         spId === 'deer' ||
         spId === 'rabbit' ||
         spId === 'deer_rabbit' ||
-        spId === 'rabbit_deer'
-      ) {
+        spId === 'rabbit_deer';
+
+      if (isHerb) {
         herbivoreCount += 1;
+      } else {
+        nonHerbivoreCount += 1;
+        if (
+          b.genome?.hasMutation?.('pyro_gland') ||
+          b.genome?.hasMutation?.('titan_growth')
+        ) {
+          fireGiantCount += 1;
+        }
       }
       if (spId === 'giant_mole') {
         moleEntities += 1;
@@ -1151,6 +1318,13 @@ export class EcosystemSimulator {
     const averageGestationTime = totalPop > 0 ? Number((gestationSum / totalPop).toFixed(2)) : 18.0;
     const averageAggressiveness =
       totalPop > 0 ? Number((aggressivenessSum / totalPop).toFixed(3)) : 0.65;
+    const averageSize = totalPop > 0 ? Number((sizeSum / totalPop).toFixed(3)) : 1.0;
+    const fireGiantRatio =
+      nonHerbivoreCount > 0 ? Number((fireGiantCount / nonHerbivoreCount).toFixed(3)) : 0.0;
+
+    this.islandEvolutionaryScale = Number(
+      clamp(1.0 + fireGiantRatio * 0.95 + Math.max(0, averageSize - 1.0) * 0.65, 1.0, 3.2).toFixed(3)
+    );
 
     let totalBiomass = 0;
     for (const cell of this.cells) {
@@ -1181,6 +1355,11 @@ export class EcosystemSimulator {
       averageFitness,
       averageGestationTime,
       averageAggressiveness,
+      averageSize,
+      dominantIslandMutations: [...this.dominantIslandMutations],
+      islandEvolutionaryScale: this.islandEvolutionaryScale,
+      fireGiantCount,
+      fireGiantRatio,
       speciesCounts,
       totalBiomass: Math.round(totalBiomass),
     };
