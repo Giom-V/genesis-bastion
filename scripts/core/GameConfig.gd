@@ -28,11 +28,17 @@ const MAX_WORLD_POPULATION: int = 96
 # ==============================================================================
 # 3. PLAYER, BASTION & BALANCED MASTERY (<= 1%/MONSTER DIMINISHING RETURNS)
 # ==============================================================================
-const PLAYER_BASE_HP: float = 160.0
-const PLAYER_BASE_SPEED: float = 14.5
+const PLAYER_BASE_HP: float = 125.0
+const PLAYER_BASE_SPEED: float = 14.0
 const PLAYER_SPRINT_MULTIPLIER: float = 1.48
-const PLAYER_BASE_MELEE_DAMAGE: float = 24.0
+const PLAYER_BASE_MELEE_DAMAGE: float = 22.0
 const PLAYER_MELEE_RANGE: float = 6.2
+const PLAYER_INTERACT_COOLDOWN: float = 1.15
+const SCOUT_SPEED: float = 6.8
+const HARVESTER_SPEED: float = 5.5
+const NPC_MAX_HP: float = 90.0
+const DAY_DURATION_SEC: float = 75.0
+const NIGHT_DURATION_SEC: float = 45.0
 const BASTION_INITIAL_HP: float = 500.0
 const MAX_RELIC_FRAGMENTS: int = 3
 
