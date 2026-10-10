@@ -316,10 +316,41 @@ const SPECIES_BASELINES: Dictionary = {
 		"base_hp": 36.0,
 		"base_speed": 14.0,
 		"base_damage": 0.0
+	},
+	"undead": {
+		"name_en": "Cursed Undead",
+		"name_fr": "Revenant Maudit",
+		"clade": "undead",
+		"is_prey": false,
+		"is_peaceful_dragon": false,
+		"aggression": 0.95,
+		"gestation_sec": 16.0,
+		"min_population": 0,
+		"base_hp": 115.0,
+		"base_speed": 7.4,
+		"base_damage": 19.0
 	}
 }
 
 const MUTATION_CATALOG: Dictionary = {
+	"pyro_gland": {
+		"name_en": "Pyroclastic Gland",
+		"name_fr": "Glande Pyroclastique",
+		"hp_bonus": 0.35,
+		"speed_bonus": 0.08,
+		"strength_bonus": 0.45,
+		"size_bonus": 0.24,
+		"fitness_bonus": 1.45
+	},
+	"titan_growth": {
+		"name_en": "Titanic Gigantism",
+		"name_fr": "Gigantisme Titanesque",
+		"hp_bonus": 0.55,
+		"speed_bonus": 0.02,
+		"strength_bonus": 0.42,
+		"size_bonus": 0.52,
+		"fitness_bonus": 1.35
+	},
 	"osteo_plating": {
 		"name_en": "Osteoderm Carapace",
 		"name_fr": "Carapace Ostéoderme",
@@ -568,7 +599,7 @@ func crossover_genomes(parent_a: Dictionary, parent_b: Dictionary = {}) -> Dicti
 		var agg_blend: float = lerpf(float(pa.get("aggression_score", 0.65)), float(pb.get("aggression_score", 0.65)), _rng.randf())
 		aggression_score = clampf(agg_blend * _rng.randf_range(MUTATION_FACTOR_MIN, MUTATION_FACTOR_MAX), 0.05, 1.0)
 
-	# Mendelian dominant inheritance of adaptive mutations (78% single parent, 92% both parents)
+	# Mendelian dominant inheritance of adaptive mutations (92% single / 99% both for pyro_gland & titan_growth)
 	var muts_a: Array = pa.get("mutations", [])
 	var muts_b: Array = pb.get("mutations", [])
 	var child_mutations: Array[String] = []
@@ -581,17 +612,25 @@ func crossover_genomes(parent_a: Dictionary, parent_b: Dictionary = {}) -> Dicti
 	for mut_id in all_parent_muts.keys():
 		var in_a: bool = muts_a.has(mut_id)
 		var in_b: bool = muts_b.has(mut_id)
-		var pass_prob: float = 0.92 if (in_a and in_b) else 0.78
+		var is_fire_or_giant: bool = (String(mut_id) == "pyro_gland" or String(mut_id) == "titan_growth")
+		var pass_prob: float = (0.99 if is_fire_or_giant else 0.92) if (in_a and in_b) else (0.92 if is_fire_or_giant else 0.78)
 		if _rng.randf() < pass_prob:
 			child_mutations.append(String(mut_id))
 
-	# Spontaneous de novo mutation (12% chance)
+	# Spontaneous de novo mutation (16% chance, 70% weighted toward pyro_gland & titan_growth)
 	var new_mutation_id: String = ""
 	var is_patient_zero: bool = false
-	if _rng.randf() < 0.12 and not is_prey:
-		var keys: Array = MUTATION_CATALOG.keys()
-		var candidate: String = String(keys[_rng.randi() % keys.size()])
-		if not child_mutations.has(candidate):
+	if _rng.randf() < 0.16 and not is_prey:
+		var candidate: String = ""
+		var r_mut: float = _rng.randf()
+		if r_mut < 0.35 and not child_mutations.has("pyro_gland"):
+			candidate = "pyro_gland"
+		elif r_mut < 0.70 and not child_mutations.has("titan_growth"):
+			candidate = "titan_growth"
+		else:
+			var keys: Array = MUTATION_CATALOG.keys()
+			candidate = String(keys[_rng.randi() % keys.size()])
+		if candidate != "" and not child_mutations.has(candidate):
 			child_mutations.append(candidate)
 			new_mutation_id = candidate
 			if not discovered_mutations.has(candidate):
