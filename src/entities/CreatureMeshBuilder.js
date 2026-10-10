@@ -106,6 +106,14 @@ const FALLBACK_SPECIES = {
     color: 0xe8e4d9,
     accentColor: 0xffb6c1,
   },
+  undead: {
+    id: 'undead',
+    name: 'Revenant Maudit',
+    clade: 'undead',
+    baseSize: 1.15,
+    color: 0xd8e2dc,
+    accentColor: 0x00f5d4,
+  },
 };
 
 /**
@@ -1302,6 +1310,117 @@ export function buildCreatureMesh(spec = {}) {
     const hFootR = new THREE.Mesh(new THREE.BoxGeometry(0.13, 0.36, 0.24), skinMat);
     hFootR.position.set(0, -0.18, 0.04);
     rightLeg.add(hFootR);
+  } else if (primarySpeciesId === 'undead') {
+    baseBodyY = 1.05;
+    body.position.y = baseBodyY;
+
+    // Bleached bone material (#d8e2dc), tattered dark shroud (#1b263b), necrotic cyan-violet core (#00f5d4 / #9b5de5), rusted iron
+    const undeadBoneMat = new THREE.MeshStandardMaterial({
+      color: 0xd8e2dc,
+      roughness: 0.45,
+      metalness: 0.12,
+    });
+    const shroudMat = new THREE.MeshStandardMaterial({
+      color: 0x1b263b,
+      roughness: 0.85,
+      metalness: 0.08,
+      side: THREE.DoubleSide,
+    });
+    const necroticCoreMat = new THREE.MeshStandardMaterial({
+      color: 0x00f5d4,
+      emissive: 0x00f5d4,
+      emissiveIntensity: 2.1,
+      roughness: 0.15,
+    });
+    const necroticVioletMat = new THREE.MeshStandardMaterial({
+      color: 0x9b5de5,
+      emissive: 0x9b5de5,
+      emissiveIntensity: 1.75,
+      roughness: 0.2,
+    });
+    const rustedBladeMat = new THREE.MeshStandardMaterial({
+      color: 0x5c4033,
+      emissive: 0x00f5d4,
+      emissiveIntensity: 0.45,
+      roughness: 0.42,
+      metalness: 0.78,
+    });
+
+    // Skeletal spine + bleached ribcage + glowing necrotic soul heart
+    const spine = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.09, 0.86, 6), undeadBoneMat);
+    const pelvis = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.16, 0.28), undeadBoneMat);
+    pelvis.position.y = -0.38;
+    const soulHeart = new THREE.Mesh(new THREE.OctahedronGeometry(0.18, 0), necroticCoreMat);
+    soulHeart.position.set(0, 0.12, 0.04);
+    const soulHalo = new THREE.Mesh(new THREE.OctahedronGeometry(0.24, 0), necroticVioletMat);
+    soulHalo.position.set(0, 0.12, -0.02);
+    soulHalo.rotation.y = Math.PI * 0.25;
+    body.add(spine, pelvis, soulHeart, soulHalo);
+
+    for (let rIdx = 0; rIdx < 3; rIdx++) {
+      const ribY = 0.26 - rIdx * 0.18;
+      const ribW = 0.56 - rIdx * 0.05;
+      const ribArc = new THREE.Mesh(new THREE.BoxGeometry(ribW, 0.07, 0.34), undeadBoneMat);
+      ribArc.position.set(0, ribY, 0.03);
+      body.add(ribArc);
+    }
+
+    // Tattered dark spectral shroud & shoulder pauldrons
+    const mantle = new THREE.Mesh(new THREE.BoxGeometry(0.84, 0.24, 0.44), shroudMat);
+    mantle.position.set(0, 0.42, -0.02);
+    body.add(mantle);
+
+    tail.position.set(0, 0.38, -0.22);
+    const shroudCape = new THREE.Mesh(new THREE.ConeGeometry(0.48, 1.18, 5), shroudMat);
+    shroudCape.position.set(0, -0.52, -0.08);
+    shroudCape.rotation.x = 0.22;
+    tail.add(shroudCape);
+
+    // Sculpted bleached skull + jaw + glowing necrotic cyan-violet eye sockets
+    head.position.set(0, 0.68, 0.06);
+    const cranium = new THREE.Mesh(new THREE.SphereGeometry(0.24, 8, 8), undeadBoneMat);
+    cranium.scale.set(0.92, 1.08, 1.05);
+    const jaw = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.14, 0.26), undeadBoneMat);
+    jaw.position.set(0, -0.18, 0.08);
+    const hood = new THREE.Mesh(new THREE.ConeGeometry(0.32, 0.42, 6), shroudMat);
+    hood.position.set(0, 0.22, -0.04);
+    head.add(cranium, jaw, hood);
+    addEyes(head, necroticCoreMat, 0.09, 0.02, 0.21, 0.058);
+
+    // Skeletal arms + Rusted Cursed Scythe / Reaper Blade
+    leftArm.position.set(-0.46, 0.36, 0);
+    const lBoneArm = new THREE.Mesh(new THREE.CylinderGeometry(0.065, 0.055, 0.68, 6), undeadBoneMat);
+    lBoneArm.position.y = -0.28;
+    leftArm.add(lBoneArm);
+
+    rightArm.position.set(0.46, 0.36, 0);
+    const rBoneArm = new THREE.Mesh(new THREE.CylinderGeometry(0.065, 0.055, 0.68, 6), undeadBoneMat);
+    rBoneArm.position.y = -0.28;
+    rightArm.add(rBoneArm);
+
+    weapon = new THREE.Group();
+    weapon.position.set(0, -0.52, 0.22);
+    const scytheShaft = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.04, 1.55, 6), shroudMat);
+    scytheShaft.rotation.x = Math.PI * 0.36;
+    const scytheBlade = new THREE.Mesh(new THREE.ConeGeometry(0.16, 0.78, 4), rustedBladeMat);
+    scytheBlade.position.set(0, 0.36, 0.64);
+    scytheBlade.rotation.x = Math.PI * 0.78;
+    const scytheEdgeGlow = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.56, 0.08), necroticVioletMat);
+    scytheEdgeGlow.position.set(0, 0.32, 0.68);
+    scytheEdgeGlow.rotation.x = Math.PI * 0.28;
+    weapon.add(scytheShaft, scytheBlade, scytheEdgeGlow);
+    rightArm.add(weapon);
+
+    // Skeletal legs
+    leftLeg.position.set(-0.2, 0.62, 0);
+    const lBoneLeg = new THREE.Mesh(new THREE.CylinderGeometry(0.075, 0.06, 0.68, 6), undeadBoneMat);
+    lBoneLeg.position.y = -0.3;
+    leftLeg.add(lBoneLeg);
+
+    rightLeg.position.set(0.2, 0.62, 0);
+    const rBoneLeg = new THREE.Mesh(new THREE.CylinderGeometry(0.075, 0.06, 0.68, 6), undeadBoneMat);
+    rBoneLeg.position.y = -0.3;
+    rightLeg.add(rBoneLeg);
   }
 
   // --- INTER-SPECIES HYBRID ANATOMICAL GRAFTING ---

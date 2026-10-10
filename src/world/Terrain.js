@@ -1027,9 +1027,11 @@ export class Terrain {
       if (biome === 'highlands' && !rng.chance(0.25)) continue;
 
       const s = rng.range(0.82, 1.48);
+      const sy = s * rng.range(0.9, 1.25);
+      const rotY = rng.range(0, Math.PI * 2);
       dummy.position.set(tx, th - 0.1, tz);
-      dummy.rotation.set(0, rng.range(0, Math.PI * 2), 0);
-      dummy.scale.set(s, s * rng.range(0.9, 1.25), s);
+      dummy.rotation.set(0, rotY, 0);
+      dummy.scale.set(s, sy, s);
       dummy.updateMatrix();
 
       this.treeTrunkInstanced.setMatrixAt(placedTrees, dummy.matrix);
@@ -1051,10 +1053,17 @@ export class Terrain {
         y: th,
         z: tz,
         radius: 1.8 * s,
-        amount: 15,
-        maxAmount: 15,
+        amount: 6,
+        maxAmount: 6,
         depleted: false,
+        regrowTimer: 0,
         instanceIndex: placedTrees,
+        baseScaleX: s,
+        baseScaleY: sy,
+        baseScaleZ: s,
+        rotX: 0,
+        rotY,
+        rotZ: 0,
       });
 
       placedTrees++;
@@ -1154,8 +1163,11 @@ export class Terrain {
 
       const biome = this.getBiomeAt(cx, cz);
       const scale = rng.range(0.85, 1.45);
+      const rotX = rng.range(-0.18, 0.18);
+      const rotY = rng.range(0, Math.PI * 2);
+      const rotZ = rng.range(-0.18, 0.18);
       dummy.position.set(cx, ch - 0.1, cz);
-      dummy.rotation.set(rng.range(-0.18, 0.18), rng.range(0, Math.PI * 2), rng.range(-0.18, 0.18));
+      dummy.rotation.set(rotX, rotY, rotZ);
       dummy.scale.set(scale, scale, scale);
       dummy.updateMatrix();
       this.crystalInstanced.setMatrixAt(placedCrystals, dummy.matrix);
@@ -1174,10 +1186,17 @@ export class Terrain {
         y: ch,
         z: cz,
         radius: 1.6 * scale,
-        amount: 12,
-        maxAmount: 12,
+        amount: 4,
+        maxAmount: 4,
         depleted: false,
+        regrowTimer: 0,
         instanceIndex: placedCrystals,
+        baseScaleX: scale,
+        baseScaleY: scale,
+        baseScaleZ: scale,
+        rotX,
+        rotY,
+        rotZ,
       });
 
       placedCrystals++;
@@ -1186,6 +1205,100 @@ export class Terrain {
     this.crystalInstanced.instanceMatrix.needsUpdate = true;
     if (this.crystalInstanced.instanceColor) this.crystalInstanced.instanceColor.needsUpdate = true;
     this.scene.add(this.crystalInstanced);
+  }
+
+  /**
+   * Updates the GPU `InstancedMesh` matrix for a single tree (`wood`) or crystal (`crystal`)
+   * resource node based on its current `amount` and `depleted` status.
+   * When `node.depleted === true` or `node.amount <= 0`, collapses the matrix to scale `(0, 0, 0)`
+   * so mined resources visibly disappear from the 3D world.
+   *
+   * @param {Object} node - Resource node from `this.resourceNodes`.
+   * @private
+   */
+  _updateResourceNodeInstanceMatrix(node) {
+    if (!node || typeof node.instanceIndex !== 'number') return;
+    if (!this._instanceDummy) {
+      this._instanceDummy = new THREE.Object3D();
+    }
+    const dummy = this._instanceDummy;
+
+    if (node.depleted || node.amount <= 0) {
+      dummy.position.set(node.x, -50, node.z);
+      dummy.rotation.set(0, 0, 0);
+      dummy.scale.set(0, 0, 0);
+      dummy.updateMatrix();
+    } else {
+      const maxAmt = Math.max(1, node.maxAmount || (node.type === 'crystal' ? 4 : 6));
+      const ratio = clamp(node.amount / maxAmt, 0, 1);
+      const scaleFactor = 0.65 + 0.35 * ratio;
+      dummy.position.set(node.x, node.y - 0.1, node.z);
+      dummy.rotation.set(node.rotX || 0, node.rotY || 0, node.rotZ || 0);
+      dummy.scale.set(
+        (node.baseScaleX || 1) * scaleFactor,
+        (node.baseScaleY || 1) * scaleFactor,
+        (node.baseScaleZ || 1) * scaleFactor
+      );
+      dummy.updateMatrix();
+    }
+
+    if (node.type === 'wood' && this.treeTrunkInstanced && this.treeCanopyInstanced) {
+      this.treeTrunkInstanced.setMatrixAt(node.instanceIndex, dummy.matrix);
+      this.treeCanopyInstanced.setMatrixAt(node.instanceIndex, dummy.matrix);
+      this.treeTrunkInstanced.instanceMatrix.needsUpdate = true;
+      this.treeCanopyInstanced.instanceMatrix.needsUpdate = true;
+    } else if (node.type === 'crystal' && this.crystalInstanced) {
+      this.crystalInstanced.setMatrixAt(node.instanceIndex, dummy.matrix);
+      this.crystalInstanced.instanceMatrix.needsUpdate = true;
+    }
+  }
+
+  /**
+   * Harvests up to `requestedAmount` from a resource node (`wood` or `crystal`), scaling
+   * its 3D `InstancedMesh` down as it gets damaged (`scale * (0.65 + 0.35 * (node.amount / node.maxAmount))`)
+   * and collapsing its instance matrix to scale `(0, 0, 0)` when `node.amount <= 0`
+   * (`node.depleted = true`, `node.regrowTimer = 90.0`).
+   *
+   * @param {Object|string} nodeOrId - Resource node object or string ID.
+   * @param {number} [requestedAmount=2] - Desired harvest amount.
+   * @returns {number} Actual harvested amount (`0` if already depleted).
+   */
+  harvestResourceNode(nodeOrId, requestedAmount = 2) {
+    const node =
+      typeof nodeOrId === 'string'
+        ? this.resourceNodes.find((n) => n.id === nodeOrId)
+        : nodeOrId;
+    if (!node || node.depleted || node.amount <= 0) {
+      return 0;
+    }
+
+    const req = Math.max(1, Number(requestedAmount) || (node.type === 'crystal' ? 1 : 2));
+    const actualYield = Math.min(node.amount, req);
+    node.amount = Math.max(0, node.amount - actualYield);
+    node.lastYield = actualYield;
+
+    if (node.amount <= 0) {
+      node.amount = 0;
+      node.depleted = true;
+      node.regrowTimer = 90.0;
+    }
+
+    this._updateResourceNodeInstanceMatrix(node);
+    return actualYield;
+  }
+
+  /**
+   * Restores all depleted resource nodes to full capacity and original 3D scale (used on new roguelike run).
+   */
+  resetResourceNodes() {
+    if (!this.resourceNodes) return;
+    for (let i = 0; i < this.resourceNodes.length; i++) {
+      const node = this.resourceNodes[i];
+      node.depleted = false;
+      node.regrowTimer = 0;
+      node.amount = node.maxAmount || (node.type === 'crystal' ? 4 : 6);
+      this._updateResourceNodeInstanceMatrix(node);
+    }
   }
 
   /**
@@ -1227,7 +1340,7 @@ export class Terrain {
 
   /**
    * Per-frame update for animated Ocean Gerstner waves, shoreline foam, foliage wind sway,
-   * and crystal node luminescence.
+   * crystal node luminescence, and 90s depleted resource regrowth.
    *
    * @param {number} dt - Frame delta time in seconds.
    * @param {number} elapsedTime - Total elapsed time in seconds.
@@ -1260,6 +1373,22 @@ export class Terrain {
 
     if (this.crystalMaterial) {
       this.crystalMaterial.emissiveIntensity = 1.15 + Math.sin(t * 3.2) * 0.35;
+    }
+
+    // Tick 90s regrowTimer on depleted resource nodes
+    if (dt > 0 && this.resourceNodes) {
+      for (let i = 0; i < this.resourceNodes.length; i++) {
+        const node = this.resourceNodes[i];
+        if (node.depleted) {
+          node.regrowTimer = (node.regrowTimer ?? 90.0) - dt;
+          if (node.regrowTimer <= 0) {
+            node.depleted = false;
+            node.regrowTimer = 0;
+            node.amount = node.maxAmount || (node.type === 'crystal' ? 4 : 6);
+            this._updateResourceNodeInstanceMatrix(node);
+          }
+        }
+      }
     }
   }
 }

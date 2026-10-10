@@ -69,6 +69,7 @@ const SPECIES_FALLBACK_COLORS = {
   giant_mole: { color: 0x5d4037, accentColor: 0xf48fb1 },
   deer: { color: 0xb87333, accentColor: 0xf5e6d3 },
   rabbit: { color: 0xe8e4d9, accentColor: 0xffb6c1 },
+  undead: { color: 0xd8e2dc, accentColor: 0x00f5d4 },
 };
 
 /**
@@ -221,19 +222,22 @@ export class BlenderModelManager {
 
     const genome = params.genome || {};
     const rawSpeciesId = params.speciesId || genome.speciesId || 'goblin';
+    if (rawSpeciesId === 'undead') return 'undead';
     if (BLENDER_MODEL_MANIFEST[rawSpeciesId]) {
       return rawSpeciesId;
     }
     if (Array.isArray(genome.hybridParents) && genome.hybridParents.length > 0) {
       const parent0 = genome.hybridParents[0];
+      if (parent0 === 'undead') return 'undead';
       if (BLENDER_MODEL_MANIFEST[parent0]) return parent0;
     }
     return 'goblin';
   }
 
   /**
-   * Builds a lightweight synchronous hierarchical template for headless Node.js (`dry-run-sim.js`)
-   * or pre-load fallback, containing the exact named Blender nodes.
+   * Builds a sculpted skeletal/spectral Revenant warrior template for `modelKey === 'undead'`
+   * or a lightweight synchronous hierarchical template for headless Node.js (`dry-run-sim.js`),
+   * containing the exact named Blender nodes (`Body`, `Head`, `LeftArm`, `RightArm`, `LeftLeg`, `RightLeg`, `Tail`, `Weapon`).
    *
    * @param {string} modelKey
    * @returns {THREE.Group}
@@ -241,6 +245,150 @@ export class BlenderModelManager {
   _createSyntheticTemplate(modelKey) {
     const root = new THREE.Group();
     root.name = `BlenderTemplate_${modelKey}`;
+
+    if (modelKey === 'undead') {
+      const boneMat = new THREE.MeshStandardMaterial({
+        name: 'Mat_Skin_UndeadBone',
+        color: 0xd8e2dc,
+        roughness: 0.42,
+        metalness: 0.14,
+      });
+      const shroudMat = new THREE.MeshStandardMaterial({
+        name: 'Mat_Shroud_Undead',
+        color: 0x1b263b,
+        roughness: 0.84,
+        metalness: 0.08,
+        side: THREE.DoubleSide,
+      });
+      const necroticCoreMat = new THREE.MeshStandardMaterial({
+        name: 'Mat_Accent_NecroticCyan',
+        color: 0x00f5d4,
+        emissive: 0x00f5d4,
+        emissiveIntensity: 2.1,
+        roughness: 0.15,
+      });
+      const necroticVioletMat = new THREE.MeshStandardMaterial({
+        name: 'Mat_NecroticViolet',
+        color: 0x9b5de5,
+        emissive: 0x9b5de5,
+        emissiveIntensity: 1.7,
+        roughness: 0.2,
+      });
+      const rustedScytheMat = new THREE.MeshStandardMaterial({
+        name: 'Mat_RustedScythe',
+        color: 0x5c4033,
+        emissive: 0x00f5d4,
+        emissiveIntensity: 0.45,
+        roughness: 0.4,
+        metalness: 0.8,
+      });
+
+      const body = new THREE.Group();
+      body.name = 'Body';
+      body.position.set(0, 1.05, 0);
+      root.add(body);
+
+      const spine = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.09, 0.86, 6), boneMat);
+      spine.name = 'Body';
+      const pelvis = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.16, 0.28), boneMat);
+      pelvis.position.y = -0.38;
+      const soulHeart = new THREE.Mesh(new THREE.OctahedronGeometry(0.18, 0), necroticCoreMat);
+      soulHeart.position.set(0, 0.12, 0.04);
+      const soulHalo = new THREE.Mesh(new THREE.OctahedronGeometry(0.24, 0), necroticVioletMat);
+      soulHalo.position.set(0, 0.12, -0.02);
+      soulHalo.rotation.y = Math.PI * 0.25;
+      const mantle = new THREE.Mesh(new THREE.BoxGeometry(0.84, 0.24, 0.44), shroudMat);
+      mantle.position.set(0, 0.42, -0.02);
+      body.add(spine, pelvis, soulHeart, soulHalo, mantle);
+
+      for (let rIdx = 0; rIdx < 3; rIdx++) {
+        const ribArc = new THREE.Mesh(
+          new THREE.BoxGeometry(0.56 - rIdx * 0.05, 0.07, 0.34),
+          boneMat
+        );
+        ribArc.position.set(0, 0.26 - rIdx * 0.18, 0.03);
+        body.add(ribArc);
+      }
+
+      const head = new THREE.Group();
+      head.name = 'Head';
+      head.position.set(0, 0.68, 0.06);
+      const cranium = new THREE.Mesh(new THREE.SphereGeometry(0.24, 8, 8), boneMat);
+      cranium.scale.set(0.92, 1.08, 1.05);
+      const jaw = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.14, 0.26), boneMat);
+      jaw.position.set(0, -0.18, 0.08);
+      const hood = new THREE.Mesh(new THREE.ConeGeometry(0.32, 0.42, 6), shroudMat);
+      hood.position.set(0, 0.22, -0.04);
+      const eyeL = new THREE.Mesh(new THREE.SphereGeometry(0.058, 6, 6), necroticCoreMat);
+      eyeL.position.set(-0.09, 0.02, 0.21);
+      const eyeR = new THREE.Mesh(new THREE.SphereGeometry(0.058, 6, 6), necroticCoreMat);
+      eyeR.position.set(0.09, 0.02, 0.21);
+      head.add(cranium, jaw, hood, eyeL, eyeR);
+      body.add(head);
+
+      const leftArm = new THREE.Group();
+      leftArm.name = 'LeftArm';
+      leftArm.position.set(-0.46, 0.36, 0);
+      const lArmBone = new THREE.Mesh(new THREE.CylinderGeometry(0.065, 0.055, 0.68, 6), boneMat);
+      lArmBone.position.y = -0.28;
+      leftArm.add(lArmBone);
+      body.add(leftArm);
+
+      const rightArm = new THREE.Group();
+      rightArm.name = 'RightArm';
+      rightArm.position.set(0.46, 0.36, 0);
+      const rArmBone = new THREE.Mesh(new THREE.CylinderGeometry(0.065, 0.055, 0.68, 6), boneMat);
+      rArmBone.position.y = -0.28;
+      rightArm.add(rArmBone);
+
+      const weapon = new THREE.Group();
+      weapon.name = 'Weapon';
+      weapon.position.set(0, -0.52, 0.22);
+      const scytheShaft = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.04, 1.55, 6), shroudMat);
+      scytheShaft.rotation.x = Math.PI * 0.36;
+      const scytheBlade = new THREE.Mesh(new THREE.ConeGeometry(0.16, 0.78, 4), rustedScytheMat);
+      scytheBlade.position.set(0, 0.36, 0.64);
+      scytheBlade.rotation.x = Math.PI * 0.78;
+      const scytheEdge = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.56, 0.08), necroticVioletMat);
+      scytheEdge.position.set(0, 0.32, 0.68);
+      scytheEdge.rotation.x = Math.PI * 0.28;
+      weapon.add(scytheShaft, scytheBlade, scytheEdge);
+      rightArm.add(weapon);
+      body.add(rightArm);
+
+      const tail = new THREE.Group();
+      tail.name = 'Tail';
+      tail.position.set(0, 0.38, -0.22);
+      const shroudCape = new THREE.Mesh(new THREE.ConeGeometry(0.48, 1.18, 5), shroudMat);
+      shroudCape.position.set(0, -0.52, -0.08);
+      shroudCape.rotation.x = 0.22;
+      tail.add(shroudCape);
+      body.add(tail);
+
+      const leftLeg = new THREE.Group();
+      leftLeg.name = 'LeftLeg';
+      leftLeg.position.set(-0.2, 0.62, 0);
+      const lLegBone = new THREE.Mesh(new THREE.CylinderGeometry(0.075, 0.06, 0.68, 6), boneMat);
+      lLegBone.position.y = -0.3;
+      leftLeg.add(lLegBone);
+      root.add(leftLeg);
+
+      const rightLeg = new THREE.Group();
+      rightLeg.name = 'RightLeg';
+      rightLeg.position.set(0.2, 0.62, 0);
+      const rLegBone = new THREE.Mesh(new THREE.CylinderGeometry(0.075, 0.06, 0.68, 6), boneMat);
+      rLegBone.position.y = -0.3;
+      rightLeg.add(rLegBone);
+      root.add(rightLeg);
+
+      root.traverse((child) => {
+        if (child.isMesh) {
+          child.receiveShadow = false;
+          child.castShadow = child.name === 'Body';
+        }
+      });
+      return root;
+    }
 
     const mat = new THREE.MeshStandardMaterial({
       color: 0x88ccff,
@@ -335,6 +483,9 @@ export class BlenderModelManager {
    * @returns {Promise<{ loaded: number, total: number, headless: boolean }>}
    */
   preloadAll() {
+    if (!this.templates.has('undead')) {
+      this.templates.set('undead', this._createSyntheticTemplate('undead'));
+    }
     if (this._preloadPromise) {
       return this._preloadPromise;
     }
@@ -349,7 +500,7 @@ export class BlenderModelManager {
           this.templates.set(key, this._createSyntheticTemplate(key));
         }
       }
-      this.loadedCount = this.templates.size;
+      this.loadedCount = entries.length;
       this.isLoaded = true;
       this._preloadPromise = Promise.resolve({
         loaded: this.loadedCount,
@@ -490,11 +641,12 @@ export class BlenderModelManager {
       group.userData.blenderModelRoot = blenderModelRoot;
     }
 
-    // 3. If headless and templates not yet initialized, initialize synthetic templates
+    // 3. If headless (or sculpted procedural key like 'undead') and template not yet initialized, populate it
     const isBrowser = typeof window !== 'undefined' && typeof document !== 'undefined';
-    if (!isBrowser && !this.templates.has(modelKey)) {
+    if ((!isBrowser || modelKey === 'undead') && !this.templates.has(modelKey)) {
       this.templates.set(modelKey, this._createSyntheticTemplate(modelKey));
-    } else if (isBrowser && !this._preloadPromise) {
+    }
+    if (isBrowser && !this._preloadPromise) {
       // Trigger background preload if not started yet
       this.preloadAll();
     }

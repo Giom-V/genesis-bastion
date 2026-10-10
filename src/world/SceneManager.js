@@ -274,13 +274,19 @@ export class SceneManager {
     );
     this.composer.addPass(this.bloomPass);
 
-    // Day / Night cycle state
-    /** @type {number} Full day/night cycle duration in seconds */
-    this.dayCycleDuration = CONFIG?.WORLD?.DAY_DURATION || 120;
-    /** @type {number} Start in bright morning light (0.28 of cycle) */
-    this.timeOfDayNormalized = 0.28;
+    // Day / Night cycle state (75s Day + 45s Night = 120s total cycle)
+    /** @type {number} Daytime duration in seconds */
+    this.dayDuration = 75;
+    /** @type {number} Nighttime duration in seconds */
+    this.nightDuration = 45;
+    /** @type {number} Full day/night cycle duration in seconds (75s day + 45s night = 120s) */
+    this.dayCycleDuration = CONFIG?.WORLD?.DAY_DURATION || (this.dayDuration + this.nightDuration);
+    /** @type {number} Start in bright morning light (0.22 of cycle, shortly after 0.1875 dawn) */
+    this.timeOfDayNormalized = 0.22;
     /** @type {number} Current survival day counter (1-based) */
     this.dayNumber = 1;
+    /** @type {boolean} Tracks whether the scene is currently in the Night phase */
+    this._isNightPhase = false;
     /** @type {THREE.Vector3} Normalized direction vector toward the sun */
     this.sunDirection = new THREE.Vector3(0.45, 0.72, 0.52).normalize();
 
@@ -292,13 +298,14 @@ export class SceneManager {
     this._moonDirVec = new THREE.Vector3();
     this._daySunCol = new THREE.Color(0xfff3d6);
     this._duskSunCol = new THREE.Color(0xff8442);
-    this._nightMoonCol = new THREE.Color(0x5a82b8);
+    // Eerie moonlight blue-violet for haunted Undead Nightfall
+    this._nightMoonCol = new THREE.Color(0x6e78e8);
     this._daySkyHemi = new THREE.Color(0x8ecae6);
     this._duskSkyHemi = new THREE.Color(0xd9865b);
-    this._nightSkyHemi = new THREE.Color(0x1b2c47);
+    this._nightSkyHemi = new THREE.Color(0x251e4b);
     this._dayFog = new THREE.Color(0xcfe8f3);
     this._duskFog = new THREE.Color(0xc46d4e);
-    this._nightFog = new THREE.Color(0x0b1526);
+    this._nightFog = new THREE.Color(0x0c0a1e);
 
     this._initSkyDome();
     this._initLighting();
@@ -611,6 +618,8 @@ export class SceneManager {
   _updateAtmosphere(dt, elapsedTime) {
     const prevNorm = this.timeOfDayNormalized;
     this.timeOfDayNormalized = (this.timeOfDayNormalized + dt / this.dayCycleDuration) % 1.0;
+    if (this.timeOfDayNormalized < 0) this.timeOfDayNormalized += 1.0;
+
     if (this.timeOfDayNormalized < prevNorm) {
       this.dayNumber += 1;
       logger.info('WORLD', `Un nouveau jour se lève sur Genesis Bastion (Jour ${this.dayNumber})`, {
@@ -618,13 +627,32 @@ export class SceneManager {
       });
     }
 
-    // Map normalized [0..1] cycle to sun angle:
-    // 0.00 = midnight, 0.25 = dawn, 0.50 = solar noon, 0.75 = sunset, 1.00 = midnight
-    const cycleAngle = (this.timeOfDayNormalized - 0.25) * Math.PI * 2.0;
-    const sunElevation = Math.sin(cycleAngle); // [-1..1]
+    // 75s Day (62.5% of 120s cycle: [0.1875 .. 0.8125]) and 45s Night (37.5% of 120s cycle)
+    const dayStart = 0.1875;
+    const dayEnd = 0.8125;
+    const isNightNow = this.timeOfDayNormalized < dayStart || this.timeOfDayNormalized >= dayEnd;
+    this._isNightPhase = isNightNow;
+
+    // Map normalized [0..1] cycle smoothly so sun is above horizon during [0.1875..0.8125] (75s)
+    // and below horizon during [0.8125..1.0, 0.0..0.1875] (45s)
+    let sunElevation = 0;
+    let cycleAngle = 0;
+    if (!isNightNow) {
+      const dayProgress = (this.timeOfDayNormalized - dayStart) / (dayEnd - dayStart); // [0..1]
+      cycleAngle = dayProgress * Math.PI; // [0..PI]
+      sunElevation = Math.sin(cycleAngle); // [0..1]
+    } else {
+      const nightElapsed =
+        this.timeOfDayNormalized >= dayEnd
+          ? this.timeOfDayNormalized - dayEnd
+          : 1.0 - dayEnd + this.timeOfDayNormalized;
+      const nightProgress = nightElapsed / (1.0 - (dayEnd - dayStart)); // [0..1]
+      cycleAngle = Math.PI + nightProgress * Math.PI; // [PI..2PI]
+      sunElevation = Math.sin(cycleAngle); // [-1..0]
+    }
     const sunAzimuth = cycleAngle * 0.65 + 0.55;
 
-    const horizRadius = Math.cos( Math.asin(clamp(sunElevation, -0.98, 0.98)) );
+    const horizRadius = Math.cos(Math.asin(clamp(sunElevation, -0.98, 0.98)));
     this.sunDirection
       .set(
         Math.cos(sunAzimuth) * horizRadius,
@@ -633,8 +661,8 @@ export class SceneManager {
       )
       .normalize();
 
-    const nightFactor = clamp((-sunElevation + 0.08) / 0.35, 0.0, 1.0);
-    const twilightFactor = clamp(1.0 - Math.abs(sunElevation - 0.06) / 0.34, 0.0, 1.0);
+    const nightFactor = clamp((-sunElevation + 0.06) / 0.28, 0.0, 1.0);
+    const twilightFactor = clamp(1.0 - Math.abs(sunElevation - 0.05) / 0.30, 0.0, 1.0);
 
     // Update sky shader uniforms
     this.skyMaterial.uniforms.uSunDir.value.copy(this.sunDirection);
@@ -642,11 +670,11 @@ export class SceneManager {
     this.skyMaterial.uniforms.uNightFactor.value = nightFactor;
     this.skyMaterial.uniforms.uTwilightFactor.value = twilightFactor;
 
-    // Directional light follows either the sun (day) or high silver moon (night)
+    // Directional light follows either the sun (day) or high eerie blue-violet moon (night)
     const activeLightDir =
       sunElevation >= -0.05
         ? this.sunDirection
-        : this._moonDirVec.set(-this.sunDirection.x, Math.max(0.38, -this.sunDirection.y), -this.sunDirection.z).normalize();
+        : this._moonDirVec.set(-this.sunDirection.x, Math.max(0.42, -this.sunDirection.y), -this.sunDirection.z).normalize();
 
     // Texel-snap shadow target around cameraTarget to eliminate shadow edge shimmering
     const snapStep = 1.5;
@@ -659,19 +687,19 @@ export class SceneManager {
       .multiplyScalar(95)
       .add(this.sunLight.target.position);
 
-    // Blend directional light color & intensity across day / golden hour / night (zero allocation)
+    // Blend directional light color & intensity across day / golden hour / eerie moonlight night (zero allocation)
     this.sunLight.color
       .copy(this._daySunCol)
       .lerp(this._duskSunCol, twilightFactor)
       .lerp(this._nightMoonCol, nightFactor);
-    this.sunLight.intensity = lerp(lerp(2.35, 1.85, twilightFactor), 0.72, nightFactor);
+    this.sunLight.intensity = lerp(lerp(2.35, 1.85, twilightFactor), 0.88, nightFactor);
 
     // Hemisphere & fog atmospheric harmony (zero allocation)
     this.hemiLight.color
       .copy(this._daySkyHemi)
       .lerp(this._duskSkyHemi, twilightFactor)
       .lerp(this._nightSkyHemi, nightFactor);
-    this.hemiLight.intensity = lerp(0.95, 0.45, nightFactor);
+    this.hemiLight.intensity = lerp(0.95, 0.48, nightFactor);
 
     this.scene.fog.color
       .copy(this._dayFog)
@@ -683,7 +711,7 @@ export class SceneManager {
       Math.sin(elapsedTime * 11.3) * 0.18 +
       Math.sin(elapsedTime * 23.7) * 0.11 +
       Math.cos(elapsedTime * 6.1) * 0.14;
-    this.bastionLight.intensity = (2.8 + nightFactor * 2.2) + flicker;
+    this.bastionLight.intensity = (2.8 + nightFactor * 2.4) + flicker;
   }
 
   /**
@@ -729,9 +757,73 @@ export class SceneManager {
   }
 
   /**
+   * Returns `true` when the cycle is currently in the Night phase (`45s` out of `120s`).
+   *
+   * @returns {boolean}
+   */
+  isNight() {
+    const norm = this.timeOfDayNormalized;
+    return norm < 0.1875 || norm >= 0.8125;
+  }
+
+  /**
+   * Returns the normalized `[0..1)` time-of-day position within the 120s cycle.
+   *
+   * @returns {number}
+   */
+  getTimeOfDayNormalized() {
+    return this.timeOfDayNormalized;
+  }
+
+  /**
+   * Explicitly sets the normalized `[0..1)` time-of-day position and refreshes atmosphere lighting.
+   *
+   * @param {number} norm - Normalized time in `[0..1)`.
+   */
+  setTimeOfDayNormalized(norm) {
+    this.timeOfDayNormalized = ((Number(norm) || 0) % 1.0 + 1.0) % 1.0;
+    this._updateAtmosphere(0, 0);
+  }
+
+  /**
+   * Returns the structured Day/Night state (`{ isNight, phaseName, dayCount, phaseProgress }`).
+   *
+   * @returns {{ isNight: boolean, phaseName: string, dayCount: number, phaseProgress: number, dayDuration: number, nightDuration: number, normalized: number }}
+   */
+  getDayNightState() {
+    const norm = this.timeOfDayNormalized;
+    const dayStart = 0.1875;
+    const dayEnd = 0.8125;
+    const night = norm < dayStart || norm >= dayEnd;
+
+    let phaseProgress = 0;
+    let phaseName = 'Day';
+    if (!night) {
+      phaseProgress = clamp((norm - dayStart) / (dayEnd - dayStart), 0, 1);
+      if (norm < 0.27) phaseName = 'Dawn';
+      else if (norm >= 0.73) phaseName = 'Dusk';
+      else phaseName = 'Day';
+    } else {
+      const nightElapsed = norm >= dayEnd ? norm - dayEnd : 1.0 - dayEnd + norm;
+      phaseProgress = clamp(nightElapsed / (1.0 - (dayEnd - dayStart)), 0, 1);
+      phaseName = 'Night';
+    }
+
+    return {
+      isNight: night,
+      phaseName,
+      dayCount: this.dayNumber,
+      phaseProgress,
+      dayDuration: this.dayDuration,
+      nightDuration: this.nightDuration,
+      normalized: norm,
+    };
+  }
+
+  /**
    * Returns structured time-of-day telemetry for the HUD clock and game logic.
    *
-   * @returns {{ normalized: number, label: string, isNight: boolean, dayNumber: number, hour: number, formattedTime: string, phase: string }}
+   * @returns {{ normalized: number, label: string, isNight: boolean, dayNumber: number, dayCount: number, hour: number, formattedTime: string, phase: string, phaseName: string, phaseProgress: number }}
    */
   getTimeOfDay() {
     const norm = this.timeOfDayNormalized;
@@ -740,17 +832,18 @@ export class SceneManager {
     const mins = Math.floor((totalHours - hour) * 60);
     const formattedTime = `${String(hour).padStart(2, '0')}h${String(mins).padStart(2, '0')}`;
 
-    const isNight = norm < 0.21 || norm >= 0.79;
+    const dnState = this.getDayNightState();
+    const isNight = dnState.isNight;
     let label = 'Jour';
     let phase = 'day';
 
-    if (norm >= 0.21 && norm < 0.30) {
+    if (norm >= 0.1875 && norm < 0.27) {
       label = 'Aube';
       phase = 'dawn';
-    } else if (norm >= 0.30 && norm < 0.70) {
+    } else if (norm >= 0.27 && norm < 0.73) {
       label = 'Jour';
       phase = 'day';
-    } else if (norm >= 0.70 && norm < 0.79) {
+    } else if (norm >= 0.73 && norm < 0.8125) {
       label = 'Crépuscule';
       phase = 'dusk';
     } else {
@@ -763,9 +856,12 @@ export class SceneManager {
       label,
       isNight,
       dayNumber: this.dayNumber,
+      dayCount: this.dayNumber,
       hour,
       formattedTime,
       phase,
+      phaseName: dnState.phaseName,
+      phaseProgress: dnState.phaseProgress,
     };
   }
 
