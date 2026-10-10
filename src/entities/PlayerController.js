@@ -84,7 +84,7 @@ export class PlayerController {
 
     // Core Survival & Roguelike Progression Stats
     /** @type {number} */
-    this.maxHp = CONFIG.PLAYER?.MAX_HP || 160;
+    this.maxHp = CONFIG.PLAYER?.MAX_HP || 125;
     /** @type {number} */
     this.hp = this.maxHp;
     /** @type {boolean} True when the Hero has fallen in combat (0 HP) and Game Over screen is active */
@@ -113,15 +113,15 @@ export class PlayerController {
     this.mutantsKilledCount = 0;
     /** @type {{ wood: number, crystal: number, biomass: number, food: number, maxFood?: number }} */
     this.resources = {
-      wood: 40,
-      crystal: 20,
-      biomass: 15,
-      food: 60,
+      wood: 10,
+      crystal: 5,
+      biomass: 0,
+      food: 50,
       maxFood: 150,
     };
     /** @type {number} Maximum Food / Rations storage cap */
     this.maxFood = 150;
-    /** @type {boolean} True when food > 25 (+3 PV/s regen, +10% movement speed) */
+    /** @type {boolean} True when food > 25 (+0.65 PV/s regen, +10% movement speed) */
     this.isWellFed = true;
     /** @type {boolean} True when food <= 0 (0 PV/s field regen, -10% movement speed) */
     this.isStarvingFamine = false;
@@ -207,7 +207,7 @@ export class PlayerController {
     this.baseSpeed = CONFIG.PLAYER?.SPEED || 13.5;
     this.speedMult = 1.0;
     this.speedMultiplier = 1.0;
-    this.cleaveDamage = CONFIG.PLAYER?.CLEAVE_DAMAGE || 32;
+    this.cleaveDamage = CONFIG.PLAYER?.CLEAVE_DAMAGE || 22;
     this.cleaveDamageMult = 1.0;
     this.damageMultiplier = 1.0;
     this.attackSpeedMultiplier = 1.0;
@@ -231,7 +231,7 @@ export class PlayerController {
     this.dashDirX = 0;
     this.dashDirZ = -1;
 
-    this.regenPerSec = 1.2;
+    this.regenPerSec = 0.35;
     this.damageReduction = 0.0;
     this.scoutVisionMult = 1.0;
     this.scoutSpeedMult = 1.0;
@@ -1889,44 +1889,75 @@ export class PlayerController {
       }
     }
 
-    // 3. Harvest nearby Terrain Resource Node (Wood / Crystal)
+    // 3. Harvest nearby Terrain Resource Node (Wood / Crystal) — depletes & destroys node when empty!
     if (this.terrain && typeof this.terrain.getNearestResourceNode === 'function') {
       const node = this.terrain.getNearestResourceNode(this.x, this.z, 8.5);
-      if (node) {
-        this.harvestCount++;
-        if (node.type === 'crystal') {
-          this.resources.crystal += 6;
-          logger.info('PLAYER', 'Cristal récolté (+6 Cristal).', { crystal: this.resources.crystal });
-          if (typeof this.onResourceHarvested === 'function') {
-            this.onResourceHarvested('crystal', 6, new THREE.Vector3(node.x, this.y + 1, node.z));
+      if (node && !node.depleted) {
+        this.interactCooldown = CONFIG.PLAYER?.INTERACT_COOLDOWN || 1.15;
+        const requestedAmount = node.type === 'crystal' ? 1 : 2;
+        let actualYield = requestedAmount;
+
+        if (typeof this.terrain.harvestResourceNode === 'function') {
+          const harvestRes = this.terrain.harvestResourceNode(node, requestedAmount);
+          if (typeof harvestRes === 'number') {
+            actualYield = harvestRes;
+          } else if (harvestRes && typeof harvestRes === 'object') {
+            actualYield =
+              harvestRes.actualYield ??
+              harvestRes.yield ??
+              harvestRes.amount ??
+              requestedAmount;
           }
         } else {
-          this.resources.wood += 8;
-          logger.info('PLAYER', 'Bois ancien récolté (+8 Bois).', { wood: this.resources.wood });
-          if (typeof this.onResourceHarvested === 'function') {
-            this.onResourceHarvested('wood', 8, new THREE.Vector3(node.x, this.y + 1, node.z));
+          const available = typeof node.amount === 'number' ? node.amount : requestedAmount;
+          actualYield = Math.min(available, requestedAmount);
+          node.amount = Math.max(0, available - actualYield);
+          if (node.amount <= 0) {
+            node.depleted = true;
+            node.regrowTimer = 90.0;
           }
         }
-        if (this.vfx && typeof this.vfx.spawnHitEffect === 'function') {
-          this.vfx.spawnHitEffect(new THREE.Vector3(this.x, this.y + 0.8, this.z), 0x38c172);
+
+        if (actualYield > 0) {
+          this.harvestCount++;
+          if (node.type === 'crystal') {
+            this.resources.crystal = (this.resources.crystal || 0) + actualYield;
+            logger.info('PLAYER', `Cristal récolté (+${actualYield} Cristal).`, {
+              crystal: this.resources.crystal,
+              remainingNodeAmount: node.amount,
+              depleted: Boolean(node.depleted),
+            });
+            if (typeof this.onResourceHarvested === 'function') {
+              this.onResourceHarvested(
+                'crystal',
+                actualYield,
+                new THREE.Vector3(node.x, this.y + 1, node.z)
+              );
+            }
+          } else {
+            this.resources.wood = (this.resources.wood || 0) + actualYield;
+            logger.info('PLAYER', `Bois ancien récolté (+${actualYield} Bois).`, {
+              wood: this.resources.wood,
+              remainingNodeAmount: node.amount,
+              depleted: Boolean(node.depleted),
+            });
+            if (typeof this.onResourceHarvested === 'function') {
+              this.onResourceHarvested(
+                'wood',
+                actualYield,
+                new THREE.Vector3(node.x, this.y + 1, node.z)
+              );
+            }
+          }
+          if (this.vfx && typeof this.vfx.spawnHitEffect === 'function') {
+            this.vfx.spawnHitEffect(
+              new THREE.Vector3(node.x, this.y + 0.8, node.z),
+              node.type === 'crystal' ? 0x48dbfb : 0x38c172
+            );
+          }
         }
         return;
       }
-    }
-
-    // Fallback ambient foraging so pressing [E] always gives clear feedback
-    this.harvestCount++;
-    this.resources.wood += 5;
-    this.resources.crystal += 2;
-    logger.info('PLAYER', 'Récolte de matériaux (+5 Bois, +2 Cristal).', {
-      wood: this.resources.wood,
-      crystal: this.resources.crystal,
-    });
-    if (this.vfx && typeof this.vfx.spawnHitEffect === 'function') {
-      this.vfx.spawnHitEffect(new THREE.Vector3(this.x, this.y + 0.8, this.z), 0x38c172);
-    }
-    if (typeof this.onResourceHarvested === 'function') {
-      this.onResourceHarvested('wood', 5, new THREE.Vector3(this.x, this.y + 1, this.z));
     }
   }
 
@@ -2059,7 +2090,7 @@ export class PlayerController {
     this.xp = 0;
     this.nextLevelXp = CONFIG.PLAYER?.BASE_XP_NEXT || 60;
     this.pendingLevelUps = 0;
-    this.maxHp = CONFIG.PLAYER?.MAX_HP || 160;
+    this.maxHp = CONFIG.PLAYER?.MAX_HP || 125;
     this.hp = this.maxHp;
     this.isDead = false;
     this.lastDeathReason = null;
@@ -2079,6 +2110,7 @@ export class PlayerController {
     // Reset all stat & upgrade multipliers
     this.speedMult = 1.0;
     this.speedMultiplier = 1.0;
+    this.cleaveDamage = CONFIG.PLAYER?.CLEAVE_DAMAGE || 22;
     this.cleaveDamageMult = 1.0;
     this.damageMultiplier = 1.0;
     this.attackSpeedMultiplier = 1.0;
@@ -2090,7 +2122,7 @@ export class PlayerController {
     this.knockbackMultiplier = 1.0;
     this.dashCooldownMult = 1.0;
     this.damageReduction = 0.0;
-    this.regenPerSec = 1.2;
+    this.regenPerSec = 0.35;
     this.scoutVisionMult = 1.0;
     this.scoutSpeedMult = 1.0;
     this.turretDamageMult = 1.0;
@@ -2108,10 +2140,10 @@ export class PlayerController {
     this.cagesRescuedCount = 0;
     this.relicFragmentsCollected = 0;
     this.resources = {
-      wood: 20,
-      crystal: 10,
-      biomass: 5,
-      food: 80,
+      wood: 10,
+      crystal: 5,
+      biomass: 0,
+      food: 50,
       maxFood: 150,
     };
     this.maxFood = 150;
@@ -2782,7 +2814,7 @@ export class PlayerController {
     const bastionHealRate = bastionAndNpcs?.heroHealRate || CONFIG.BASTION?.HEAL_RATE || 15;
     const fieldRegen = this.isStarvingFamine
       ? 0
-      : this.regenPerSec + (this.isWellFed ? (CONFIG.PLAYER?.WELL_FED_REGEN_BONUS || 3.0) : 0);
+      : this.regenPerSec + (this.isWellFed ? (CONFIG.PLAYER?.WELL_FED_REGEN_BONUS || 0.65) : 0);
     const healRate = fieldRegen + (inBastion ? bastionHealRate : 0);
     if (this.hp < this.maxHp && healRate > 0) {
       this.hp = Math.min(this.maxHp, this.hp + healRate * dt);

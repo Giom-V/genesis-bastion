@@ -215,6 +215,10 @@ export class BastionAndNPCs {
     this.onRelicSpottedByScout = null;
     /** @type {Function|null} Optional callback `(deathInfo)` when the Bastion Sanctuary HP reaches 0 */
     this.onBastionDestroyed = null;
+    /** @type {Function|null} Optional callback `(npc, attackerEnemy, direction, messageFR, messageEN)` when an allied NPC is under attack */
+    this.onNpcUnderAttack = null;
+    /** @type {Function|null} Optional callback `(npc, attackerEnemy, direction, messageFR, messageEN)` when an allied NPC is killed */
+    this.onNpcKilled = null;
 
     /** @type {THREE.Group|null} Root 3D group for the Bastion Sanctuary */
     this.bastionGroup = null;
@@ -1859,6 +1863,14 @@ export class BastionAndNPCs {
       this.scene.add(mesh);
     }
 
+    const baseSpeed =
+      role === 'scout'
+        ? CONFIG.SCOUT?.SPEED || 6.8
+        : role === 'guard'
+          ? 6.0
+          : 5.5;
+    const maxHp = CONFIG.SCOUT?.HP || 90;
+
     const npc = {
       id,
       name,
@@ -1868,9 +1880,9 @@ export class BastionAndNPCs {
       y,
       vx: 0,
       vz: 0,
-      hp: CONFIG.SCOUT?.HP || 60,
-      maxHp: CONFIG.SCOUT?.HP || 60,
-      speed: role === 'scout' ? CONFIG.SCOUT?.SPEED || 13 : 8.5,
+      hp: maxHp,
+      maxHp,
+      speed: baseSpeed,
       visionRadius: CONFIG.SCOUT?.VISION_RADIUS || 34,
       fleeRadius: CONFIG.SCOUT?.FLEE_RADIUS || 16,
       state: role === 'scout' ? 'expedition' : 'patrol',
@@ -1881,6 +1893,16 @@ export class BastionAndNPCs {
       visitedSectors: [],
       actionTimer: 0,
       waypointTimer: 0,
+      distressAlertCooldown: 0,
+      sosBeaconTimer: 0,
+      _sosBeaconActive: false,
+      harvestTimer: 0,
+      harvestJob: null,
+      targetNode: null,
+      targetPrey: null,
+      carryingType: null,
+      carryingAmount: 0,
+      completedTrips: 0,
       mesh,
       position: mesh ? mesh.position : new THREE.Vector3(x, y, z),
     };
@@ -1948,8 +1970,16 @@ export class BastionAndNPCs {
     if (!npc) return false;
 
     npc.role = targetRole;
-    npc.speed = targetRole === 'scout' ? CONFIG.SCOUT?.SPEED || 13 : 8.5;
+    npc.speed =
+      targetRole === 'scout'
+        ? CONFIG.SCOUT?.SPEED || 6.8
+        : targetRole === 'guard'
+          ? 6.0
+          : 5.5;
     npc.state = targetRole === 'scout' ? 'expedition' : 'patrol';
+    npc.harvestJob = null;
+    npc.targetNode = null;
+    npc.targetPrey = null;
 
     if (targetRole === 'scout') {
       this._assignNewWildernessWaypoint(npc, []);
@@ -2073,29 +2103,137 @@ export class BastionAndNPCs {
   }
 
   /**
-   * Applies damage to an allied NPC. If a Scout's HP drops low, it teleports/retreats safely
-   * to the Bastion hearth to recover.
+   * Applies damage to an allied NPC (`maxHp = 90`).
+   * - When `npc.hp > 0` and `npc.distressAlertCooldown <= 0`, triggers an urgent `"🆘 À L'AIDE !"` /
+   *   `"🆘 HELP!"` distress alert, lights a pulsing red SOS beacon on the NPC, and invokes `this.onNpcUnderAttack`.
+   * - When `npc.hp <= 0`, the NPC **dies permanently** (`this.scene.remove(npc.mesh)`, removed from `this.npcs`,
+   *   death explosion VFX, and `this.onNpcKilled` alert).
+   * - Exception: During Tutorial Acts 1–5 only (`this.tutorialMode && (!this.tutorialAct || this.tutorialAct <= 5)`),
+   *   clamps NPC HP at `15` so the tutorial script cannot softlock before Act 6.
+   *
+   * @param {string|Object} npcIdOrObj
+   * @param {number} amount
+   * @param {Object|null} [attackerEnemy=null]
+   * @returns {{ alive: boolean, killed: boolean, npc: Object|null }}
    */
-  damageNpc(npcId, amount) {
-    const npc = this.npcs.find((n) => n.id === npcId);
-    if (!npc) return;
-    // Scout Guild Lv3 grants fleeing immunity
-    if (npc.role === 'scout' && (this.structures.scout_guild || 0) >= 3) {
-      return;
+  damageNpc(npcIdOrObj, amount, attackerEnemy = null) {
+    const targetId = typeof npcIdOrObj === 'object' ? npcIdOrObj?.id : npcIdOrObj;
+    const idx = this.npcs.findIndex((n) => n.id === targetId);
+    if (idx === -1) return { alive: false, killed: false, npc: null };
+    const npc = this.npcs[idx];
+
+    const effectiveAmount =
+      npc.role === 'scout' && (this.structures.scout_guild || 0) >= 3
+        ? amount * 0.45
+        : amount;
+    npc.hp = Math.max(0, npc.hp - effectiveAmount);
+
+    // During Tutorial Acts 1–5 only, clamp NPC HP at 15 so the tutorial script cannot softlock before Act 6
+    const isEarlyTutorial =
+      this.tutorialMode &&
+      (!attackerEnemy || attackerEnemy.tutorialTag !== 'act6_baby_fire_troll') &&
+      typeof this.tutorialAct === 'number' &&
+      this.tutorialAct >= 1 &&
+      this.tutorialAct <= 5;
+    if (isEarlyTutorial && npc.hp < 15) {
+      npc.hp = 15;
     }
-    npc.hp -= amount;
-    if (npc.hp <= 0) {
-      npc.hp = npc.maxHp;
-      npc.x = (Math.random() - 0.5) * 5;
-      npc.z = (Math.random() - 0.5) * 5;
-      if (npc.role === 'scout') {
-        this._assignNewWildernessWaypoint(npc, []);
+
+    const roleLabel = this._roleLabelFR(npc.role);
+    const roleLabelEN =
+      npc.role === 'scout' ? 'Scout' : npc.role === 'guard' ? 'Guard' : 'Harvester';
+    const enemyName =
+      attackerEnemy?.genome?.speciesName ||
+      attackerEnemy?.speciesName ||
+      CONFIG.SPECIES?.[attackerEnemy?.genome?.speciesId]?.name ||
+      'Monstre Sauvage';
+    const enemyNameEN =
+      CONFIG.SPECIES?.[attackerEnemy?.genome?.speciesId]?.nameEN ||
+      attackerEnemy?.genome?.speciesName ||
+      'Wild Monster';
+    const direction = getCardinalLabelFR(npc.x, npc.z);
+
+    if (this.vfx && typeof this.vfx.spawnHitEffect === 'function') {
+      this.vfx.spawnHitEffect(new THREE.Vector3(npc.x, (npc.y || 1) + 1.0, npc.z), 0xff2222);
+    }
+
+    if (npc.hp > 0) {
+      if ((npc.distressAlertCooldown || 0) <= 0) {
+        npc.distressAlertCooldown = 9.0;
+        npc.sosBeaconTimer = 6.5;
+        npc._sosBeaconActive = true;
+
+        if (this.vfx && typeof this.vfx.setPatientZeroBeacon === 'function') {
+          this.vfx.setPatientZeroBeacon(
+            npc.id,
+            npc.mesh ? npc.mesh.position : npc.position,
+            0xff2222,
+            true
+          );
+        }
+
+        const msgFR = `🆘 À L'AIDE ! ${npc.name} (${roleLabel}) est attaqué par [${enemyName}] au ${direction} (${Math.round(npc.hp)}/${npc.maxHp} PV) ! Vite, venez le sauver !`;
+        const msgEN = `🆘 HELP! ${npc.name} (${roleLabelEN}) is under attack by [${enemyNameEN}] in the ${direction} (${Math.round(npc.hp)}/${npc.maxHp} HP)! Hurry to save them!`;
+
+        logger.alert(msgFR, {
+          npcId: npc.id,
+          npcName: npc.name,
+          role: npc.role,
+          hp: Math.round(npc.hp),
+          maxHp: npc.maxHp,
+          attacker: enemyName,
+          direction,
+        });
+
+        if (typeof this.onNpcUnderAttack === 'function') {
+          this.onNpcUnderAttack(npc, attackerEnemy, direction, msgFR, msgEN);
+        }
       }
-      logger.info(
-        'BASTION',
-        `${npc.name} (${this._roleLabelFR(npc.role)}) s'est replié au Bastion pour récupérer.`
-      );
+      return { alive: true, killed: false, npc };
     }
+
+    // NPC HP <= 0 -> Permanent Death!
+    npc.hp = 0;
+    if (this.vfx) {
+      if (typeof this.vfx.setPatientZeroBeacon === 'function') {
+        this.vfx.setPatientZeroBeacon(
+          npc.id,
+          npc.mesh ? npc.mesh.position : new THREE.Vector3(npc.x, npc.y, npc.z),
+          0xff2222,
+          false
+        );
+      }
+      if (typeof this.vfx.spawnDeathExplosion === 'function') {
+        this.vfx.spawnDeathExplosion(new THREE.Vector3(npc.x, (npc.y || 1) + 0.8, npc.z), 0xff2222, 12);
+      } else if (typeof this.vfx.spawnDeathEffect === 'function') {
+        this.vfx.spawnDeathEffect(new THREE.Vector3(npc.x, (npc.y || 1) + 0.8, npc.z), 0xff2222);
+      }
+    }
+
+    if (npc.mesh && this.scene) {
+      this.scene.remove(npc.mesh);
+    }
+    this.npcs.splice(idx, 1);
+
+    const deathFR = `💀 ${npc.name} (${roleLabel}) a été tué par [${enemyName}] au ${direction} !`;
+    const deathEN = `💀 ${npc.name} (${roleLabelEN}) was slain by [${enemyNameEN}] in the ${direction}!`;
+
+    logger.alert(deathFR, {
+      npcId: npc.id,
+      npcName: npc.name,
+      role: npc.role,
+      attacker: enemyName,
+      direction,
+    });
+
+    if (typeof this.onNpcKilled === 'function') {
+      this.onNpcKilled(npc, attackerEnemy, direction, deathFR, deathEN);
+    }
+    if (typeof this.onRoleAssigned === 'function') {
+      this.onRoleAssigned(npc.role, this.getRoleCounts());
+    }
+
+    return { alive: false, killed: true, npc };
   }
 
   /**
@@ -2270,9 +2408,20 @@ export class BastionAndNPCs {
     // 5. Update Allied NPCs by Role
     for (const npc of this.npcs) {
       npc.actionTimer = Math.max(0, npc.actionTimer - dt);
+      npc.distressAlertCooldown = Math.max(0, (npc.distressAlertCooldown || 0) - dt);
+
+      if ((npc.sosBeaconTimer || 0) > 0) {
+        npc.sosBeaconTimer -= dt;
+        if (npc.sosBeaconTimer <= 0 && npc._sosBeaconActive) {
+          npc._sosBeaconActive = false;
+          if (this.vfx && typeof this.vfx.setPatientZeroBeacon === 'function') {
+            this.vfx.setPatientZeroBeacon(npc.id, null, 0xff2222, false);
+          }
+        }
+      }
 
       if (npc.role === 'harvester') {
-        this._updateHarvesterAI(npc, dt, player);
+        this._updateHarvesterAI(npc, dt, player, enemies, enemyManager);
       } else if (npc.role === 'guard') {
         this._updateGuardAI(npc, dt, enemies);
       } else if (npc.role === 'scout') {
@@ -2305,7 +2454,10 @@ export class BastionAndNPCs {
           {
             isMoving: speedMag > 0.2,
             speed: speedMag,
-            isAttacking: npc.state === 'attack',
+            isAttacking:
+              npc.state === 'attack' ||
+              npc.state === 'chopping' ||
+              npc.state === 'hunting_strike',
           },
           elapsedTime,
           dt
@@ -2339,34 +2491,228 @@ export class BastionAndNPCs {
   }
 
   /**
-   * Harvester AI: gathers wood/crystal around the Bastion (`10..28` units) and repairs Bastion HP.
+   * Harvester AI (Phase 16):
+   * - **Job A (Chopping Trees / Mining Crystals)**: Finds the nearest non-depleted `resourceNode`
+   *   via `this.terrain.getNearestResourceNode(npc.x, npc.z, 95)`, walks to it (`d <= 2.2m`),
+   *   chops/mines for `2.2s` (`npc.harvestTimer`), calls `this.terrain.harvestResourceNode(node, node.type === 'crystal' ? 1 : 2)`
+   *   (physically depleting and destroying the 3D tree/crystal when `node.amount <= 0`), and walks back to
+   *   the Bastion (`r < 8m`) to deposit `+2 Wood` or `+1 Crystal`.
+   * - **Job B (Hunting Rabbits & Deer for Food)**: When `(player?.resources?.food ?? 50) < 95` or every 3rd trip
+   *   (if living `rabbit` or `deer` exist), enters `state = 'hunting_prey'`, stalks the nearest `rabbit` or `deer`,
+   *   strikes it (`16 damage` every `1.0s` with VFX), and when the prey dies, collects `+20 Food Rations` (`🍖`)
+   *   and brings it back to the Bastion.
    */
-  _updateHarvesterAI(npc, dt, player) {
-    npc.state = 'harvesting';
-    const dTarget = dist2D(npc.x, npc.z, npc.targetX, npc.targetZ);
-    if (dTarget < 2.0) {
+  _updateHarvesterAI(npc, dt, player, enemies = [], enemyManager = null) {
+    const moveSpeed = npc.speed || CONFIG.SCOUT?.HARVESTER_SPEED || 5.5;
+
+    // 1. Returning to the Bastion with gathered resources or hunted game meat
+    if (npc.carryingType && npc.carryingAmount > 0) {
+      npc.state = 'returning';
       const distCenter = Math.hypot(npc.x, npc.z);
-      if (distCenter > 10) {
-        // Return to Bastion hearth with gathered resources
-        npc.targetX = (Math.random() - 0.5) * 6;
-        npc.targetZ = (Math.random() - 0.5) * 6;
+      if (distCenter < 8.0) {
         if (player && player.resources) {
-          player.resources.wood += 2;
-          if (Math.random() < 0.45) player.resources.crystal += 1;
+          if (npc.carryingType === 'wood') {
+            player.resources.wood = (player.resources.wood || 0) + npc.carryingAmount;
+          } else if (npc.carryingType === 'crystal') {
+            player.resources.crystal = (player.resources.crystal || 0) + npc.carryingAmount;
+          } else if (npc.carryingType === 'food') {
+            player.resources.food = Math.min(
+              200,
+              (player.resources.food || 0) + npc.carryingAmount
+            );
+            logger.info(
+              'HARVESTER',
+              `🍖 ${npc.name} rapporte +${npc.carryingAmount} Rations de Gibier au Bastion !`,
+              { npcId: npc.id, food: Math.round(player.resources.food) }
+            );
+          }
         }
-        this.hp = Math.min(this.maxHp, this.hp + 8);
-      } else {
-        // Head out to a nearby resource ring around the Bastion
-        const a = Math.random() * Math.PI * 2;
-        const r = 14 + Math.random() * 14;
-        npc.targetX = Math.cos(a) * r;
-        npc.targetZ = Math.sin(a) * r;
+        this.hp = Math.min(this.maxHp, this.hp + 6);
+        npc.carryingType = null;
+        npc.carryingAmount = 0;
+        npc.harvestJob = null;
+        npc.targetNode = null;
+        npc.targetPrey = null;
+        npc.completedTrips = (npc.completedTrips || 0) + 1;
+        npc.vx = 0;
+        npc.vz = 0;
+        return;
+      }
+
+      const angleToBase = Math.atan2(-npc.z, -npc.x);
+      npc.vx = Math.cos(angleToBase) * moveSpeed;
+      npc.vz = Math.sin(angleToBase) * moveSpeed;
+      return;
+    }
+
+    // 2. Decide Job if idle (Job B: Hunt Rabbits/Deer vs Job A: Chop Tree / Mine Crystal)
+    if (!npc.harvestJob) {
+      const currentFood = player?.resources?.food ?? 50;
+      const shouldHunt = currentFood < 95 || (npc.completedTrips || 0) % 3 === 2;
+
+      if (shouldHunt && Array.isArray(enemies) && enemies.length > 0) {
+        let nearestPrey = null;
+        let minPreyDist = 110;
+        for (const e of enemies) {
+          if (!e || e.hp <= 0) continue;
+          const spId = e.genome?.speciesId;
+          if (spId === 'rabbit' || spId === 'deer') {
+            const d = dist2D(npc.x, npc.z, e.x, e.z);
+            if (d < minPreyDist) {
+              minPreyDist = d;
+              nearestPrey = e;
+            }
+          }
+        }
+        if (nearestPrey) {
+          npc.harvestJob = 'hunt_prey';
+          npc.targetPrey = nearestPrey;
+          npc.state = 'hunting_prey';
+        }
+      }
+
+      if (!npc.harvestJob) {
+        const node =
+          this.terrain && typeof this.terrain.getNearestResourceNode === 'function'
+            ? this.terrain.getNearestResourceNode(npc.x, npc.z, 95)
+            : null;
+        if (node) {
+          npc.harvestJob = 'gather_node';
+          npc.targetNode = node;
+          npc.targetX = node.x;
+          npc.targetZ = node.z;
+          npc.state = 'harvesting';
+        } else {
+          npc.harvestJob = 'fallback_gather';
+          const a = Math.random() * Math.PI * 2;
+          const r = 15 + Math.random() * 14;
+          npc.targetX = Math.cos(a) * r;
+          npc.targetZ = Math.sin(a) * r;
+          npc.state = 'harvesting';
+        }
       }
     }
 
-    const angle = Math.atan2(npc.targetZ - npc.z, npc.targetX - npc.x);
-    npc.vx = Math.cos(angle) * npc.speed * 0.7;
-    npc.vz = Math.sin(angle) * npc.speed * 0.7;
+    // 3. Execute Job B: Hunting Rabbits & Deer for Food Rations
+    if (npc.harvestJob === 'hunt_prey') {
+      const prey = npc.targetPrey;
+      if (!prey || prey.hp <= 0) {
+        // Prey died or vanished -> if we were close to it, collect +20 Food Rations!
+        if (prey && dist2D(npc.x, npc.z, prey.x, prey.z) <= 8.0) {
+          npc.carryingType = 'food';
+          npc.carryingAmount = 20;
+          npc.harvestJob = null;
+          npc.targetPrey = null;
+          npc.state = 'returning';
+          return;
+        }
+        npc.harvestJob = null;
+        npc.targetPrey = null;
+        return;
+      }
+
+      npc.targetX = prey.x;
+      npc.targetZ = prey.z;
+      const dPrey = dist2D(npc.x, npc.z, prey.x, prey.z);
+
+      if (dPrey <= 2.4) {
+        npc.state = 'hunting_strike';
+        npc.vx = 0;
+        npc.vz = 0;
+        if (npc.actionTimer <= 0) {
+          npc.actionTimer = 1.0;
+          if (this.vfx && typeof this.vfx.spawnImpactBurst === 'function') {
+            this.vfx.spawnImpactBurst(
+              new THREE.Vector3(prey.x, (prey.y || 1) + 0.6, prey.z),
+              0xff7744,
+              7
+            );
+          }
+          if (enemyManager && typeof enemyManager.damageEnemy === 'function') {
+            enemyManager.damageEnemy(prey.id, 16, 'npc_hunt');
+          } else {
+            prey.hp -= 16;
+          }
+          if (prey.hp <= 0) {
+            npc.carryingType = 'food';
+            npc.carryingAmount = 20;
+            npc.harvestJob = null;
+            npc.targetPrey = null;
+            npc.state = 'returning';
+            return;
+          }
+        }
+        return;
+      }
+
+      npc.state = 'hunting_prey';
+      const angle = Math.atan2(prey.z - npc.z, prey.x - npc.x);
+      // Slight sprint when stalking fast rabbits/deer
+      npc.vx = Math.cos(angle) * (moveSpeed * 1.12);
+      npc.vz = Math.sin(angle) * (moveSpeed * 1.12);
+      return;
+    }
+
+    // 4. Execute Job A: Chopping Trees / Mining Crystals (`gather_node` or `fallback_gather`)
+    const node = npc.targetNode;
+    if (npc.harvestJob === 'gather_node' && (!node || node.depleted || node.amount <= 0)) {
+      npc.harvestJob = null;
+      npc.targetNode = null;
+      npc.harvestTimer = 0;
+      return;
+    }
+
+    const targetX = node ? node.x : npc.targetX;
+    const targetZ = node ? node.z : npc.targetZ;
+    const dNode = dist2D(npc.x, npc.z, targetX, targetZ);
+
+    if (dNode <= 2.2) {
+      npc.state = 'chopping';
+      npc.vx = 0;
+      npc.vz = 0;
+      npc.harvestTimer = (npc.harvestTimer || 0) + dt;
+
+      if (npc.actionTimer <= 0) {
+        npc.actionTimer = 0.85;
+        if (this.vfx && typeof this.vfx.spawnImpactBurst === 'function') {
+          const chipColor = node?.type === 'crystal' ? 0x00e5ff : 0xc89b6e;
+          this.vfx.spawnImpactBurst(
+            new THREE.Vector3(targetX, (npc.y || 1) + 0.9, targetZ),
+            chipColor,
+            5
+          );
+        }
+      }
+
+      if (npc.harvestTimer >= 2.2) {
+        npc.harvestTimer = 0;
+        let resourceType = 'wood';
+        let harvestedAmt = 2;
+
+        if (
+          node &&
+          this.terrain &&
+          typeof this.terrain.harvestResourceNode === 'function'
+        ) {
+          resourceType = node.type === 'crystal' ? 'crystal' : 'wood';
+          const reqAmt = resourceType === 'crystal' ? 1 : 2;
+          const actual = this.terrain.harvestResourceNode(node, reqAmt);
+          harvestedAmt = actual > 0 ? actual : reqAmt;
+        }
+
+        npc.carryingType = resourceType;
+        npc.carryingAmount = harvestedAmt;
+        npc.harvestJob = null;
+        npc.targetNode = null;
+        npc.state = 'returning';
+      }
+      return;
+    }
+
+    npc.state = 'harvesting';
+    const angle = Math.atan2(targetZ - npc.z, targetX - npc.x);
+    npc.vx = Math.cos(angle) * moveSpeed;
+    npc.vz = Math.sin(angle) * moveSpeed;
   }
 
   /**
@@ -2422,19 +2768,19 @@ export class BastionAndNPCs {
    *    lighting 3D sky beacons on them.
    * 3. Executes the player's active Scout Mission order:
    *    - `'track_lineage'`: Hunts down every unspotted carrier of `activeScoutMission.targetMutationId`
-   *      at `1.45x` speed until 100% of carriers are revealed!
+   *      at `1.12x` speed until 100% of carriers are revealed!
    *    - `'find_cages'`: Heads directly toward unspotted/unrescued Prisoner Cages or Relic Monoliths.
    *    - `'scout_volcano'`: Deep-wilderness caldera exploration.
    *    - `'perimeter_alert'`: Frontier vigilance patrol.
    */
   _updateScoutAI(scout, dt, enemies, onScoutDiscovery) {
-    const missionMult = this.activeScoutMission?.speedBonusMult || 1.2;
+    const missionMult = Math.min(1.12, this.activeScoutMission?.speedBonusMult || 1.12);
     const effectiveVision =
       ((CONFIG.SCOUT?.VISION_RADIUS || 34) + this.scoutVisionBonus) *
       this.scoutVisionMultiplier *
       this.guildVisionMult;
     const effectiveSpeed =
-      (CONFIG.SCOUT?.SPEED || 13) * this.scoutSpeedMultiplier * this.guildSpeedMult;
+      (CONFIG.SCOUT?.SPEED || 6.8) * this.scoutSpeedMultiplier * this.guildSpeedMult;
     const fleeRadius = CONFIG.SCOUT?.FLEE_RADIUS || 16;
 
     scout.visionRadius = effectiveVision;
@@ -2613,7 +2959,7 @@ export class BastionAndNPCs {
 
     scout.state = 'expedition';
 
-    // Priority 0: Guided Tutorial Act 6 Baby Fire Troll target
+    // Priority 0: Guided Tutorial Act 6 Baby Fire Troll target (natural trek at capped 1.12x speed)
     const priorityTutorialTarget = enemies.find(
       (e) =>
         e &&
@@ -2627,8 +2973,8 @@ export class BastionAndNPCs {
       scout.targetZ = priorityTutorialTarget.z;
       scout.sectorName = getCardinalLabelFR(priorityTutorialTarget.x, priorityTutorialTarget.z);
       const angle = Math.atan2(scout.targetZ - scout.z, scout.targetX - scout.x);
-      scout.vx = Math.cos(angle) * effectiveSpeed * 1.45;
-      scout.vz = Math.sin(angle) * effectiveSpeed * 1.45;
+      scout.vx = Math.cos(angle) * effectiveSpeed * missionMult;
+      scout.vz = Math.sin(angle) * effectiveSpeed * missionMult;
       return;
     }
 
